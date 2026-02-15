@@ -1,0 +1,12 @@
+# GOAT Meter: LeBron — Netlify 部署配置
+# 建置指令與輸出目錄由 Netlify 自動偵測（Vite 預設：build → dist）
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA：所有路徑回傳 index.html，由 React Router 處理
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

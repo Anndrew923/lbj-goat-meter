@@ -1,0 +1,136 @@
+/**
+ * PulseMap — 全球情緒熱力圖（/vote 視覺重心）
+ * 依各國統計將區塊染成金色（粉方佔優）或紫色（黑方佔優）；點擊國家可更新 filters 並連動 AnalyticsDashboard。
+ * 技術選用：react-simple-maps（SVG 輕量），地圖資料使用具 ISO_A2 的 GeoJSON。
+ */
+import { useMemo, useState } from 'react'
+import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
+import { motion } from 'framer-motion'
+import { useSentimentData } from '../hooks/useSentimentData'
+
+const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+
+const PRO_STANCES = new Set(['goat', 'king', 'respect', 'machine'])
+const ANTI_STANCES = new Set(['villain', 'decider'])
+
+/** 依投票數據按國家彙總：pro 與 anti 票數，用於著色 */
+function aggregateByCountry(data) {
+  const byCountry = {}
+  data.forEach((v) => {
+    const cc = (v.country ?? '').toUpperCase().slice(0, 2)
+    if (!cc) return
+    if (!byCountry[cc]) byCountry[cc] = { pro: 0, anti: 0 }
+    if (PRO_STANCES.has(v.status)) byCountry[cc].pro += 1
+    else if (ANTI_STANCES.has(v.status)) byCountry[cc].anti += 1
+  })
+  return byCountry
+}
+
+/** world-atlas TopoJSON 的 id 多為數字，需對應至 ISO 代碼；此處用常見 2 碼對照（可擴充） */
+const COUNTRY_ID_TO_ISO2 = {
+  1: 'AF', 4: 'AO', 8: 'AL', 12: 'DZ', 20: 'AD', 24: 'AO', 28: 'AG', 32: 'AR', 36: 'AU', 40: 'AT', 48: 'BH', 50: 'BD', 52: 'BB', 56: 'BE', 64: 'BT', 68: 'BO', 70: 'BA', 72: 'BW', 76: 'BR', 84: 'BZ', 90: 'SB', 96: 'BN', 100: 'BG', 104: 'MM', 108: 'BI', 112: 'BY', 116: 'KH', 120: 'CM', 124: 'CA', 132: 'CV', 140: 'CF', 144: 'LK', 148: 'TD', 152: 'CL', 156: 'CN', 170: 'CO', 174: 'KM', 178: 'CG', 180: 'CD', 188: 'CR', 191: 'HR', 192: 'CU', 196: 'CY', 203: 'CZ', 204: 'BJ', 208: 'DK', 212: 'DM', 214: 'DO', 218: 'EC', 222: 'SV', 226: 'GQ', 231: 'ET', 232: 'ER', 233: 'EE', 234: 'FO', 242: 'FJ', 246: 'FI', 250: 'FR', 258: 'PF', 262: 'DJ', 266: 'GA', 268: 'GE', 270: 'GM', 275: 'PS', 276: 'DE', 288: 'GH', 296: 'KI', 300: 'GR', 308: 'GD', 316: 'GU', 320: 'GT', 324: 'GN', 328: 'GY', 332: 'HT', 336: 'VA', 340: 'HN', 348: 'HU', 352: 'IS', 356: 'IN', 360: 'ID', 368: 'IQ', 372: 'IE', 376: 'IL', 380: 'IT', 384: 'CI', 388: 'JM', 392: 'JP', 398: 'KZ', 400: 'JO', 404: 'KE', 408: 'KP', 410: 'KR', 414: 'KW', 417: 'KG', 418: 'LA', 422: 'LB', 426: 'LS', 428: 'LV', 430: 'LR', 434: 'LY', 438: 'LI', 440: 'LT', 442: 'LU', 450: 'MG', 454: 'MW', 458: 'MY', 462: 'MV', 466: 'ML', 470: 'MT', 478: 'MR', 480: 'MU', 484: 'MX', 492: 'MC', 496: 'MN', 498: 'MD', 499: 'ME', 504: 'MA', 508: 'MZ', 516: 'NA', 520: 'NR', 524: 'NP', 528: 'NL', 554: 'NZ', 558: 'NI', 562: 'NE', 566: 'NG', 578: 'NO', 583: 'FM', 584: 'MH', 585: 'PW', 586: 'PK', 591: 'PA', 598: 'PG', 600: 'PY', 604: 'PE', 608: 'PH', 616: 'PL', 620: 'PT', 624: 'GW', 626: 'TL', 634: 'QA', 642: 'RO', 643: 'RU', 646: 'RW', 682: 'SA', 686: 'SN', 688: 'RS', 690: 'SC', 694: 'SL', 702: 'SG', 703: 'SK', 704: 'VN', 705: 'SI', 706: 'SO', 710: 'ZA', 728: 'SS', 729: 'SD', 740: 'SR', 748: 'SZ', 752: 'SE', 756: 'CH', 760: 'SY', 762: 'TJ', 764: 'TH', 768: 'TG', 776: 'TO', 780: 'TT', 784: 'AE', 788: 'TN', 795: 'TM', 798: 'TV', 800: 'UG', 804: 'UA', 807: 'MK', 818: 'EG', 826: 'GB', 834: 'TZ', 840: 'US', 854: 'BF', 858: 'UY', 860: 'UZ', 862: 'VE', 882: 'WS', 887: 'YE', 894: 'ZM', 716: 'ZW',   158: 'TW', 702: 'SG', 704: 'VN', 764: 'TH', 608: 'PH', 410: 'KR', 392: 'JP', 156: 'CN', 344: 'HK', 446: 'MO',
+}
+
+function getIso2FromGeo(geography) {
+  const props = geography?.properties
+  const iso2 = props?.ISO_A2 ?? props?.iso_a2 ?? props?.ISO_A2_EH
+  if (iso2 && typeof iso2 === 'string') return iso2.slice(0, 2).toUpperCase()
+  const id = geography?.id
+  if (id == null) return null
+  if (typeof id === 'string' && id.length === 2) return id.toUpperCase()
+  return COUNTRY_ID_TO_ISO2[id] ?? null
+}
+
+export default function PulseMap({ filters, onFiltersChange }) {
+  const { data, loading, error } = useSentimentData({}, { pageSize: 800 })
+  const [hovered, setHovered] = useState(null)
+
+  const byCountry = useMemo(() => aggregateByCountry(data), [data])
+
+  const getFill = (iso2, { hover = false, selected = false } = {}) => {
+    if (!iso2) return 'rgba(55,65,81,0.8)'
+    const stats = byCountry[iso2]
+    let base = 'rgba(55,65,81,0.6)'
+    if (stats && (stats.pro > 0 || stats.anti > 0)) {
+      const total = stats.pro + stats.anti
+      const proRatio = stats.pro / total
+      if (proRatio > 0.55) base = 'rgba(212,175,55,0.85)'
+      else if (proRatio < 0.45) base = 'rgba(75,0,130,0.85)'
+      else base = 'rgba(107,114,128,0.8)'
+    }
+    if (hover || selected) return base.replace(/0\.\d+\)/, '1)')
+    return base
+  }
+
+  const handleSelect = (iso2) => {
+    if (!iso2 || !onFiltersChange) return
+    onFiltersChange((prev) => ({ ...prev, country: iso2 }))
+  }
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 flex items-center justify-center min-h-[320px]">
+        <p className="text-king-gold animate-pulse" role="status">載入地圖…</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 min-h-[280px]">
+        <p className="text-red-400" role="alert">地圖資料載入失敗</p>
+      </div>
+    )
+  }
+
+  const selectedCountry = filters?.country ?? null
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="rounded-xl border border-villain-purple/30 bg-gray-900/80 overflow-hidden"
+    >
+      <div className="px-4 py-2 border-b border-villain-purple/20 flex items-center justify-between">
+        <h3 className="text-lg font-bold text-king-gold">全球情緒地圖</h3>
+        <p className="text-xs text-gray-500">金＝粉方佔優 · 紫＝黑方佔優 · 點擊國家篩選</p>
+      </div>
+      <div className="p-2">
+        <ComposableMap
+          projection="geoMercator"
+          projectionConfig={{ scale: 120, center: [20, 20] }}
+          width={800}
+          height={400}
+          style={{ maxWidth: '100%', height: 'auto' }}
+        >
+          <Geographies geography={GEO_URL}>
+            {({ geographies }) =>
+              geographies.map((geo) => {
+                const iso2 = getIso2FromGeo(geo)
+                const isSelected = iso2 && selectedCountry === iso2
+                const isHovered = hovered === iso2
+                return (
+                  <Geography
+                    key={geo.rsmKey}
+                    geography={geo}
+                    fill={getFill(iso2, { hover: isHovered, selected: isSelected })}
+                    stroke="rgba(30,30,30,0.8)"
+                    strokeWidth={isSelected ? 1.5 : 0.5}
+                    style={{
+                      default: { outline: 'none' },
+                      hover: { outline: 'none', cursor: onFiltersChange ? 'pointer' : 'default' },
+                      pressed: { outline: 'none' },
+                    }}
+                    onMouseEnter={() => setHovered(iso2)}
+                    onMouseLeave={() => setHovered(null)}
+                    onClick={() => handleSelect(iso2)}
+                  />
+                )
+              })
+            }
+          </Geographies>
+        </ComposableMap>
+      </div>
+    </motion.div>
+  )
+}
