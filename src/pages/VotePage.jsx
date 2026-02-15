@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import UserProfileSetup from '../components/UserProfileSetup'
 import VotingArena from '../components/VotingArena'
@@ -9,10 +10,12 @@ import AnalyticsDashboard from '../components/AnalyticsDashboard'
 import FilterFunnel from '../components/FilterFunnel'
 import LiveTicker from '../components/LiveTicker'
 import PulseMap from '../components/PulseMap'
+import LanguageToggle from '../components/LanguageToggle'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SlidersHorizontal, Settings, AlertTriangle } from 'lucide-react'
 
 export default function VotePage() {
+  const { t } = useTranslation('common')
   const { currentUser, isGuest, signOut, deleteAccount, hasProfile, profileLoading, authError, clearAuthError } = useAuth()
   const navigate = useNavigate()
   const [profileSetupDismissed, setProfileSetupDismissed] = useState(false)
@@ -40,10 +43,10 @@ export default function VotePage() {
         animate={{ opacity: 1 }}
         className="flex justify-between items-center border-b border-villain-purple/30 pb-4"
       >
-        <h1 className="text-2xl font-bold text-king-gold">投票戰場</h1>
+        <h1 className="text-2xl font-bold text-king-gold">{t('voteBattlefield')}</h1>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-400">
-            {isGuest ? '訪客' : (currentUser?.displayName ?? currentUser?.email)}
+            {isGuest ? t('guest') : (currentUser?.displayName ?? currentUser?.email)}
           </span>
           {isGuest ? (
             <button
@@ -51,7 +54,7 @@ export default function VotePage() {
               onClick={() => navigate('/')}
               className="text-sm text-king-gold hover:underline"
             >
-              登入
+              {t('signIn')}
             </button>
           ) : (
             <>
@@ -59,17 +62,17 @@ export default function VotePage() {
                 type="button"
                 onClick={() => setSettingsOpen(true)}
                 className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-king-gold"
-                aria-label="開啟設定"
+                aria-label={t('openSettings')}
               >
                 <Settings className="w-4 h-4" />
-                設定
+                {t('settings')}
               </button>
               <button
                 type="button"
                 onClick={signOut}
                 className="text-sm text-villain-purple hover:underline"
               >
-                登出
+                {t('signOut')}
               </button>
             </>
           )}
@@ -85,15 +88,15 @@ export default function VotePage() {
         <VotingArena userId={currentUser?.uid} currentUser={currentUser} />
         <section>
           <div className="flex items-center justify-between gap-4 mb-3">
-            <h2 className="text-lg font-semibold text-king-gold">全球情緒統計</h2>
+            <h2 className="text-lg font-semibold text-king-gold">{t('globalStats')}</h2>
             <button
               type="button"
               onClick={() => setFilterDrawerOpen(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
-              aria-label="開啟篩選"
+              aria-label={t('openFilter')}
             >
               <SlidersHorizontal className="w-4 h-4" />
-              篩選
+              {t('filter')}
             </button>
           </div>
           <FilterFunnel
@@ -145,33 +148,38 @@ export default function VotePage() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 id="settings-title" className="text-lg font-bold text-king-gold">設定</h2>
+                <h2 id="settings-title" className="text-lg font-bold text-king-gold">{t('settings')}</h2>
                 <button
                   type="button"
                   onClick={() => { setSettingsOpen(false); clearAuthError() }}
                   className="text-gray-400 hover:text-white"
                 >
-                  關閉
+                  {t('close')}
                 </button>
               </div>
               {authError && (
                 <p className="mb-4 text-sm text-red-400" role="alert">{authError}</p>
               )}
+              {/* Preferences：語系等，置於 Danger Zone 上方 */}
+              <section className="pb-6 border-b border-villain-purple/20">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">{t('preferences')}</p>
+                <LanguageToggle />
+              </section>
               {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}
               <section className="mt-8 pt-6 border-t border-red-900/50">
                 <p className="text-xs uppercase tracking-wider text-red-400/90 font-semibold mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4" aria-hidden />
-                  Danger Zone
+                  {t('dangerZone')}
                 </p>
                 <p className="text-sm text-gray-500 mb-4">
-                  刪除帳號後，您的戰區資料與投票紀錄將永久移除且無法復原。
+                  {t('dangerZoneDesc')}
                 </p>
                 <button
                   type="button"
                   onClick={() => { setSettingsOpen(false); setDeleteConfirmOpen(true) }}
                   className="w-full py-3 rounded-xl font-medium text-white bg-red-600 hover:bg-red-700 border border-red-500/50"
                 >
-                  刪除帳號
+                  {t('deleteAccount')}
                 </button>
               </section>
             </motion.div>
@@ -205,10 +213,10 @@ export default function VotePage() {
               onClick={(e) => e.stopPropagation()}
             >
               <h3 id="delete-confirm-title" className="text-lg font-bold text-red-400 mb-2">
-                確定要刪除帳號？
+                {t('deleteConfirmTitle')}
               </h3>
               <p className="text-sm text-gray-400 mb-4">
-                此操作無法復原，所有戰區與投票資料將永久刪除。
+                {t('deleteConfirmDesc')}
               </p>
               {authError && (
                 <p className="mb-4 text-sm text-red-400" role="alert">
@@ -221,7 +229,7 @@ export default function VotePage() {
                   onClick={() => { setDeleteConfirmOpen(false); clearAuthError() }}
                   className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 hover:bg-gray-800"
                 >
-                  取消
+                  {t('cancel')}
                 </button>
                 <button
                   type="button"
@@ -239,7 +247,7 @@ export default function VotePage() {
                   disabled={deleting}
                   className="flex-1 py-3 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {deleting ? '刪除中…' : '永久刪除'}
+                  {deleting ? t('deleting') : t('deletePermanently')}
                 </button>
               </div>
             </motion.div>

@@ -46,44 +46,41 @@ export const COUNTRIES = [
   { value: 'OTHER', label: '其他' },
 ]
 
-/** 投票戰場：六大立場（對應 votes.status），暗黑競技風用 */
+/** 投票戰場：六大立場對抗版（對應 votes.status）；視覺意圖：金／紫／皇冠紅／石墨灰／科技銀／鐵鏽銅 */
 export const STANCES = [
-  { value: 'goat', label: 'GOAT', theme: 'king-gold', description: '史上最佳' },
-  { value: 'king', label: 'King', theme: 'king-gold', description: '國王' },
-  { value: 'respect', label: 'Respect', theme: 'gray', description: '尊重' },
-  { value: 'machine', label: 'Machine', theme: 'gray', description: '機器' },
-  { value: 'decider', label: 'Decider', theme: 'villain-purple', description: '決策者' },
-  { value: 'villain', label: 'Villain', theme: 'villain-purple', description: '反派' },
+  { value: 'goat', theme: 'king-gold' },
+  { value: 'fraud', theme: 'villain-purple' },
+  { value: 'king', theme: 'crown-red' },
+  { value: 'mercenary', theme: 'graphite' },
+  { value: 'machine', theme: 'machine-silver' },
+  { value: 'stat_padder', theme: 'rust-copper' },
 ]
 
-/** 依立場動態顯示的原因標籤（用於標籤雲）；value 為寫入 votes.reasons 的代碼 */
+/** 依立場動態顯示的原因標籤（用於標籤雲）；value 為寫入 votes.reasons 的代碼；對抗版佔位以維持流程 */
 export const REASONS_BY_STANCE = {
   goat: [
     { value: '411', label: '411 工程' },
     { value: 'longevity', label: '長青' },
     { value: 'iq', label: '球商' },
-    { value: 'clutch', label: '關鍵球' },
+  ],
+  fraud: [
+    { value: 'narrative', label: '爭議敘事' },
+    { value: 'overrated', label: '過譽' },
   ],
   king: [
     { value: 'leadership', label: '領袖' },
     { value: 'legacy', label: '傳承' },
-    { value: 'iq', label: '球商' },
   ],
-  respect: [
-    { value: 'greatness', label: '偉大' },
-    { value: 'competitor', label: '競爭者' },
+  mercenary: [
+    { value: 'superteam', label: '抱團' },
+    { value: 'business', label: '利益取向' },
   ],
   machine: [
     { value: 'consistency', label: '穩定' },
     { value: 'durability', label: '耐戰' },
   ],
-  decider: [
-    { value: 'leGM', label: 'LeGM' },
-    { value: 'business', label: '商業決策' },
-  ],
-  villain: [
-    { value: 'superteam', label: '抱團' },
-    { value: 'decision', label: 'The Decision' },
-    { value: 'narrative', label: '爭議敘事' },
+  stat_padder: [
+    { value: 'numbers', label: '數據' },
+    { value: 'empty_stats', label: '刷數據' },
   ],
 }

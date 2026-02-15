@@ -4,17 +4,23 @@
  * 重置按鈕：磨砂玻璃感，點擊後由父層執行 Transaction 撤銷投票，本卡以 exit 動畫「粒子化崩解」後卸載。
  */
 import { useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { toPng } from 'html-to-image'
 import { Download, RotateCcw } from 'lucide-react'
-import { TEAMS, STANCES } from '../lib/constants'
+import { TEAMS } from '../lib/constants'
+import { getStanceDisplay, resolveBrand } from '../i18n/i18n'
 
 function getTeamLabel(voterTeam) {
   return TEAMS.find((t) => t.value === voterTeam)?.label ?? voterTeam ?? '—'
 }
 
 function getStanceLabel(status) {
-  return STANCES.find((s) => s.value === status)?.label ?? status ?? '—'
+  return getStanceDisplay(status, 'zh') ?? status ?? '—'
+}
+
+function getStanceLabelPrimary(status) {
+  return getStanceDisplay(status, 'en') ?? status ?? '—'
 }
 
 export default function BattleCard({
@@ -31,14 +37,16 @@ export default function BattleCard({
   reasonLabels = [],
   city = '',
   country = '',
-  rankLabel = '專屬戰報',
+  rankLabel,
   exit = { opacity: 0, scale: 0.9 },
 }) {
+  const { t } = useTranslation('common')
   const cardRef = useRef(null)
 
   const teamLabel = getTeamLabel(voterTeam)
   const stanceLabel = getStanceLabel(status)
-  const regionText = [country, city].filter(Boolean).join(' · ') || '全球'
+  const stanceLabelPrimary = getStanceLabelPrimary(status)
+  const regionText = [country, city].filter(Boolean).join(' · ') || t('global')
 
   const handleDownload = useCallback(() => {
     if (!cardRef.current) return
@@ -50,11 +58,11 @@ export default function BattleCard({
       .then((dataUrl) => {
         const a = document.createElement('a')
         a.href = dataUrl
-        a.download = `GOAT-Meter-${stanceLabel}-${Date.now()}.png`
+        a.download = `GOAT-Meter-${stanceLabelPrimary}-${Date.now()}.png`
         a.click()
       })
       .catch((err) => console.error('[BattleCard] toPng failed', err))
-  }, [stanceLabel])
+  }, [stanceLabelPrimary])
 
   if (!open) return null
 
@@ -90,20 +98,20 @@ export default function BattleCard({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-white font-bold truncate">{displayName || '匿名戰士'}</p>
-              <p className="text-king-gold text-sm">{teamLabel} · {stanceLabel}陣營</p>
+              <p className="text-white font-bold truncate">{displayName || t('anonymousWarrior')}</p>
+              <p className="text-king-gold text-sm">{teamLabel} · {stanceLabel}{t('camp')}</p>
             </div>
           </div>
           <div className="border-t border-villain-purple/30 pt-4 mb-4">
-            <p id="battle-card-title" className="text-xs text-gray-500 uppercase tracking-wider mb-1">GOAT 宣言</p>
+            <p id="battle-card-title" className="text-xs text-gray-500 uppercase tracking-wider mb-1">{resolveBrand('GOAT')} {t('goatManifesto')}</p>
             <p className="text-king-gold font-semibold">{stanceLabel}</p>
             {reasonLabels.length > 0 && (
-              <p className="text-sm text-gray-400 mt-1">{reasonLabels.join('、')}</p>
+              <p className="text-sm text-gray-400 mt-1">{reasonLabels.join(t('reasonListSeparator'))}</p>
             )}
           </div>
           <div className="flex justify-between items-center text-sm">
             <span className="text-villain-purple/90">{regionText}</span>
-            <span className="text-king-gold font-medium">{rankLabel}</span>
+            <span className="text-king-gold font-medium">{rankLabel ?? t('rankLabel')}</span>
           </div>
         </div>
 
@@ -114,18 +122,17 @@ export default function BattleCard({
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-king-gold text-black font-bold"
           >
             <Download className="w-5 h-5" aria-hidden />
-            下載戰報
+            {t('downloadReport')}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="px-4 py-3 rounded-xl border border-villain-purple/50 text-gray-300 hover:text-white"
           >
-            關閉
+            {t('close')}
           </button>
         </div>
 
-        {/* 磨砂玻璃感重置按鈕：立場重塑，非生硬切換 */}
         {onRevote && (
           <motion.button
             type="button"
@@ -136,7 +143,7 @@ export default function BattleCard({
             whileTap={!revoking ? { scale: 0.98 } : {}}
           >
             <RotateCcw className="w-4 h-4" aria-hidden />
-            {revoking ? '重置中…' : '重置立場'}
+            {revoking ? t('resettingStance') : t('resetStance')}
           </motion.button>
         )}
         {revoteError && (
@@ -150,7 +157,7 @@ export default function BattleCard({
                 onClick={onRevoteReload}
                 className="py-2 px-3 rounded-lg text-sm font-medium bg-king-gold/20 text-king-gold border border-king-gold/40 hover:bg-king-gold/30"
               >
-                重新整理頁面
+                {t('reloadPage')}
               </button>
             )}
           </div>

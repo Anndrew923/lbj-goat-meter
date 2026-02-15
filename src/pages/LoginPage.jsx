@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { motion } from 'framer-motion'
 
 export default function LoginPage() {
+  const { t } = useTranslation('common')
   const { currentUser, loading, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
     useAuth()
   const navigate = useNavigate()
@@ -40,7 +42,7 @@ export default function LoginPage() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <p className="text-king-gold animate-pulse" role="status" aria-live="polite">
-          載入中…
+          {t('loading')}
         </p>
       </div>
     )
@@ -58,7 +60,7 @@ export default function LoginPage() {
           <h1 className="text-4xl md:text-5xl font-black text-king-gold tracking-tight mb-2">
             GOAT Meter: LeBron
           </h1>
-          <p className="text-villain-purple/90 text-sm mb-6">誰才是真正的 GOAT？</p>
+          <p className="text-villain-purple/90 text-sm mb-6">{t('whoIsGoat')}</p>
           <div
             className="w-24 h-32 rounded-lg bg-gradient-to-b from-king-gold/30 to-villain-purple/30 border border-king-gold/50"
             aria-hidden
@@ -85,7 +87,7 @@ export default function LoginPage() {
           aria-busy={isLoggingIn}
           aria-disabled={isLoggingIn}
         >
-          {isLoggingIn ? '登入中…' : '使用 Google 登入'}
+          {isLoggingIn ? t('loggingIn') : t('signInWithGoogle')}
         </motion.button>
 
         {/* 按鈕 B：不留名參觀，較小樣式 */}
@@ -95,9 +97,9 @@ export default function LoginPage() {
           whileTap={{ scale: 0.98 }}
           className="w-full py-2.5 text-sm text-gray-400 hover:text-gray-300 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors"
           onClick={handleGuest}
-          aria-label="不留名參觀"
+          aria-label={t('browseAsGuestAria')}
         >
-          不留名參觀 (Browse as Guest)
+          {t('browseAsGuest')}
         </motion.button>
       </motion.div>
     </div>

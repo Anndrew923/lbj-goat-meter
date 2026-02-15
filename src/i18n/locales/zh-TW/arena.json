@@ -1,0 +1,37 @@
+{
+  "stances": {
+    "goat": { "primary": "GOAT", "secondary": "史上最偉大球員" },
+    "fraud": { "primary": "FRAUD", "secondary": "名不符實的偽神" },
+    "king": { "primary": "KING", "secondary": "天選王者／領袖" },
+    "mercenary": { "primary": "MERCENARY", "secondary": "利益至上的抱團傭兵" },
+    "machine": { "primary": "MACHINE", "secondary": "鋼鐵般的長青紀錄" },
+    "stat_padder": { "primary": "STAT PADDER", "secondary": "追求數據的刷子" }
+  },
+  "reasons": {
+    "goat": [
+      { "value": "411", "primary": "411 Project", "secondary": "411 工程" },
+      { "value": "longevity", "primary": "Longevity", "secondary": "長青" },
+      { "value": "iq", "primary": "Basketball IQ", "secondary": "球商" }
+    ],
+    "fraud": [
+      { "value": "narrative", "primary": "Narrative", "secondary": "爭議敘事" },
+      { "value": "overrated", "primary": "Overrated", "secondary": "過譽" }
+    ],
+    "king": [
+      { "value": "leadership", "primary": "Leadership", "secondary": "領袖" },
+      { "value": "legacy", "primary": "Legacy", "secondary": "傳承" }
+    ],
+    "mercenary": [
+      { "value": "superteam", "primary": "Superteam", "secondary": "抱團" },
+      { "value": "business", "primary": "Business", "secondary": "利益取向" }
+    ],
+    "machine": [
+      { "value": "consistency", "primary": "Consistency", "secondary": "穩定" },
+      { "value": "durability", "primary": "Durability", "secondary": "耐戰" }
+    ],
+    "stat_padder": [
+      { "value": "numbers", "primary": "Numbers", "secondary": "數據" },
+      { "value": "empty_stats", "primary": "Empty stats", "secondary": "刷數據" }
+    ]
+  }
+}

@@ -1,16 +1,10 @@
 /**
  * VotingArena — 投票競技場（暗黑競技風）
- * 六大立場選擇、依立場動態原因標籤雲、Framer Motion 動畫（GOAT 金閃／Villain 紫碎）。
- * 提交前檢查 profile.hasVoted；提交使用 Firestore Transaction 同步寫入 votes 並更新 profiles.hasVoted。
- *
- * 為何依賴 AuthContext 的「實時 profile 監聽」而非單次 getDoc？ [cite: 2026-02-11]
- * - 用戶「剛註冊完就直接進入戰場」時，profiles 文件由 UserProfileSetup 非同步寫入；
- *   若本組件僅在 mount 時做一次 getDoc（或 setTimeout(0) 單次抓取），可能當時文件尚未寫入，
- *   導致誤判為「未完成登錄」並顯示提示，且無重試機制會一直卡住。
- * - 透過 AuthContext 對 /profiles/{uid} 的 onSnapshot，資料庫一出現該文件就會即時推送到前端，
- *   hasProfile 與 profile 立即更新，UI 自動切換為六大立場按鈕，達成無縫體驗。
+ * 六大立場對抗版：雙層語義（primary 大寫粗體英文 + secondary 細體中文），
+ * 所有文案經 t() 讀取，禁止硬編碼；GOAT 金閃／FRAUD 紫碎動畫。
  */
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   collection,
@@ -20,19 +14,41 @@ import {
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../context/AuthContext'
-import { STANCES, REASONS_BY_STANCE } from '../lib/constants'
+import { STANCES } from '../lib/constants'
+import { getReasonsForStance, getReasonLabels } from '../i18n/i18n'
 import { revokeVote } from '../services/AccountService'
 import BattleCard from './BattleCard'
 import LoginPromptModal from './LoginPromptModal'
 
 const STAR_ID = 'lbj'
 
-function getReasonLabels(stance, reasonValues) {
-  const list = REASONS_BY_STANCE[stance] ?? []
-  return reasonValues.map((v) => list.find((r) => r.value === v)?.label ?? v)
+/** 依 theme 與選中狀態取得按鈕樣式 */
+function getStanceButtonClass(theme, isSelected) {
+  if (!isSelected) {
+    if (theme === 'king-gold') return 'bg-gray-800 text-king-gold border border-king-gold/50 hover:bg-king-gold/20'
+    if (theme === 'villain-purple') return 'bg-gray-800 text-villain-purple border border-villain-purple/50 hover:bg-villain-purple/20'
+    if (theme === 'crown-red') return 'bg-gray-800 text-red-400 border border-red-500/50 hover:bg-red-500/20'
+    if (theme === 'graphite') return 'bg-gray-800 text-gray-400 border border-gray-500 hover:bg-gray-600/30'
+    if (theme === 'machine-silver') return 'bg-gray-800 text-gray-300 border border-gray-400/50 hover:bg-gray-400/20'
+    if (theme === 'rust-copper') return 'bg-gray-800 text-amber-700 border border-amber-600/50 hover:bg-amber-600/20'
+    return 'bg-gray-800 text-gray-300 border border-gray-600'
+  }
+  if (theme === 'king-gold') return 'bg-king-gold text-black shadow-lg shadow-king-gold/40'
+  if (theme === 'villain-purple') return 'bg-villain-purple text-white shadow-lg shadow-villain-purple/40'
+  if (theme === 'crown-red') return 'bg-red-600 text-white shadow-lg shadow-red-500/40'
+  if (theme === 'graphite') return 'bg-gray-600 text-white shadow-lg shadow-gray-500/40'
+  if (theme === 'machine-silver') return 'bg-gray-400 text-black shadow-lg shadow-gray-400/40'
+  if (theme === 'rust-copper') return 'bg-amber-600 text-black shadow-lg shadow-amber-500/40'
+  return 'bg-gray-500 text-white'
+}
+
+/** 原因標籤選中時是否用紫色系（反方） */
+function isAntiStance(stance) {
+  return stance === 'fraud' || stance === 'stat_padder' || stance === 'mercenary'
 }
 
 export default function VotingArena({ userId, currentUser }) {
+  const { t } = useTranslation(['arena', 'common'])
   const { isGuest, profile, profileLoading, hasProfile } = useAuth()
   const [selectedStance, setSelectedStance] = useState(null)
   const [selectedReasons, setSelectedReasons] = useState([])
@@ -42,17 +58,14 @@ export default function VotingArena({ userId, currentUser }) {
   const [showBattleCard, setShowBattleCard] = useState(false)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
   const [goatFlash, setGoatFlash] = useState(false)
-  const [villainShatter, setVillainShatter] = useState(false)
+  const [fraudShatter, setFraudShatter] = useState(false)
   const animationTimeouts = useRef([])
-  /** 提交成功後本地暫存 hasVoted，與 Context profile 同步前避免閃爍 */
-  const [localHasVoted, setLocalHasVoted] = useState(false)
   const [revoking, setRevoking] = useState(false)
   const [revoteError, setRevoteError] = useState(null)
-  /** 用於 onExitComplete 時判斷是否為「重置投票」導致的關閉，以決定是否清空本地投票狀態 */
   const revoteExitRef = useRef(false)
   const [revoteCompleteKey, setRevoteCompleteKey] = useState(0)
 
-  const hasVoted = profile?.hasVoted === true || localHasVoted
+  const hasVoted = profile?.hasVoted === true || voteSuccess
   const canSubmit = profile && !hasVoted && selectedStance && selectedReasons.length > 0
 
   useEffect(() => {
@@ -66,12 +79,13 @@ export default function VotingArena({ userId, currentUser }) {
     setSelectedReasons([])
   }, [selectedStance])
 
-  // 已投票時自動顯示戰報卡與重置鈕（含刷新後）；重置流程中不重設，避免 exit 動畫時卡片重現
   useEffect(() => {
-    if ((hasVoted || voteSuccess) && !revoteExitRef.current) {
-      setShowBattleCard(true)
-    }
-  }, [hasVoted, voteSuccess])
+    if (hasVoted && !revoteExitRef.current) setShowBattleCard(true)
+  }, [hasVoted])
+
+  useEffect(() => {
+    if (profile?.hasVoted === true && voteSuccess) setVoteSuccess(false)
+  }, [profile?.hasVoted, voteSuccess])
 
   const toggleReason = (value) => {
     setSelectedReasons((prev) =>
@@ -79,7 +93,6 @@ export default function VotingArena({ userId, currentUser }) {
     )
   }
 
-  /** 重新投票：無條件恢復投票權；失敗時顯示自癒選項，絕不卡在紅字畫面 */
   const handleRevote = async () => {
     if (!userId || revoking) return
     setRevoteError(null)
@@ -89,14 +102,13 @@ export default function VotingArena({ userId, currentUser }) {
       revoteExitRef.current = true
       setShowBattleCard(false)
     } catch (err) {
-      const msg = err && typeof err.message === 'string' ? err.message : '重置時發生錯誤，請重新整理頁面後再試'
+      const msg = err && typeof err.message === 'string' ? err.message : t('common:revoteError')
       setRevoteError(msg)
     } finally {
       setRevoking(false)
     }
   }
 
-  /** 自癒：強制重新整理，清空快取與狀態，避免卡在錯誤畫面 */
   const handleRevoteReload = () => {
     window.location.reload()
   }
@@ -104,7 +116,6 @@ export default function VotingArena({ userId, currentUser }) {
   const handleRevoteComplete = () => {
     if (revoteExitRef.current) {
       revoteExitRef.current = false
-      setLocalHasVoted(false)
       setVoteSuccess(false)
       setSelectedStance(null)
       setSelectedReasons([])
@@ -113,7 +124,6 @@ export default function VotingArena({ userId, currentUser }) {
   }
 
   const handleStanceSelect = (value) => {
-    // 訪客點擊立場時攔截，顯示登入提示而非進入原因選擇或提交
     if (isGuest) {
       setShowLoginPrompt(true)
       return
@@ -123,9 +133,9 @@ export default function VotingArena({ userId, currentUser }) {
     if (value === 'goat') {
       setGoatFlash(true)
       animationTimeouts.current.push(setTimeout(() => setGoatFlash(false), 600))
-    } else if (value === 'villain') {
-      setVillainShatter(true)
-      animationTimeouts.current.push(setTimeout(() => setVillainShatter(false), 800))
+    } else if (value === 'fraud') {
+      setFraudShatter(true)
+      animationTimeouts.current.push(setTimeout(() => setFraudShatter(false), 800))
     }
     setSelectedStance(value)
   }
@@ -136,14 +146,12 @@ export default function VotingArena({ userId, currentUser }) {
     setSubmitError(null)
     const profileRef = doc(db, 'profiles', userId)
     const votesRef = collection(db, 'votes')
-
     try {
       await runTransaction(db, async (tx) => {
         const profileSnap = await tx.get(profileRef)
-        if (!profileSnap.exists()) throw new Error('請先完成戰區登錄')
+        if (!profileSnap.exists()) throw new Error(t('common:completeProfileFirst'))
         const data = profileSnap.data()
-        if (data.hasVoted === true) throw new Error('您已投過票')
-
+        if (data.hasVoted === true) throw new Error(t('common:alreadyVoted'))
         const votePayload = {
           starId: STAR_ID,
           userId,
@@ -158,7 +166,6 @@ export default function VotingArena({ userId, currentUser }) {
         }
         const newVoteRef = doc(votesRef)
         tx.set(newVoteRef, votePayload)
-        // 寫入即預備：同步寫入 currentVoteId（該筆投票 docId）至 profile，重置時依此精確刪除，不依賴模糊查詢
         tx.update(profileRef, {
           hasVoted: true,
           currentStance: selectedStance,
@@ -169,71 +176,56 @@ export default function VotingArena({ userId, currentUser }) {
       })
       setVoteSuccess(true)
       setShowBattleCard(true)
-      setLocalHasVoted(true)
     } catch (err) {
-      const msg = err && typeof err.message === 'string' ? err.message : '提交失敗，請稍後再試'
+      const msg = err && typeof err.message === 'string' ? err.message : t('common:submitError')
       setSubmitError(msg)
     } finally {
       setSubmitting(false)
     }
   }
 
-  // 依 Context 的 profile 實時狀態：有 userId 且 profile 尚在載入時顯示載入；訪客不閃爍
   if (profileLoading && userId) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
-        <p className="text-king-gold animate-pulse" role="status">載入戰區…</p>
+        <p className="text-king-gold animate-pulse" role="status">{t('common:loadingArena')}</p>
       </div>
     )
   }
 
   if (!profile && !isGuest) {
-    // 防禦性日誌：資料庫已有 profiles 卻仍顯示「請先登錄」時，可依此排查缺失欄位或同步延遲
-    const missing = !userId
-      ? 'userId 為空'
-      : !hasProfile
-        ? 'hasProfile 為 false（profiles 文件尚未建立或實時監聽尚未收到）'
-        : 'profile 為 null 但 hasProfile 為 true（異常）'
     if (import.meta.env.DEV) {
       console.warn('[VotingArena] 顯示「請先登錄」', {
         userId,
         hasProfile,
         profileLoading,
         profileKeys: profile ? Object.keys(profile) : [],
-        缺失欄位或原因: missing,
       })
     }
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
-        <p className="text-gray-400">請先完成戰區登錄再參與投票。</p>
+        <p className="text-gray-400">{t('common:completeProfileFirst')}</p>
       </div>
     )
   }
 
-  // 訪客：僅顯示立場按鈕，點擊時由 handleStanceSelect 觸發 LoginPromptModal
   if (isGuest) {
     return (
       <>
         <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
-          <h3 className="text-lg font-bold text-king-gold mb-2">選擇你的立場</h3>
-          <p className="text-sm text-gray-500 mb-4">登入後即可投票並領取專屬戰報卡</p>
+          <h3 className="text-lg font-bold text-king-gold mb-2">{t('common:chooseStance')}</h3>
+          <p className="text-sm text-gray-500 mb-4">{t('common:loginToVoteHint')}</p>
           <div className="flex flex-wrap gap-2">
-            {STANCES.map(({ value, label, theme }) => (
+            {STANCES.map(({ value, theme }) => (
               <motion.button
                 key={value}
                 type="button"
                 onClick={() => handleStanceSelect(value)}
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
-                className={`px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors ${
-                  theme === 'king-gold'
-                    ? 'bg-gray-800 text-king-gold border border-king-gold/50 hover:bg-king-gold/20'
-                    : theme === 'villain-purple'
-                      ? 'bg-gray-800 text-villain-purple border border-villain-purple/50 hover:bg-villain-purple/20'
-                      : 'bg-gray-800 text-gray-300 border border-gray-600'
-                }`}
+                className={`px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex flex-col items-center ${getStanceButtonClass(theme, false)}`}
               >
-                {label}
+                <span className="text-sm leading-tight font-bold uppercase">{t('arena:stances.' + value + '.primary')}</span>
+                <span className="text-[10px] opacity-80 mt-0.5 font-normal">{t('arena:stances.' + value + '.secondary')}</span>
               </motion.button>
             ))}
           </div>
@@ -243,7 +235,7 @@ export default function VotingArena({ userId, currentUser }) {
     )
   }
 
-  if (hasVoted || voteSuccess) {
+  if (hasVoted) {
     return (
       <>
         <motion.div
@@ -251,8 +243,8 @@ export default function VotingArena({ userId, currentUser }) {
           animate={{ opacity: 1 }}
           className="rounded-xl border border-king-gold/40 bg-gray-900/80 p-8 text-center"
         >
-          <p className="text-king-gold font-semibold">您已投過票</p>
-          <p className="mt-2 text-sm text-gray-400">感謝您的立場，數據將納入全球統計。</p>
+          <p className="text-king-gold font-semibold">{t('common:alreadyVoted')}</p>
+          <p className="mt-2 text-sm text-gray-400">{t('common:thanksVoted')}</p>
         </motion.div>
         <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
           {showBattleCard && (
@@ -274,7 +266,7 @@ export default function VotingArena({ userId, currentUser }) {
               )}
               city={profile?.city}
               country={profile?.country}
-              rankLabel={profile?.city ? `${profile.city} · 專屬戰報` : '專屬戰報'}
+              rankLabel={profile?.city ? t('common:rankLabelWithCity', { city: profile.city }) : t('common:rankLabel')}
               exit={{ opacity: 0, scale: 0.8 }}
             />
           )}
@@ -283,14 +275,13 @@ export default function VotingArena({ userId, currentUser }) {
     )
   }
 
-  const reasons = selectedStance ? (REASONS_BY_STANCE[selectedStance] ?? []) : []
-  const isVillainStance = selectedStance === 'villain' || selectedStance === 'decider'
+  const reasons = selectedStance ? getReasonsForStance(selectedStance) : []
+  const anti = isAntiStance(selectedStance)
 
   return (
     <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
-      <h3 className="text-lg font-bold text-king-gold mb-4">選擇你的立場</h3>
+      <h3 className="text-lg font-bold text-king-gold mb-4">{t('common:chooseStance')}</h3>
 
-      {/* 六大立場按鈕（重置後以 key 觸發 Spring 彈射歸位） */}
       <motion.div
         key={revoteCompleteKey}
         initial={{ opacity: 0, scale: 0.9 }}
@@ -298,22 +289,14 @@ export default function VotingArena({ userId, currentUser }) {
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         className="flex flex-wrap gap-2 mb-6"
       >
-        {STANCES.map(({ value, label, theme }) => (
+        {STANCES.map(({ value, theme }) => (
           <motion.button
             key={value}
             type="button"
             onClick={() => handleStanceSelect(value)}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
-            className={`relative px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors ${
-              selectedStance === value
-                ? theme === 'king-gold'
-                  ? 'bg-king-gold text-black shadow-lg shadow-king-gold/40'
-                  : theme === 'villain-purple'
-                    ? 'bg-villain-purple text-white shadow-lg shadow-villain-purple/40'
-                    : 'bg-gray-500 text-white'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-            }`}
+            className={`relative px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex flex-col items-center min-w-[4.5rem] ${getStanceButtonClass(theme, selectedStance === value)}`}
           >
             {value === 'goat' && goatFlash && (
               <motion.span
@@ -324,7 +307,7 @@ export default function VotingArena({ userId, currentUser }) {
                 style={{ boxShadow: '0 0 24px rgba(212,175,55,0.8)' }}
               />
             )}
-            {value === 'villain' && villainShatter && (
+            {value === 'fraud' && fraudShatter && (
               <motion.span
                 className="absolute inset-0 rounded-lg bg-villain-purple"
                 initial={{ opacity: 1, scale: 1 }}
@@ -336,12 +319,12 @@ export default function VotingArena({ userId, currentUser }) {
                 }}
               />
             )}
-            <span className="relative z-0">{label}</span>
+            <span className="relative z-0 text-sm leading-tight font-bold uppercase">{t('arena:stances.' + value + '.primary')}</span>
+            <span className="relative z-0 text-[10px] font-normal opacity-90 mt-0.5">{t('arena:stances.' + value + '.secondary')}</span>
           </motion.button>
         ))}
       </motion.div>
 
-      {/* 原因標籤雲（依所選立場動態顯示） */}
       <AnimatePresence mode="wait">
         {selectedStance && (
           <motion.div
@@ -351,9 +334,9 @@ export default function VotingArena({ userId, currentUser }) {
             exit={{ opacity: 0, y: -8 }}
             className="mb-6"
           >
-            <p className="text-sm text-gray-400 mb-2">選擇原因（可複選）</p>
+            <p className="text-sm text-gray-400 mb-2">{t('common:chooseReasons')}</p>
             <div className="flex flex-wrap gap-2">
-              {reasons.map(({ value, label }) => (
+              {reasons.map(({ value, secondary }) => (
                 <motion.button
                   key={value}
                   type="button"
@@ -362,13 +345,13 @@ export default function VotingArena({ userId, currentUser }) {
                   whileTap={{ scale: 0.95 }}
                   className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                     selectedReasons.includes(value)
-                      ? isVillainStance
+                      ? anti
                         ? 'bg-villain-purple/70 text-white'
                         : 'bg-king-gold/80 text-black'
                       : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                   }`}
                 >
-                  {label}
+                  {secondary}
                 </motion.button>
               ))}
             </div>
@@ -390,7 +373,7 @@ export default function VotingArena({ userId, currentUser }) {
         whileTap={canSubmit ? { scale: 0.98 } : {}}
         className="w-full py-3 rounded-lg bg-king-gold text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {submitting ? '提交中…' : '投下神聖一票'}
+        {submitting ? t('common:submitting') : t('common:submitVote')}
       </motion.button>
     </div>
   )

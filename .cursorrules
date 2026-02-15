@@ -45,3 +45,32 @@
 
 ## 7. 執行流程
 - 每次完成重大架構設計時，需回報數據庫 Schema 與組件相依圖。
+
+# i18n & Technical Debt Prevention Rules
+
+## 核心原則：Zero Hard-coded Strings
+所有在 UI 中顯示的字串（標題、按鈕、提示、錯誤訊息、列表空狀態）嚴禁直接寫死在 JSX 中。必須統一使用 `react-i18next` 的 `t()` 函數。
+
+## 1. 命名空間與目錄規範
+- **brand.json**: 存放不可翻譯的品牌詞（如：GOAT, LeBron, FRAUD）。
+- **arena.json**: 存放戰場相關的雙層語義物件（Stance, Reasons）。
+- **common.json**: 存放通用 UI 元素（如：Confirm, Delete, Settings）。
+
+## 2. 雙層語義實作要求 (Dual-Layer Semantics)
+在處理 `arena:stances` 時，必須維持以下結構並同步更新 `zh-TW` 與 `en`：
+- `primary`: 英文大寫標籤（競技場張力）。
+- `secondary`: 輔助註解（中文為解釋，英文為同義詞或空值）。
+
+## 3. 動態數據聯動準則
+- 嚴禁在 `constants.js` 或組件內定義包含「顯示標籤」的靜態陣列。
+- 所有圖表（如 RadarChart）的軸標籤必須在渲染時透過 `t()` 函數動態獲取。
+- 跑馬燈 (LiveTicker) 的所有連接詞（如：'voted', 'from'）必須支援 i18n 語序變數。
+
+## 4. 擴張檢核清單 (Expansion Checklist)
+布魯斯在新增任何組件前，必須自檢：
+1. 是否已在 `locales` 資料夾下定義對應的 key？
+2. 是否處理了語系切換後的即時渲染（不依賴 reload）？
+3. `brand.json` 是否已正確隔離品牌詞，避免重複定義？
+
+## 5. 深度註解要求
+在涉及複雜語序或多語系變數注入時，必須包含註解說明設計意圖，確保可維護性。

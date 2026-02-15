@@ -25,11 +25,9 @@ import {
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { auth, googleProvider, db, isFirebaseReady } from '../lib/firebase'
 import { deleteAccountData } from '../services/AccountService'
+import i18n from '../i18n/config'
 
 const AuthContext = createContext(null)
-
-const FIREBASE_NOT_READY_MSG =
-  'Firebase 尚未設定或初始化失敗，請檢查 .env / .env.local 中的 VITE_FIREBASE_* 變數。'
 
 /** 連線冷卻期：auth 穩定後延遲再打 Firestore，避免「client is offline」 */
 const FIREBASE_COOLING_MS = 500
@@ -43,22 +41,22 @@ async function fetchIsPremium(uid) {
   return snap.exists() && snap.data()?.isPremium === true
 }
 
-/** 將 Firebase Auth 錯誤碼轉成使用者可讀訊息，利於除錯與 UX */
+/** 將 Firebase Auth 錯誤碼轉成使用者可讀訊息（依當前語系） */
 function getAuthErrorMessage(err) {
   const code = err?.code ?? ''
   if (code === 'auth/configuration-not-found' || err?.message?.includes('CONFIGURATION_NOT_FOUND')) {
-    return 'Firebase 認證尚未設定完成，請到 Firebase 主控台啟用 Authentication（Google 登入）並確認 .env 與專案一致。'
+    return i18n.t('common:authError_configNotFound')
   }
   if (code === 'auth/popup-closed-by-user') {
-    return '登入視窗已關閉。請再試一次；若仍失敗，請改用「重新導向登入」或檢查瀏覽器是否封鎖彈出視窗。'
+    return i18n.t('common:authError_popupClosed')
   }
   if (code === 'auth/popup-blocked') {
-    return '登入視窗被瀏覽器封鎖，請允許彈出視窗或使用重新導向登入。'
+    return i18n.t('common:authError_popupBlocked')
   }
   if (code === 'auth/requires-recent-login') {
-    return '此操作需重新驗證身分，請在彈出視窗中再次登入後重試。'
+    return i18n.t('common:authError_requiresRecentLogin')
   }
-  return err?.message ?? 'Google 登入失敗'
+  return err?.message ?? i18n.t('common:authError_loginFailed')
 }
 
 export function AuthProvider({ children }) {
@@ -84,7 +82,7 @@ export function AuthProvider({ children }) {
   // 僅在 Firebase 已就緒時訂閱 Auth 狀態，避免在 init 失敗或未設定時呼叫 getAuth() 導致掛起
   useEffect(() => {
     if (!isFirebaseReady || !auth) {
-      setAuthError(FIREBASE_NOT_READY_MSG)
+      setAuthError(i18n.t('common:authError_firebaseNotReady'))
       setLoading(false)
       return
     }
@@ -189,7 +187,7 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = useCallback(async () => {
     setAuthError(null)
     if (!isFirebaseReady || !auth || !googleProvider) {
-      setAuthError(FIREBASE_NOT_READY_MSG)
+      setAuthError(i18n.t('common:authError_firebaseNotReady'))
       if (import.meta.env.DEV) console.warn('[AuthContext] Firebase 未就緒，無法執行登入')
       return
     }
@@ -222,7 +220,7 @@ export function AuthProvider({ children }) {
       await firebaseSignOut(auth)
       setCurrentUser(null)
     } catch (err) {
-      setAuthError(err?.message ?? '登出失敗')
+      setAuthError(err?.message ?? i18n.t('common:signOutFailed'))
       if (import.meta.env.DEV) console.warn('[AuthContext] signOut 失敗:', err?.message)
     }
   }, [])
@@ -235,7 +233,7 @@ export function AuthProvider({ children }) {
   const deleteAccount = useCallback(async () => {
     const uid = currentUser?.uid
     if (!auth || !uid) {
-      setAuthError('無法取得當前用戶，請先登入')
+      setAuthError(i18n.t('common:noUserForDelete'))
       return
     }
     setAuthError(null)
@@ -274,7 +272,7 @@ export function AuthProvider({ children }) {
           throw reauthErr
         }
       } else {
-        const msg = err?.message ?? '刪除帳號失敗'
+        const msg = err?.message ?? i18n.t('common:deleteAccountFailed')
         setAuthError(msg)
         if (import.meta.env.DEV) {
           console.warn('[AuthContext] deleteAccount 失敗:', err?.message)

@@ -3,6 +3,7 @@
  * 提供 ageGroup、gender、voterTeam、city 的組合，並將選擇傳給父層以連動 useSentimentData。
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SlidersHorizontal, X } from 'lucide-react'
 import { AGE_GROUPS, GENDERS, TEAMS } from '../lib/constants'
@@ -14,7 +15,15 @@ const defaultFilters = {
   city: '',
 }
 
+function getOptionKey(type, value) {
+  if (type === 'ageGroup') return value === '45+' ? 'ageGroup_45_plus' : `ageGroup_${value.replace(/-/g, '_')}`
+  if (type === 'gender') return `gender_${value}`
+  if (type === 'team') return `team_${value}`
+  return value
+}
+
 export default function FilterFunnel({ open, onClose, filters: controlledFilters, onFiltersChange }) {
+  const { t } = useTranslation('common')
   const isControlled = controlledFilters != null && onFiltersChange != null
   const [localFilters, setLocalFilters] = useState(defaultFilters)
   const filters = isControlled ? controlledFilters : localFilters
@@ -48,27 +57,27 @@ export default function FilterFunnel({ open, onClose, filters: controlledFilters
               transition={{ type: 'tween', duration: 0.25 }}
               className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl"
               role="dialog"
-              aria-label="多維度篩選"
+              aria-label={t('filterDrawerAria')}
             >
               <div className="flex items-center justify-between border-b border-villain-purple/30 px-4 py-3">
                 <div className="flex items-center gap-2 text-king-gold">
                   <SlidersHorizontal className="w-5 h-5" aria-hidden />
-                  <h2 className="font-bold">篩選儀表</h2>
+                  <h2 className="font-bold">{t('filterPanelTitle')}</h2>
                 </div>
                 <button
                   type="button"
                   onClick={onClose}
                   className="p-2 text-gray-400 hover:text-white rounded-lg"
-                  aria-label="關閉"
+                  aria-label={t('close')}
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <div className="p-4 space-y-5 overflow-y-auto">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">年齡組別</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('ageGroupLabel')}</label>
                   <div className="flex flex-wrap gap-2">
-                    {AGE_GROUPS.map(({ value, label }) => (
+                    {AGE_GROUPS.map(({ value }) => (
                       <button
                         key={value}
                         type="button"
@@ -79,15 +88,15 @@ export default function FilterFunnel({ open, onClose, filters: controlledFilters
                             : 'bg-gray-800 text-gray-400 border border-gray-700'
                         }`}
                       >
-                        {label}
+                        {t(getOptionKey('ageGroup', value))}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">性別</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('genderLabel')}</label>
                   <div className="flex flex-wrap gap-2">
-                    {GENDERS.map(({ value, label }) => (
+                    {GENDERS.map(({ value }) => (
                       <button
                         key={value}
                         type="button"
@@ -98,34 +107,34 @@ export default function FilterFunnel({ open, onClose, filters: controlledFilters
                             : 'bg-gray-800 text-gray-400 border border-gray-700'
                         }`}
                       >
-                        {label}
+                        {t(getOptionKey('gender', value))}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">效忠球隊</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('teamLabel')}</label>
                   <select
                     value={filters.team ?? ''}
                     onChange={(e) => update('team', e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none"
-                    aria-label="選擇球隊"
+                    aria-label={t('selectTeam')}
                   >
-                    <option value="">全部</option>
-                    {TEAMS.map(({ value, label }) => (
-                      <option key={value} value={value}>{label}</option>
+                    <option value="">{t('all')}</option>
+                    {TEAMS.map(({ value }) => (
+                      <option key={value} value={value}>{t(getOptionKey('team', value))}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">城市</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('cityLabel')}</label>
                   <input
                     type="text"
                     value={filters.city ?? ''}
                     onChange={(e) => update('city', e.target.value)}
-                    placeholder="輸入城市名稱"
+                    placeholder={t('cityPlaceholder')}
                     className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder-gray-500 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none"
-                    aria-label="城市"
+                    aria-label={t('cityLabel')}
                   />
                 </div>
                 {hasAny && (
@@ -134,7 +143,7 @@ export default function FilterFunnel({ open, onClose, filters: controlledFilters
                     onClick={clearAll}
                     className="w-full py-2 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg"
                   >
-                    清除全部
+                    {t('clearAll')}
                   </button>
                 )}
               </div>

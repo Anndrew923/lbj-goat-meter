@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 
 /**
@@ -7,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
  * 未登入且非訪客時導向 / 登入頁，登入完成後可導回原目標（state.from）。
  */
 export default function ProtectedRoute({ children }) {
+  const { t } = useTranslation('common')
   const { currentUser, isGuest, loading } = useAuth()
   const location = useLocation()
 
@@ -14,7 +16,7 @@ export default function ProtectedRoute({ children }) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <p className="text-king-gold animate-pulse" role="status" aria-live="polite">
-          驗證中…
+          {t('verifying')}
         </p>
       </div>
     )

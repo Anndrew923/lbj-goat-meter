@@ -5,11 +5,20 @@
  * 寫入 Firestore profiles 集合，與 docs/SCHEMA.md 對齊。
  */
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { getLocation } from '../lib/geolocation'
 import { AGE_GROUPS, GENDERS, TEAMS, COUNTRIES } from '../lib/constants'
+
+function getOptionKey(type, value) {
+  if (type === 'ageGroup') return value === '45+' ? 'ageGroup_45_plus' : `ageGroup_${value.replace(/-/g, '_')}`
+  if (type === 'gender') return `gender_${value}`
+  if (type === 'team') return `team_${value}`
+  if (type === 'country') return `country_${value}`
+  return value
+}
 
 const STAR_ID = 'lbj'
 
@@ -22,6 +31,7 @@ const INITIAL_FORM = {
 }
 
 export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
+  const { t } = useTranslation('common')
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -85,7 +95,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
       onSaved?.()
       onClose?.()
     } catch (err) {
-      setSaveError(err?.message ?? '儲存失敗，請稍後再試')
+      setSaveError(err?.message ?? t('saveError'))
       console.error('[UserProfileSetup]', err)
     } finally {
       setSaving(false)
@@ -103,9 +113,9 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
 
   if (!open) return null
 
-  const countryOptions = [...COUNTRIES]
+  const countryOptions = COUNTRIES.map((c) => ({ value: c.value, label: t(getOptionKey('country', c.value)) }))
   if (form.country && !COUNTRIES.some((c) => c.value === form.country)) {
-    countryOptions.push({ value: form.country, label: `當前偵測: ${form.country}` })
+    countryOptions.push({ value: form.country, label: t('detectedCountry', { code: form.country }) })
   }
 
   return (
@@ -125,10 +135,10 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
       >
         <div className="p-6 border-b border-villain-purple/30">
           <h2 id="profile-setup-title" className="text-xl font-bold text-king-gold">
-            戰區登錄
+            {t('profileSetupTitle')}
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            {step === 1 ? '身分定義' : '派系效忠與所在地'}
+            {step === 1 ? t('step1Title') : t('step2Title')}
           </p>
         </div>
 
@@ -144,9 +154,9 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                 className="space-y-5"
               >
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">年齡組別</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('ageGroup')}</label>
                   <div className="flex flex-wrap gap-2">
-                    {AGE_GROUPS.map(({ value, label }) => (
+                    {AGE_GROUPS.map(({ value }) => (
                       <button
                         key={value}
                         type="button"
@@ -157,15 +167,15 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                             : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                         }`}
                       >
-                        {label}
+                        {t(getOptionKey('ageGroup', value))}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">性別</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('gender')}</label>
                   <div className="flex flex-wrap gap-2">
-                    {GENDERS.map(({ value, label }) => (
+                    {GENDERS.map(({ value }) => (
                       <button
                         key={value}
                         type="button"
@@ -176,7 +186,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                             : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                         }`}
                       >
-                        {label}
+                        {t(getOptionKey('gender', value))}
                       </button>
                     ))}
                   </div>
@@ -194,9 +204,9 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                 className="space-y-5"
               >
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">支持的球隊（城市＋代表色）</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('supportTeamLabel')}</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {TEAMS.map(({ value, label, colorHint }) => (
+                    {TEAMS.map(({ value, colorHint }) => (
                       <button
                         key={value}
                         type="button"
@@ -207,24 +217,24 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                             : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                         }`}
                       >
-                        <span className="font-medium">{label}</span>
-                        <span className="block text-xs opacity-80">{colorHint}</span>
+                        <span className="font-medium">{t(getOptionKey('team', value))}</span>
+                        <span className="block text-xs opacity-80" aria-hidden>{colorHint}</span>
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">國家</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('countryLabel')}</label>
                   {geoLoading ? (
-                    <p className="text-sm text-gray-500" role="status">正在取得所在地…</p>
+                    <p className="text-sm text-gray-500" role="status">{t('gettingLocation')}</p>
                   ) : (
                     <select
                       value={form.country}
                       onChange={(e) => update('country', e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none"
-                      aria-label="選擇國家"
+                      aria-label={t('countryLabel')}
                     >
-                      <option value="">請選擇</option>
+                      <option value="">{t('pleaseSelect')}</option>
                       {countryOptions.map(({ value, label }) => (
                         <option key={value} value={value}>{label}</option>
                       ))}
@@ -232,17 +242,17 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">城市（選填）</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('cityOptional')}</label>
                   <input
                     type="text"
                     value={form.city}
                     onChange={(e) => update('city', e.target.value)}
-                    placeholder="例：台北、New York"
+                    placeholder={t('cityPlaceholderExample')}
                     className="w-full px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none placeholder-gray-500"
-                    aria-label="城市"
+                    aria-label={t('cityLabel')}
                   />
                   {locationSource === 'geolocation' && (
-                    <p className="mt-1 text-xs text-king-gold" role="status">坐標已鎖定</p>
+                    <p className="mt-1 text-xs text-king-gold" role="status">{t('coordinatesLocked')}</p>
                   )}
                 </div>
               </motion.div>
@@ -259,7 +269,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
           {step === 1 ? (
             <>
               <button type="button" onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white">
-                稍後再說
+                {t('later')}
               </button>
               <button
                 type="button"
@@ -267,13 +277,13 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                 disabled={!canNextStep1}
                 className="px-4 py-2 rounded-lg bg-king-gold text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                下一步
+                {t('next')}
               </button>
             </>
           ) : (
             <>
               <button type="button" onClick={handleBack} className="px-4 py-2 text-gray-400 hover:text-white">
-                上一步
+                {t('back')}
               </button>
               <button
                 type="button"
@@ -281,7 +291,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                 disabled={!canSubmit || saving}
                 className="px-4 py-2 rounded-lg bg-king-gold text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {saving ? '儲存中…' : '完成登錄'}
+                {saving ? t('saving') : t('completeProfile')}
               </button>
             </>
           )}

@@ -7,12 +7,14 @@
  *    再透過 refreshEntitlements 同步至 Context，閘口開啟。
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { Lock, Loader2 } from 'lucide-react'
 import { simulatePurchase } from '../services/PaymentService'
 
 export default function AnalystGate({ children }) {
+  const { t } = useTranslation('common')
   const { currentUser, refreshEntitlements } = useAuth()
   const [purchasing, setPurchasing] = useState(false)
 
@@ -43,7 +45,7 @@ export default function AnalystGate({ children }) {
       <div
         className="absolute inset-0 flex flex-col items-center justify-center rounded-xl border border-villain-purple/50 bg-black/90 p-8 text-center"
         role="region"
-        aria-label="分析師通行證解鎖區"
+        aria-label={t('analystGateAria')}
       >
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -53,9 +55,9 @@ export default function AnalystGate({ children }) {
           <div className="inline-flex rounded-full bg-villain-purple/30 p-4 mb-4">
             <Lock className="w-10 h-10 text-villain-purple" aria-hidden />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">解鎖全球精細化分析報告</h3>
+          <h3 className="text-xl font-bold text-white mb-2">{t('unlockAnalystTitle')}</h3>
           <p className="text-sm text-gray-400 mb-6">
-            取得分析師通行證，查看依國家、球隊、年齡拆分的深度數據與趨勢。
+            {t('unlockAnalystDesc')}
           </p>
           <motion.button
             type="button"
@@ -68,13 +70,13 @@ export default function AnalystGate({ children }) {
             {purchasing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
-                支付處理中…
+                {t('paymentProcessing')}
               </>
             ) : (
-              '模擬購買'
+              t('simulatePurchase')
             )}
           </motion.button>
-          <p className="mt-3 text-xs text-gray-500">（沙盒：寫入 Firestore isPremium，正式版串接 RevenueCat）</p>
+          <p className="mt-3 text-xs text-gray-500">{t('sandboxNote')}</p>
         </motion.div>
       </div>
     </div>

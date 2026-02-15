@@ -4,14 +4,15 @@
  * 技術選用：react-simple-maps（SVG 輕量），地圖資料使用具 ISO_A2 的 GeoJSON。
  */
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { motion } from 'framer-motion'
 import { useSentimentData } from '../hooks/useSentimentData'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
 
-const PRO_STANCES = new Set(['goat', 'king', 'respect', 'machine'])
-const ANTI_STANCES = new Set(['villain', 'decider'])
+const PRO_STANCES = new Set(['goat', 'king', 'machine'])
+const ANTI_STANCES = new Set(['fraud', 'stat_padder', 'mercenary'])
 
 /** 依投票數據按國家彙總：pro 與 anti 票數，用於著色 */
 function aggregateByCountry(data) {
@@ -42,6 +43,7 @@ function getIso2FromGeo(geography) {
 }
 
 export default function PulseMap({ filters, onFiltersChange }) {
+  const { t } = useTranslation('common')
   const { data, loading, error } = useSentimentData({}, { pageSize: 800 })
   const [hovered, setHovered] = useState(null)
 
@@ -70,7 +72,7 @@ export default function PulseMap({ filters, onFiltersChange }) {
   if (loading) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 flex items-center justify-center min-h-[320px]">
-        <p className="text-king-gold animate-pulse" role="status">載入地圖…</p>
+        <p className="text-king-gold animate-pulse" role="status">{t('loadingMap')}</p>
       </div>
     )
   }
@@ -78,7 +80,7 @@ export default function PulseMap({ filters, onFiltersChange }) {
   if (error) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 min-h-[280px]">
-        <p className="text-red-400" role="alert">地圖資料載入失敗</p>
+        <p className="text-red-400" role="alert">{t('mapLoadError')}</p>
       </div>
     )
   }
@@ -92,8 +94,8 @@ export default function PulseMap({ filters, onFiltersChange }) {
       className="rounded-xl border border-villain-purple/30 bg-gray-900/80 overflow-hidden"
     >
       <div className="px-4 py-2 border-b border-villain-purple/20 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-king-gold">全球情緒地圖</h3>
-        <p className="text-xs text-gray-500">金＝粉方佔優 · 紫＝黑方佔優 · 點擊國家篩選</p>
+        <h3 className="text-lg font-bold text-king-gold">{t('globalSentimentMap')}</h3>
+        <p className="text-xs text-gray-500">{t('mapLegend')}</p>
       </div>
       <div className="p-2">
         <ComposableMap

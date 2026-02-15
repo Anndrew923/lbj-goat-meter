@@ -1,0 +1,37 @@
+{
+  "stances": {
+    "goat": { "primary": "GOAT", "secondary": "Greatest Of All Time" },
+    "fraud": { "primary": "FRAUD", "secondary": "Overrated pretender" },
+    "king": { "primary": "KING", "secondary": "Chosen one / Leader" },
+    "mercenary": { "primary": "MERCENARY", "secondary": "Ring-chasing mercenary" },
+    "machine": { "primary": "MACHINE", "secondary": "Iron longevity & records" },
+    "stat_padder": { "primary": "STAT PADDER", "secondary": "Numbers-focused stat-padder" }
+  },
+  "reasons": {
+    "goat": [
+      { "value": "411", "primary": "411 Project", "secondary": "411 Project" },
+      { "value": "longevity", "primary": "Longevity", "secondary": "Longevity" },
+      { "value": "iq", "primary": "Basketball IQ", "secondary": "Basketball IQ" }
+    ],
+    "fraud": [
+      { "value": "narrative", "primary": "Narrative", "secondary": "Narrative" },
+      { "value": "overrated", "primary": "Overrated", "secondary": "Overrated" }
+    ],
+    "king": [
+      { "value": "leadership", "primary": "Leadership", "secondary": "Leadership" },
+      { "value": "legacy", "primary": "Legacy", "secondary": "Legacy" }
+    ],
+    "mercenary": [
+      { "value": "superteam", "primary": "Superteam", "secondary": "Superteam" },
+      { "value": "business", "primary": "Business", "secondary": "Business" }
+    ],
+    "machine": [
+      { "value": "consistency", "primary": "Consistency", "secondary": "Consistency" },
+      { "value": "durability", "primary": "Durability", "secondary": "Durability" }
+    ],
+    "stat_padder": [
+      { "value": "numbers", "primary": "Numbers", "secondary": "Numbers" },
+      { "value": "empty_stats", "primary": "Empty stats", "secondary": "Empty stats" }
+    ]
+  }
+}

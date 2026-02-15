@@ -3,10 +3,12 @@
  * 當訪客點擊立場時彈出，引導登入後才能投票與領取戰報卡。
  */
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 
 export default function LoginPromptModal({ open, onClose }) {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -45,10 +47,10 @@ export default function LoginPromptModal({ open, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="login-prompt-title" className="text-lg font-bold text-king-gold mb-2">
-          需要登入
+          {t('needLogin')}
         </h2>
         <p id="login-prompt-desc" className="text-gray-300 text-sm mb-6">
-          Login required to cast your vote and claim your battle card.
+          {t('loginPromptDesc')}
         </p>
         <div className="flex gap-3">
           <button
@@ -56,14 +58,14 @@ export default function LoginPromptModal({ open, onClose }) {
             onClick={onClose}
             className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors"
           >
-            稍後再說
+            {t('later')}
           </button>
           <button
             type="button"
             onClick={handleGoLogin}
             className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors"
           >
-            前往登入
+            {t('goToLogin')}
           </button>
         </div>
       </motion.div>

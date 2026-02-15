@@ -2,10 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* GOAT Meter: LeBron — 暗黑競技風 (Dark Coliseum) 主題變數 */
+/* GOAT Meter: LeBron — 暗黑競技風 (Dark Coliseum) 主題變數；對抗版六立場 */
 :root {
   --color-king-gold: #D4AF37;
   --color-villain-purple: #4B0082;
+  --color-crown-red: #B42832;
+  --color-graphite: #3C3C41;
+  --color-machine-silver: #C0C0C8;
+  --color-rust-copper: #B87333;
 }
 
 body {

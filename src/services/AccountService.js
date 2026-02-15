@@ -20,6 +20,7 @@ import {
   deleteField,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
+import i18n from '../i18n/config'
 
 const STAR_ID = 'lbj'
 
@@ -36,7 +37,7 @@ const STAR_ID = 'lbj'
  * @returns {Promise<{ deletedVoteId: string | null }>}
  */
 export async function revokeVote(uid) {
-  if (!db || !uid) throw new Error('缺少 Firestore 或用戶 UID')
+  if (!db || !uid) throw new Error(i18n.t('common:error_missingDbOrUid'))
 
   const profileRef = doc(db, 'profiles', uid)
 
@@ -46,9 +47,9 @@ export async function revokeVote(uid) {
     await runTransaction(db, async (tx) => {
       // ========== 階段一：所有讀取（禁止在後續出現任何 get） ==========
       const profileSnap = await tx.get(profileRef)
-      if (!profileSnap.exists()) throw new Error('找不到戰區資料，無法重置投票')
+      if (!profileSnap.exists()) throw new Error(i18n.t('common:error_profileNotFoundRevote'))
       const profileData = profileSnap.data()
-      if (profileData.hasVoted !== true) throw new Error('您尚未投票，無需重置')
+      if (profileData.hasVoted !== true) throw new Error(i18n.t('common:error_hasNotVoted'))
 
       const raw = profileData.currentVoteId
       const voteDocId = typeof raw === 'string' && raw.length > 0 ? raw : null
@@ -102,7 +103,7 @@ export async function revokeVote(uid) {
  * @returns {Promise<{ deletedProfile: boolean, deletedVoteIds: string[] }>} deletedProfile 恆為 true（表示流程已執行），實際有無刪除以 DEV 清單為準
  */
 export async function deleteAccountData(uid) {
-  if (!db || !uid) throw new Error('缺少 Firestore 或用戶 UID')
+  if (!db || !uid) throw new Error(i18n.t('common:error_missingDbOrUid'))
 
   const profileRef = doc(db, 'profiles', uid)
   const votesRef = collection(db, 'votes')
