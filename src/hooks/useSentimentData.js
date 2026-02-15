@@ -63,6 +63,12 @@ export function useSentimentData(filters = {}, options = {}) {
   }, [filters])
 
   useEffect(() => {
+    if (!db) {
+      setData([])
+      setLoading(false)
+      setError(null)
+      return
+    }
     let cancelled = false
     setLoading(true)
     setError(null)

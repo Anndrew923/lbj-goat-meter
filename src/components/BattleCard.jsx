@@ -1,11 +1,12 @@
 /**
  * BattleCard — 戰力分享卡片（投票完成後彈出）
  * 顯示頭像、派系、GOAT 宣言、地區排名；支援 html-to-image 下載戰報。
+ * 重置按鈕：磨砂玻璃感，點擊後由父層執行 Transaction 撤銷投票，本卡以 exit 動畫「粒子化崩解」後卸載。
  */
 import { useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { toPng } from 'html-to-image'
-import { Download } from 'lucide-react'
+import { Download, RotateCcw } from 'lucide-react'
 import { TEAMS, STANCES } from '../lib/constants'
 
 function getTeamLabel(voterTeam) {
@@ -19,6 +20,10 @@ function getStanceLabel(status) {
 export default function BattleCard({
   open,
   onClose,
+  onRevote,
+  revoking = false,
+  revoteError,
+  onRevoteReload,
   photoURL,
   displayName,
   voterTeam,
@@ -27,6 +32,7 @@ export default function BattleCard({
   city = '',
   country = '',
   rankLabel = '專屬戰報',
+  exit = { opacity: 0, scale: 0.9 },
 }) {
   const cardRef = useRef(null)
 
@@ -53,18 +59,21 @@ export default function BattleCard({
   if (!open) return null
 
   return (
-    <div
+    <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
       role="dialog"
       aria-modal="true"
       aria-labelledby="battle-card-title"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={exit}
+      transition={{ duration: 0.25 }}
       onClick={() => onClose?.()}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="w-full max-w-sm"
+        className="w-full max-w-sm flex flex-col items-center"
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -98,7 +107,7 @@ export default function BattleCard({
           </div>
         </div>
 
-        <div className="flex gap-3 mt-4">
+        <div className="flex gap-3 mt-4 w-full">
           <button
             type="button"
             onClick={handleDownload}
@@ -115,7 +124,38 @@ export default function BattleCard({
             關閉
           </button>
         </div>
+
+        {/* 磨砂玻璃感重置按鈕：立場重塑，非生硬切換 */}
+        {onRevote && (
+          <motion.button
+            type="button"
+            onClick={onRevote}
+            disabled={revoking}
+            className="mt-4 w-full max-w-sm py-3 px-4 rounded-xl font-medium text-sm text-king-gold/95 bg-white/10 backdrop-blur-md border border-king-gold/30 hover:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            whileHover={!revoking ? { scale: 1.02 } : {}}
+            whileTap={!revoking ? { scale: 0.98 } : {}}
+          >
+            <RotateCcw className="w-4 h-4" aria-hidden />
+            {revoking ? '重置中…' : '重置立場'}
+          </motion.button>
+        )}
+        {revoteError && (
+          <div className="mt-2 flex flex-col gap-2">
+            <p className="text-sm text-red-400" role="alert">
+              {revoteError}
+            </p>
+            {onRevoteReload && (
+              <button
+                type="button"
+                onClick={onRevoteReload}
+                className="py-2 px-3 rounded-lg text-sm font-medium bg-king-gold/20 text-king-gold border border-king-gold/40 hover:bg-king-gold/30"
+              >
+                重新整理頁面
+              </button>
+            )}
+          </div>
+        )}
       </motion.div>
-    </div>
+    </motion.div>
   )
 }

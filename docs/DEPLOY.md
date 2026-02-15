@@ -1,10 +1,12 @@
 # GOAT Meter — 環境部署與 CI/CD 指引
 
-## 1. 本地環境變數（Firebase）
+## 1. 本地環境變數（Firebase）— 顯式配置，不依賴 init.json
 
-1. 複製 `.env.example` 為 `.env`。
+本專案以**環境變數**手動建構 Firebase 設定，不使用 Hosting 的 `/__/firebase/init.json`，利於多環境與自架部署。
+
+1. 複製 **`.env.local.example`** 為 **`.env.local`**（或使用 `.env`；Vite 會載入，`.env.local` 優先且不進版控）。
 2. 至 [Firebase Console](https://console.firebase.google.com) → 專案 → 專案設定 → 一般 → 您的應用程式，取得 Web 應用程式設定。
-3. 將下列變數填入 `.env`（勿提交 `.env` 至 Git）：
+3. 將下列變數填入 `.env.local`（**勿提交 `.env.local` 至 Git**，已列於 `.gitignore`）：
 
 ```env
 VITE_FIREBASE_API_KEY=你的 API Key
@@ -16,6 +18,20 @@ VITE_FIREBASE_APP_ID=你的 App ID
 ```
 
 4. 在 Firebase Console 啟用 **Authentication**（Google 登入）與 **Firestore**。
+5. 若出現 Firestore「client is offline」或戰區卡死：開發時 Console 會印出 `Firebase Project ID: xxx`，請核對與 Console 專案 ID **完全一致**（差一個字母都會導致離線）。
+
+---
+
+## 1.5 網域授權檢查（Authorized domains）
+
+Google 登入與 redirect 白名單依「授權網域」判斷，未列入的網域無法完成登入。
+
+- 至 Firebase Console → **Authentication** → **設定** → **已授權的網域**。
+- 確認已包含：
+  - **localhost**（本地開發；僅填 `localhost` 即可，不需填 port，`localhost:5173` 等會一併涵蓋。開發伺服器預設 port 為 5173）。
+  - 正式環境網域（例如 `your-app.netlify.app` 或自訂網域）。
+- 若使用自訂 `authDomain`，該網域也須在授權清單內。
+- 若本地登入仍失敗，請再次確認此清單中是否有 **localhost**。
 
 ---
 
@@ -32,22 +48,12 @@ firebase deploy --only firestore
 
 ---
 
-## 2.5 部署 Hosting（解決 Google 重新導向登入與 init.json 404）
+## 2.5 部署 Hosting（選用）
 
-使用「使用 Google 登入」時，登入流程會先導向 `你的專案.firebaseapp.com`。Firebase 只有在**已啟用 Hosting 並至少部署一次**後，才會在該網域提供 `/__/firebase/init.json` 等設定；否則會出現 **GET firebase/init.json 404**，導致無法完成登入。
+目前登入流程採用 **signInWithPopup**（彈窗），不會導向 `firebaseapp.com` 頁面，因此**本地開發不會再出現 `/__/firebase/init.json` 404**。若你之後改為 signInWithRedirect 或需在 `*.firebaseapp.com` 上提供靜態資源，可部署 Hosting：
 
-**做法：**
-
-1. 先建置前端：`npm run build`
-2. 部署 Hosting（與 Firestore 可分開執行）：
-
-```bash
-firebase deploy --only hosting
-```
-
-3. 之後在本地 `npm run dev` 點「使用 Google 登入」時，導向回來時會由 `lbj-goat-meter.firebaseapp.com` 正確處理，登入即可完成。
-
-若你之後改部署到 Netlify / 其他網域，仍建議曾對此專案執行過一次 `firebase deploy --only hosting`，以確保 auth 網域有正確設定。
+1. 建置：`npm run build`
+2. 部署：`firebase deploy --only hosting`
 
 ---
 
@@ -61,7 +67,8 @@ firebase deploy --only hosting
 
 ## 4. 首次檢查清單
 
-- [ ] 已執行至少一次 `firebase deploy --only hosting`（避免 Google 登入時出現 firebase/init.json 404）
-- [ ] Google 登入能正常喚起並完成導向
+- [ ] `.env.local`（或 `.env`）已填入 `VITE_FIREBASE_*`，且 Firebase Console 已啟用 Authentication（Google）
+- [ ] Authentication → 設定 → 已授權的網域 已包含 **localhost** 與正式環境網域
+- [ ] Google 登入彈窗能正常彈出並完成回傳（本地不應再出現 init.json 404）
 - [ ] 定位功能（GPS/IP）能識別當前城市
 - [ ] PulseMap 全球地圖正確渲染（無數據時為灰階）
