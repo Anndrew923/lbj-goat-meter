@@ -13,8 +13,10 @@ import {
   serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
+import { useAuth } from '../context/AuthContext'
 import { STANCES, REASONS_BY_STANCE } from '../lib/constants'
 import BattleCard from './BattleCard'
+import LoginPromptModal from './LoginPromptModal'
 
 const STAR_ID = 'lbj'
 
@@ -24,6 +26,7 @@ function getReasonLabels(stance, reasonValues) {
 }
 
 export default function VotingArena({ userId, currentUser }) {
+  const { isGuest } = useAuth()
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(true)
   const [selectedStance, setSelectedStance] = useState(null)
@@ -32,6 +35,7 @@ export default function VotingArena({ userId, currentUser }) {
   const [submitError, setSubmitError] = useState(null)
   const [voteSuccess, setVoteSuccess] = useState(false)
   const [showBattleCard, setShowBattleCard] = useState(false)
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
   const [goatFlash, setGoatFlash] = useState(false)
   const [villainShatter, setVillainShatter] = useState(false)
   const animationTimeouts = useRef([])
@@ -66,6 +70,11 @@ export default function VotingArena({ userId, currentUser }) {
   const canSubmit = profile && !hasVoted && selectedStance && selectedReasons.length > 0
 
   const handleStanceSelect = (value) => {
+    // 訪客點擊立場時攔截，顯示登入提示而非進入原因選擇或提交
+    if (isGuest) {
+      setShowLoginPrompt(true)
+      return
+    }
     animationTimeouts.current.forEach(clearTimeout)
     animationTimeouts.current = []
     if (value === 'goat') {
@@ -121,7 +130,8 @@ export default function VotingArena({ userId, currentUser }) {
     }
   }
 
-  if (profileLoading) {
+  // 僅在「有 userId 且尚在載入」時顯示載入；訪客無 userId 不閃爍載入中
+  if (profileLoading && userId) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
         <p className="text-king-gold animate-pulse" role="status">載入戰區…</p>
@@ -129,11 +139,44 @@ export default function VotingArena({ userId, currentUser }) {
     )
   }
 
-  if (!profile) {
+  if (!profile && !isGuest) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
         <p className="text-gray-400">請先完成戰區登錄再參與投票。</p>
       </div>
+    )
+  }
+
+  // 訪客：僅顯示立場按鈕，點擊時由 handleStanceSelect 觸發 LoginPromptModal
+  if (isGuest) {
+    return (
+      <>
+        <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+          <h3 className="text-lg font-bold text-king-gold mb-2">選擇你的立場</h3>
+          <p className="text-sm text-gray-500 mb-4">登入後即可投票並領取專屬戰報卡</p>
+          <div className="flex flex-wrap gap-2">
+            {STANCES.map(({ value, label, theme }) => (
+              <motion.button
+                key={value}
+                type="button"
+                onClick={() => handleStanceSelect(value)}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className={`px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors ${
+                  theme === 'king-gold'
+                    ? 'bg-gray-800 text-king-gold border border-king-gold/50 hover:bg-king-gold/20'
+                    : theme === 'villain-purple'
+                      ? 'bg-gray-800 text-villain-purple border border-villain-purple/50 hover:bg-villain-purple/20'
+                      : 'bg-gray-800 text-gray-300 border border-gray-600'
+                }`}
+              >
+                {label}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+        <LoginPromptModal open={showLoginPrompt} onClose={() => setShowLoginPrompt(false)} />
+      </>
     )
   }
 

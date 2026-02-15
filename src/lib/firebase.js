@@ -21,10 +21,14 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-// 開發環境：若未設定關鍵變數則提早拋錯，避免執行時難以除錯
-if (import.meta.env.DEV && !import.meta.env.VITE_FIREBASE_PROJECT_ID) {
+// 開發環境：若未設定關鍵變數則提早警告，避免執行時出現 auth/configuration-not-found
+const required = ['VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_AUTH_DOMAIN']
+const missing = required.filter((key) => !import.meta.env[key]?.trim())
+if (import.meta.env.DEV && missing.length) {
   console.warn(
-    '[Firebase] 未偵測到 VITE_FIREBASE_* 環境變數，請複製 .env.example 為 .env 並填入 Firebase 專案設定。'
+    '[Firebase] 缺少環境變數:',
+    missing.join(', '),
+    '— 請複製 .env.example 為 .env 並填入 Firebase 專案設定；若已填入仍出現 configuration-not-found，請到主控台啟用 Authentication。'
   )
 }
 

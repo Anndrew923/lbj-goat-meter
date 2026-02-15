@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { doc, getDoc } from 'firebase/firestore'
 import { useAuth } from '../context/AuthContext'
 import { db } from '../lib/firebase'
@@ -14,7 +15,8 @@ import { motion } from 'framer-motion'
 import { SlidersHorizontal } from 'lucide-react'
 
 export default function VotePage() {
-  const { currentUser, signOut } = useAuth()
+  const { currentUser, isGuest, signOut } = useAuth()
+  const navigate = useNavigate()
   const [showProfileSetup, setShowProfileSetup] = useState(false)
   const [profileChecked, setProfileChecked] = useState(false)
   const [filters, setFilters] = useState({})
@@ -42,14 +44,26 @@ export default function VotePage() {
       >
         <h1 className="text-2xl font-bold text-king-gold">投票戰場</h1>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-400">{currentUser?.displayName ?? currentUser?.email}</span>
-          <button
-            type="button"
-            onClick={signOut}
-            className="text-sm text-villain-purple hover:underline"
-          >
-            登出
-          </button>
+          <span className="text-sm text-gray-400">
+            {isGuest ? '訪客' : (currentUser?.displayName ?? currentUser?.email)}
+          </span>
+          {isGuest ? (
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-sm text-king-gold hover:underline"
+            >
+              登入
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={signOut}
+              className="text-sm text-villain-purple hover:underline"
+            >
+              登出
+            </button>
+          )}
         </div>
       </motion.header>
       <LiveTicker />

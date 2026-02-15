@@ -11,7 +11,12 @@
  *          可考慮將 isPremium 拆成獨立 EntitlementContext 或 useEntitlement() 以縮小影響範圍。
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithRedirect,
+  signOut as firebaseSignOut,
+} from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, googleProvider, db } from '../lib/firebase'
 
@@ -22,16 +27,48 @@ async function fetchIsPremium(uid) {
   return snap.exists() && snap.data()?.isPremium === true
 }
 
+/** 將 Firebase Auth 錯誤碼轉成使用者可讀訊息，利於除錯與 UX */
+function getAuthErrorMessage(err) {
+  const code = err?.code ?? ''
+  if (code === 'auth/configuration-not-found' || err?.message?.includes('CONFIGURATION_NOT_FOUND')) {
+    return 'Firebase 認證尚未設定完成，請到 Firebase 主控台啟用 Authentication（Google 登入）並確認 .env 與專案一致。'
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return '登入視窗已關閉。請再試一次；若仍失敗，請改用「重新導向登入」或檢查瀏覽器是否封鎖彈出視窗。'
+  }
+  if (code === 'auth/popup-blocked') {
+    return '登入視窗被瀏覽器封鎖，請允許彈出視窗或使用重新導向登入。'
+  }
+  return err?.message ?? 'Google 登入失敗'
+}
+
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
+  /** 訪客狀態：true 表示以「不留名參觀」進入，可瀏覽 /vote 但不可投票 */
+  const [isGuest, setIsGuest] = useState(false)
 
   const refreshEntitlements = useCallback(async () => {
     if (!currentUser?.uid) return
     const isPremium = await fetchIsPremium(currentUser.uid)
     setCurrentUser((prev) => (prev ? { ...prev, isPremium } : null))
   }, [currentUser?.uid])
+
+  // 從 Google 重新導向回來時處理登入結果（避免 COOP 阻擋彈窗導致的錯誤）
+  useEffect(() => {
+    let cancelled = false
+    getRedirectResult(auth)
+      .then((result) => {
+        if (cancelled) return
+        if (result?.user) setAuthError(null)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setAuthError(getAuthErrorMessage(err))
+      })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -44,6 +81,7 @@ export function AuthProvider({ children }) {
           photoURL: user.photoURL,
           isPremium,
         })
+        setIsGuest(false) // Google 登入成功後清除訪客狀態
       } else {
         setCurrentUser(null)
       }
@@ -53,18 +91,27 @@ export function AuthProvider({ children }) {
     return () => unsubscribe()
   }, [])
 
+  // 使用重新導向登入，避免彈窗被 COOP / 廣告攔截器阻擋導致 auth/popup-closed-by-user
   const loginWithGoogle = useCallback(async () => {
     setAuthError(null)
     try {
-      await signInWithPopup(auth, googleProvider)
+      await signInWithRedirect(auth, googleProvider)
+      // 頁面會導向 Google，不會執行到這裡；回來後由 getRedirectResult 處理
     } catch (err) {
-      setAuthError(err?.message ?? 'Google 登入失敗')
+      setAuthError(getAuthErrorMessage(err))
       throw err
     }
   }, [])
 
+  /** 以訪客身份進入：僅設 isGuest 為 true，導向由呼叫端（如 LoginPage）負責 */
+  const continueAsGuest = useCallback(() => {
+    setAuthError(null)
+    setIsGuest(true)
+  }, [])
+
   const signOut = useCallback(async () => {
     setAuthError(null)
+    setIsGuest(false)
     try {
       await firebaseSignOut(auth)
       setCurrentUser(null)
@@ -80,12 +127,24 @@ export function AuthProvider({ children }) {
       currentUser,
       loading,
       authError,
+      isGuest,
       loginWithGoogle,
+      continueAsGuest,
       signOut,
       clearAuthError,
       refreshEntitlements,
     }),
-    [currentUser, loading, authError, loginWithGoogle, signOut, clearAuthError, refreshEntitlements]
+    [
+      currentUser,
+      loading,
+      authError,
+      isGuest,
+      loginWithGoogle,
+      continueAsGuest,
+      signOut,
+      clearAuthError,
+      refreshEntitlements,
+    ]
   )
 
   return (

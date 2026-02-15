@@ -32,6 +32,25 @@ firebase deploy --only firestore
 
 ---
 
+## 2.5 部署 Hosting（解決 Google 重新導向登入與 init.json 404）
+
+使用「使用 Google 登入」時，登入流程會先導向 `你的專案.firebaseapp.com`。Firebase 只有在**已啟用 Hosting 並至少部署一次**後，才會在該網域提供 `/__/firebase/init.json` 等設定；否則會出現 **GET firebase/init.json 404**，導致無法完成登入。
+
+**做法：**
+
+1. 先建置前端：`npm run build`
+2. 部署 Hosting（與 Firestore 可分開執行）：
+
+```bash
+firebase deploy --only hosting
+```
+
+3. 之後在本地 `npm run dev` 點「使用 Google 登入」時，導向回來時會由 `lbj-goat-meter.firebaseapp.com` 正確處理，登入即可完成。
+
+若你之後改部署到 Netlify / 其他網域，仍建議曾對此專案執行過一次 `firebase deploy --only hosting`，以確保 auth 網域有正確設定。
+
+---
+
 ## 3. Netlify 部署
 
 1. 在 [Netlify](https://app.netlify.com) 選擇 **Add new site → Import an existing project**，連接 GitHub 倉庫 `lbj-goat-meter`。
@@ -42,6 +61,7 @@ firebase deploy --only firestore
 
 ## 4. 首次檢查清單
 
-- [ ] Google 登入能正常喚起
+- [ ] 已執行至少一次 `firebase deploy --only hosting`（避免 Google 登入時出現 firebase/init.json 404）
+- [ ] Google 登入能正常喚起並完成導向
 - [ ] 定位功能（GPS/IP）能識別當前城市
 - [ ] PulseMap 全球地圖正確渲染（無數據時為灰階）
