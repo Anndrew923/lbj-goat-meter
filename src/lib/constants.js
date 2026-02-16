@@ -86,23 +86,23 @@ export const COUNTRIES = [
   { value: 'OTHER', label: '其他' },
 ]
 
-/** 投票戰場：六大立場對抗版（對應 votes.status）；視覺意圖：金／紫／皇冠紅／石墨灰／科技銀／鐵鏽銅 */
+/** 投票戰場：六大立場對抗版（對應 votes.status）；視覺意圖：金／紫／皇冠紅／戰術螢光綠／科技銀／鐵鏽銅 */
 export const STANCES = [
   { value: 'goat', theme: 'king-gold' },
   { value: 'fraud', theme: 'villain-purple' },
   { value: 'king', theme: 'crown-red' },
-  { value: 'mercenary', theme: 'graphite' },
+  { value: 'mercenary', theme: 'tactical-emerald' },
   { value: 'machine', theme: 'machine-silver' },
   { value: 'stat_padder', theme: 'rust-copper' },
 ]
 
-/** 立場 → 主題色（hex），供 StanceCards / 雷達圖藥丸與描邊聯動 */
+/** 立場 → 主題色（hex），供 StanceCards / BattleCard 霓虹與描邊聯動 */
 export const STANCE_COLORS = {
   goat: '#D4AF37',
   fraud: '#4B0082',
   king: '#B42832',
-  mercenary: '#3C3C41',
-  machine: '#C0C0C8',
+  mercenary: '#00E676', // Tactical Emerald — 利益與美金的象徵
+  machine: '#E0E0E0', // Cyber Silver — 機械化高冷質感
   stat_padder: '#B87333',
 }
 

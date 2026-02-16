@@ -1,6 +1,7 @@
 /**
  * StanceCards — 六大立場卡片網格
  * Grid 排版、等高卡片、海報感排版、STANCE_COLORS 動態主標與水印。
+ * 選中態以 inline backgroundColor 確保立場色（如 tactical-emerald）穩定顯示，不受 Tailwind 動態 class 影響。
  */
 import { motion } from "framer-motion";
 import { getStancesForArena } from "../i18n/i18n";
@@ -19,10 +20,12 @@ function getStanceCardClass(theme, isSelected) {
       return "bg-gray-800 text-villain-purple border border-villain-purple/50 hover:bg-villain-purple/20";
     if (theme === "crown-red")
       return "bg-gray-800 text-red-400 border border-red-500/50 hover:bg-red-500/20";
+    if (theme === "tactical-emerald")
+      return "bg-gray-800 text-tactical-emerald border border-tactical-emerald/60 hover:bg-tactical-emerald/20";
     if (theme === "graphite")
       return "bg-gray-800 text-gray-400 border border-gray-500 hover:bg-gray-600/30";
     if (theme === "machine-silver")
-      return "bg-gray-800 text-gray-300 border border-gray-400/50 hover:bg-gray-400/20";
+      return "bg-gray-800 text-machine-silver border border-machine-silver/50 hover:bg-machine-silver/20";
     if (theme === "rust-copper")
       return "bg-gray-800 text-amber-700 border border-amber-600/50 hover:bg-amber-600/20";
     return "bg-gray-800 text-gray-300 border border-gray-600";
@@ -33,10 +36,12 @@ function getStanceCardClass(theme, isSelected) {
     return "bg-villain-purple text-white shadow-lg shadow-villain-purple/40";
   if (theme === "crown-red")
     return "bg-red-600 text-white shadow-lg shadow-red-500/40";
+  if (theme === "tactical-emerald")
+    return "bg-tactical-emerald text-black shadow-lg shadow-tactical-emerald/50 border border-tactical-emerald";
   if (theme === "graphite")
     return "bg-gray-600 text-white shadow-lg shadow-gray-500/40";
   if (theme === "machine-silver")
-    return "bg-gray-400 text-black shadow-lg shadow-gray-400/40";
+    return "bg-machine-silver text-black shadow-lg shadow-machine-silver/40";
   if (theme === "rust-copper")
     return "bg-amber-600 text-black shadow-lg shadow-amber-500/40";
   return "bg-gray-500 text-white";
@@ -62,6 +67,7 @@ export default function StanceCards({
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
       {rows.map(({ value, theme, primary, secondary }) => {
         const color = getStanceColor(value);
+        const isSelected = selectedStance === value;
         const watermarkLetter = (primary && primary[0]) || value[0];
         return (
           <motion.button
@@ -69,14 +75,15 @@ export default function StanceCards({
             type="button"
             onClick={() => !disabled && onSelect?.(value)}
             disabled={disabled}
-            aria-pressed={selectedStance === value}
+            aria-pressed={isSelected}
             aria-label={`${primary}: ${secondary}`}
             whileHover={disabled ? undefined : { scale: 1.02 }}
             whileTap={disabled ? undefined : { scale: 0.98 }}
             className={`relative min-h-[110px] rounded-lg text-left px-4 py-2.5 transition-colors flex flex-col items-start justify-end overflow-hidden disabled:cursor-not-allowed ${getStanceCardClass(
               theme,
-              selectedStance === value
+              isSelected
             )}`}
+            style={isSelected ? { backgroundColor: color } : undefined}
           >
             {/* 背景水印：巨大字母 */}
             <span
@@ -110,11 +117,14 @@ export default function StanceCards({
             )}
             <span
               className="relative z-0 text-2xl sm:text-3xl lg:text-4xl font-black uppercase tracking-tighter leading-tight"
-              style={{ color: selectedStance === value ? undefined : color }}
+              style={{ color: isSelected ? undefined : color }}
             >
               {primary}
             </span>
-            <span className="relative z-0 text-[9px] sm:text-[10px] font-normal opacity-90 mt-0.5 line-clamp-2">
+            <span
+              className="relative z-0 text-[9px] sm:text-[10px] font-normal opacity-90 mt-0.5 line-clamp-2"
+              style={{ color: isSelected ? undefined : color }}
+            >
               {secondary}
             </span>
           </motion.button>

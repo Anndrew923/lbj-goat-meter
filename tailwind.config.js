@@ -4,6 +4,14 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    "bg-tactical-emerald",
+    "text-tactical-emerald",
+    "border-tactical-emerald",
+    "shadow-tactical-emerald/50",
+    "border-tactical-emerald/60",
+    "hover:bg-tactical-emerald/20",
+  ],
   theme: {
     extend: {
       colors: {
@@ -12,7 +20,8 @@ export default {
         'villain-purple': 'rgb(75 0 130 / <alpha-value>)',
         'crown-red': 'rgb(180 40 50 / <alpha-value>)',
         'graphite': 'rgb(60 60 65 / <alpha-value>)',
-        'machine-silver': 'rgb(192 192 200 / <alpha-value>)',
+        'tactical-emerald': 'rgb(0 230 118 / <alpha-value>)',
+        'machine-silver': 'rgb(224 224 224 / <alpha-value>)',
         'rust-copper': 'rgb(184 115 51 / <alpha-value>)',
       },
     },
