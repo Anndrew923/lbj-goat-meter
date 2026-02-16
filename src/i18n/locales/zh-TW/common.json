@@ -144,6 +144,7 @@
   "deleteAccountFailed": "刪除帳號失敗",
   "authError_firebaseNotReady": "Firebase 尚未設定或初始化失敗，請檢查 .env 設定。",
   "authError_configNotFound": "Firebase 認證尚未設定完成，請到 Firebase 主控台啟用 Authentication（Google 登入）並確認 .env 與專案一致。",
+  "authError_unauthorizedDomain": "目前網域未授權，請到 Firebase Console > Authentication > 設定 > 授權網域，加入此網址（如 localhost）。",
   "authError_popupClosed": "登入視窗已關閉。請再試一次；若仍失敗，請改用「重新導向登入」或檢查瀏覽器是否封鎖彈出視窗。",
   "authError_popupBlocked": "登入視窗被瀏覽器封鎖，請允許彈出視窗或使用重新導向登入。",
   "authError_requiresRecentLogin": "此操作需重新驗證身分，請在彈出視窗中再次登入後重試。",

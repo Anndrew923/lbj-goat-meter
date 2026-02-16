@@ -58,6 +58,9 @@ function getAuthErrorMessage(err) {
   ) {
     return i18n.t("common:authError_configNotFound");
   }
+  if (code === "auth/unauthorized-domain") {
+    return i18n.t("common:authError_unauthorizedDomain");
+  }
   if (code === "auth/popup-closed-by-user") {
     return i18n.t("common:authError_popupClosed");
   }
@@ -68,6 +71,23 @@ function getAuthErrorMessage(err) {
     return i18n.t("common:authError_requiresRecentLogin");
   }
   return err?.message ?? i18n.t("common:authError_loginFailed");
+}
+
+/** 開發環境：依錯誤碼在 Console 輸出診斷提示，方便對齊 .env 與 Firebase Console */
+function logAuthErrorDiagnostic(err, context = "登入") {
+  if (!import.meta.env.DEV || !err) return;
+  const code = err?.code ?? "";
+  const hint =
+    code === "auth/configuration-not-found"
+      ? "→ 檢查 Firebase Console 已啟用 Google 登入，且 .env 的 API_KEY / AUTH_DOMAIN / PROJECT_ID 與專案設定一致；修改 .env 後需重啟 npm run dev"
+      : code === "auth/unauthorized-domain"
+        ? "→ 到 Firebase Console > Authentication > Settings > Authorized domains，加入目前網域（如 localhost 或 127.0.0.1）"
+        : code === "auth/popup-blocked"
+          ? "→ 允許瀏覽器彈出視窗，或改用 signInWithRedirect"
+          : null;
+  if (hint) {
+    console.warn(`[AuthContext] ${context} 失敗 (${code})，診斷:`, hint);
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -219,11 +239,10 @@ export function AuthProvider({ children }) {
     } catch (err) {
       const message = getAuthErrorMessage(err);
       setAuthError(message);
-      if (import.meta.env.DEV)
-        console.warn(
-          "[AuthContext] signInWithPopup 失敗:",
-          err?.code ?? err?.message,
-        );
+      if (import.meta.env.DEV) {
+        console.warn("[AuthContext] signInWithPopup 失敗:", err?.code ?? err?.message);
+        logAuthErrorDiagnostic(err, "Google 登入");
+      }
       throw err;
     }
   }, []);

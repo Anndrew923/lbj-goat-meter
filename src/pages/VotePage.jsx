@@ -13,7 +13,12 @@ import LiveTicker from "../components/LiveTicker";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, Settings, AlertTriangle, LogOut } from "lucide-react";
+import {
+  SlidersHorizontal,
+  Settings,
+  AlertTriangle,
+  LogOut,
+} from "lucide-react";
 
 export default function VotePage() {
   const { t, i18n } = useTranslation("common");
@@ -42,7 +47,8 @@ export default function VotePage() {
   const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
   const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
-  const { isAnalystAuthorized, onRequestRewardAd, analystAdPortal } = useAnalystAuth();
+  const { isAnalystAuthorized, onRequestRewardAd, analystAdPortal } =
+    useAnalystAuth();
 
   // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
   useEffect(() => {
@@ -91,7 +97,11 @@ export default function VotePage() {
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className={isEn ? "p-2 text-gray-400 hover:text-king-gold rounded-lg" : "flex items-center gap-1.5 text-sm text-gray-400 hover:text-king-gold"}
+                className={
+                  isEn
+                    ? "p-2 text-gray-400 hover:text-king-gold rounded-lg"
+                    : "flex items-center gap-1.5 text-sm text-gray-400 hover:text-king-gold"
+                }
                 aria-label={t("openSettings")}
               >
                 <Settings className="w-4 h-4" />
@@ -100,14 +110,14 @@ export default function VotePage() {
               <button
                 type="button"
                 onClick={signOut}
-                className={isEn ? "p-2 text-villain-purple hover:text-villain-purple/80 rounded-lg" : "text-sm text-villain-purple hover:underline"}
+                className={
+                  isEn
+                    ? "p-2 text-villain-purple hover:text-villain-purple/80 rounded-lg"
+                    : "text-sm text-villain-purple hover:underline"
+                }
                 aria-label={t("signOut")}
               >
-                {isEn ? (
-                  <LogOut className="w-4 h-4" />
-                ) : (
-                  t("signOut")
-                )}
+                {isEn ? <LogOut className="w-4 h-4" /> : t("signOut")}
               </button>
             </>
           )}
@@ -159,7 +169,10 @@ export default function VotePage() {
             />
             <AnalystGate>
               <div className="mb-6">
-                <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
+                <PulseMap
+                  filters={stableFilters}
+                  onFiltersChange={setFilters}
+                />
               </div>
               <SentimentStats filters={stableFilters} />
               <div className="mt-6">

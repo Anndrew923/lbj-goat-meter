@@ -8,6 +8,11 @@
  *   或 CI 注入），且敏感資訊僅存於 .env.local 或伺服器環境，不進版控。
  * - 單例：全域單一 App/Auth/Firestore，避免重複 initializeApp 與連線膨脹。
  *
+ * 登入故障排查（Director's Note）：
+ * - 環境變數：.env 的 VITE_FIREBASE_API_KEY / AUTH_DOMAIN / PROJECT_ID 需與 Firebase 專案設定完全一致；修改後須重啟 npm run dev。
+ * - Sign-in method：Firebase Console > Authentication > Sign-in method，確認 Google 為「已啟用」。
+ * - Authorized domains：Authentication > Settings > Authorized domains，加入本地網址（如 localhost）。
+ *
  * 潛在影響：多專案（Multi-tenancy）時需改為 getApp(name) 或工廠模式；缺必要變數時不初始化，
  *           由呼叫端依 isFirebaseReady 決定是否使用 Auth/Firestore。
  */
@@ -67,6 +72,24 @@ if (config) {
 
 /** 是否已成功初始化；未設定或初始化失敗時為 false，呼叫端應避免使用 auth/db */
 export const isFirebaseReady = Boolean(auth && db)
+
+// 開發環境：診斷用 — 確認 .env 與 Firebase Console 對齊（不輸出 API Key 完整值）
+if (import.meta.env.DEV) {
+  const check = config
+    ? {
+        projectId: config.projectId,
+        authDomain: config.authDomain,
+        hasApiKey: Boolean(config.apiKey?.trim()),
+        isFirebaseReady: Boolean(auth && db),
+      }
+    : { config: null, isFirebaseReady: false }
+  console.log('[Firebase] Config Check:', check)
+  if (!config) {
+    console.warn(
+      '[Firebase] 登入故障排查：1) .env 中 VITE_FIREBASE_API_KEY / AUTH_DOMAIN / PROJECT_ID 需與 Firebase 專案設定一致；2) 修改 .env 後須重啟 npm run dev；3) Console > Authentication > Sign-in method 啟用 Google；4) Authentication > Settings > Authorized domains 加入 localhost'
+    )
+  }
+}
 
 export { auth, db, googleProvider }
 export default app

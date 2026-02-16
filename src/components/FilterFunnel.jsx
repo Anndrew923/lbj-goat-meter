@@ -3,27 +3,30 @@
  * 提供 ageGroup、gender、voterTeam、city 的組合，並將選擇傳給父層以連動 useSentimentData。
  * 頂端授權狀態燈：未授權時灰燈 + 鎖定；已授權時戰術美金綠 (#00E676)。
  */
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { motion, AnimatePresence } from 'framer-motion'
-import { SlidersHorizontal, X } from 'lucide-react'
-import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from '../lib/constants'
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { motion, AnimatePresence } from "framer-motion";
+import { SlidersHorizontal, X } from "lucide-react";
+import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from "../lib/constants";
 
 /** 已授權狀態燈色（戰術美金綠） */
-const RECON_AUTHORIZED_COLOR = '#00E676'
+const RECON_AUTHORIZED_COLOR = "#00E676";
 
 const defaultFilters = {
-  ageGroup: '',
-  gender: '',
-  team: '',
-  city: '',
-}
+  ageGroup: "",
+  gender: "",
+  team: "",
+  city: "",
+};
 
 function getOptionKey(type, value) {
-  if (type === 'ageGroup') return value === '45+' ? 'ageGroup_45_plus' : `ageGroup_${value.replace(/-/g, '_')}`
-  if (type === 'gender') return `gender_${value}`
-  if (type === 'team') return getTeamCityKey(value)
-  return value
+  if (type === "ageGroup")
+    return value === "45+"
+      ? "ageGroup_45_plus"
+      : `ageGroup_${value.replace(/-/g, "_")}`;
+  if (type === "gender") return `gender_${value}`;
+  if (type === "team") return getTeamCityKey(value);
+  return value;
 }
 
 export default function FilterFunnel({
@@ -34,24 +37,26 @@ export default function FilterFunnel({
   /** 未傳或 true 時可操作；false 時鎖定篩選，防繞過廣告 */
   authorized = true,
 }) {
-  const { t } = useTranslation('common')
-  const isControlled = controlledFilters != null && onFiltersChange != null
-  const [localFilters, setLocalFilters] = useState(defaultFilters)
-  const filters = isControlled ? controlledFilters : localFilters
-  const setFilters = isControlled ? onFiltersChange : setLocalFilters
-  const locked = authorized === false
+  const { t } = useTranslation("common");
+  const isControlled = controlledFilters != null && onFiltersChange != null;
+  const [localFilters, setLocalFilters] = useState(defaultFilters);
+  const filters = isControlled ? controlledFilters : localFilters;
+  const setFilters = isControlled ? onFiltersChange : setLocalFilters;
+  const locked = authorized === false;
 
   const update = (key, value) => {
-    if (locked) return
-    setFilters((prev) => ({ ...prev, [key]: value }))
-  }
+    if (locked) return;
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
 
   const clearAll = () => {
-    if (locked) return
-    setFilters({ ...defaultFilters })
-  }
+    if (locked) return;
+    setFilters({ ...defaultFilters });
+  };
 
-  const hasAny = Object.values(filters).some((v) => v != null && String(v).trim() !== '')
+  const hasAny = Object.values(filters).some(
+    (v) => v != null && String(v).trim() !== "",
+  );
 
   return (
     <>
@@ -67,25 +72,25 @@ export default function FilterFunnel({
               aria-hidden="true"
             />
             <motion.aside
-              initial={{ x: '100%' }}
+              initial={{ x: "100%" }}
               animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'tween', duration: 0.25 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "tween", duration: 0.25 }}
               className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl"
               role="dialog"
-              aria-label={t('filterDrawerAria')}
+              aria-label={t("filterDrawerAria")}
               aria-disabled={locked || undefined}
             >
               <div className="flex items-center justify-between border-b border-villain-purple/30 px-4 py-3">
                 <div className="flex items-center gap-2 text-king-gold">
                   <SlidersHorizontal className="w-5 h-5" aria-hidden />
-                  <h2 className="font-bold">{t('filterPanelTitle')}</h2>
+                  <h2 className="font-bold">{t("filterPanelTitle")}</h2>
                 </div>
                 <button
                   type="button"
                   onClick={onClose}
                   className="p-2 text-gray-400 hover:text-white rounded-lg"
-                  aria-label={t('close')}
+                  aria-label={t("close")}
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -95,90 +100,123 @@ export default function FilterFunnel({
                 className="flex items-center gap-2 px-4 pt-3 pb-1 border-b border-white/5"
                 role="status"
                 aria-live="polite"
-                aria-label={authorized ? t('reconPermissionAuthorized') : t('reconPermissionRestricted')}
+                aria-label={
+                  authorized
+                    ? t("reconPermissionAuthorized")
+                    : t("reconPermissionRestricted")
+                }
               >
                 <div
-                  className={`w-2 h-2 rounded-full shrink-0 ${authorized ? 'animate-pulse' : 'bg-gray-600'}`}
+                  className={`w-2 h-2 rounded-full shrink-0 ${authorized ? "animate-pulse" : "bg-gray-600"}`}
                   style={
                     authorized
-                      ? { backgroundColor: RECON_AUTHORIZED_COLOR, boxShadow: `0 0 8px ${RECON_AUTHORIZED_COLOR}` }
+                      ? {
+                          backgroundColor: RECON_AUTHORIZED_COLOR,
+                          boxShadow: `0 0 8px ${RECON_AUTHORIZED_COLOR}`,
+                        }
                       : undefined
                   }
                   aria-hidden
                 />
                 <span
-                  className={`text-[10px] font-mono tracking-widest uppercase ${authorized ? '' : 'text-gray-500'}`}
-                  style={authorized ? { color: RECON_AUTHORIZED_COLOR } : undefined}
+                  className={`text-[10px] font-mono tracking-widest uppercase ${authorized ? "" : "text-gray-500"}`}
+                  style={
+                    authorized ? { color: RECON_AUTHORIZED_COLOR } : undefined
+                  }
                 >
-                  {authorized ? t('reconPermissionAuthorized') : t('reconPermissionRestricted')}
+                  {authorized
+                    ? t("reconPermissionAuthorized")
+                    : t("reconPermissionRestricted")}
                 </span>
               </div>
-              <div className={`p-4 space-y-5 overflow-y-auto ${locked ? 'pointer-events-none opacity-50' : ''}`}>
+              <div
+                className={`p-4 space-y-5 overflow-y-auto ${locked ? "pointer-events-none opacity-50" : ""}`}
+              >
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('ageGroupLabel')}</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {t("ageGroupLabel")}
+                  </label>
                   <div className="flex flex-wrap gap-2">
                     {AGE_GROUPS.map(({ value }) => (
                       <button
                         key={value}
                         type="button"
                         disabled={locked}
-                        onClick={() => update('ageGroup', filters.ageGroup === value ? '' : value)}
+                        onClick={() =>
+                          update(
+                            "ageGroup",
+                            filters.ageGroup === value ? "" : value,
+                          )
+                        }
                         className={`px-3 py-1.5 rounded-md text-sm ${
                           filters.ageGroup === value
-                            ? 'bg-king-gold/20 text-king-gold border border-king-gold/50'
-                            : 'bg-gray-800 text-gray-400 border border-gray-700'
+                            ? "bg-king-gold/20 text-king-gold border border-king-gold/50"
+                            : "bg-gray-800 text-gray-400 border border-gray-700"
                         }`}
                       >
-                        {t(getOptionKey('ageGroup', value))}
+                        {t(getOptionKey("ageGroup", value))}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('genderLabel')}</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {t("genderLabel")}
+                  </label>
                   <div className="flex flex-wrap gap-2">
                     {GENDERS.map(({ value }) => (
                       <button
                         key={value}
                         type="button"
                         disabled={locked}
-                        onClick={() => update('gender', filters.gender === value ? '' : value)}
+                        onClick={() =>
+                          update(
+                            "gender",
+                            filters.gender === value ? "" : value,
+                          )
+                        }
                         className={`px-3 py-1.5 rounded-md text-sm ${
                           filters.gender === value
-                            ? 'bg-villain-purple/20 text-villain-purple border border-villain-purple/50'
-                            : 'bg-gray-800 text-gray-400 border border-gray-700'
+                            ? "bg-villain-purple/20 text-villain-purple border border-villain-purple/50"
+                            : "bg-gray-800 text-gray-400 border border-gray-700"
                         }`}
                       >
-                        {t(getOptionKey('gender', value))}
+                        {t(getOptionKey("gender", value))}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('teamLabel')}</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {t("teamLabel")}
+                  </label>
                   <select
-                    value={filters.team ?? ''}
-                    onChange={(e) => update('team', e.target.value)}
+                    value={filters.team ?? ""}
+                    onChange={(e) => update("team", e.target.value)}
                     disabled={locked}
                     className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                    aria-label={t('selectTeam')}
+                    aria-label={t("selectTeam")}
                   >
-                    <option value="">{t('all')}</option>
+                    <option value="">{t("all")}</option>
                     {TEAMS.map(({ value }) => (
-                      <option key={value} value={value}>{t(getOptionKey('team', value))}</option>
+                      <option key={value} value={value}>
+                        {t(getOptionKey("team", value))}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('cityLabel')}</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {t("cityLabel")}
+                  </label>
                   <input
                     type="text"
-                    value={filters.city ?? ''}
-                    onChange={(e) => update('city', e.target.value)}
-                    placeholder={t('cityPlaceholder')}
+                    value={filters.city ?? ""}
+                    onChange={(e) => update("city", e.target.value)}
+                    placeholder={t("cityPlaceholder")}
                     disabled={locked}
                     className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder-gray-500 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                    aria-label={t('cityLabel')}
+                    aria-label={t("cityLabel")}
                   />
                 </div>
                 {hasAny && (
@@ -188,7 +226,7 @@ export default function FilterFunnel({
                     onClick={clearAll}
                     className="w-full py-2 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {t('clearAll')}
+                    {t("clearAll")}
                   </button>
                 )}
               </div>
@@ -197,5 +235,5 @@ export default function FilterFunnel({
         )}
       </AnimatePresence>
     </>
-  )
+  );
 }
