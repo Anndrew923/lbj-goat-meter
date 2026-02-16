@@ -219,9 +219,18 @@ export default function VotePage() {
                 {t('deleteConfirmDesc')}
               </p>
               {authError && (
-                <p className="mb-4 text-sm text-red-400" role="alert">
-                  {authError}
-                </p>
+                <div className="mb-4 flex flex-col gap-2">
+                  <p className="text-sm text-red-400" role="alert">
+                    {authError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => clearAuthError()}
+                    className="self-start py-2 px-3 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-400/50 hover:bg-red-500/30"
+                  >
+                    {t('retry')}
+                  </button>
+                </div>
               )}
               <div className="flex gap-3">
                 <button

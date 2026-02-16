@@ -15,7 +15,10 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { collection, query, where, limit, onSnapshot } from 'firebase/firestore'
-import { db } from '../lib/firebase'
+import { db, isFirebaseReady } from '../lib/firebase'
+
+/** Firestore 訂閱逾時（毫秒），逾時後解除 loading 避免卡在「載入地圖…」 */
+const SNAPSHOT_TIMEOUT_MS = 12_000
 
 /** 預設球星 ID，與 SCHEMA 中 starId 對應 */
 const DEFAULT_STAR_ID = 'lbj'
@@ -57,7 +60,7 @@ export function useSentimentData(filters = {}, options = {}) {
   }, [filters])
 
   useEffect(() => {
-    if (!db) {
+    if (!isFirebaseReady || !db) {
       setData([])
       setLoading(false)
       setError(null)
@@ -74,25 +77,42 @@ export function useSentimentData(filters = {}, options = {}) {
     ]
     const q = query(votesRef, ...constraints)
 
+    let timeoutId = null
+    const clearLoading = () => {
+      setLoading(false)
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+      }
+    }
+
+    timeoutId = setTimeout(() => {
+      setLoading(false)
+      timeoutId = null
+    }, SNAPSHOT_TIMEOUT_MS)
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const docs = snapshot.docs ?? []
         const list = docs.map((d) => ({ id: d.id, ...d.data() }))
         setData(list)
-        setLoading(false)
+        clearLoading()
       },
       (err) => {
         setError(err)
         setData([])
-        setLoading(false)
+        clearLoading()
         if (err?.code === 'failed-precondition' || (err?.message && err.message.includes('index'))) {
           console.warn('[useSentimentData] 請依 Firebase 錯誤訊息中的連結建立複合索引，見 docs/SCHEMA.md')
         }
       }
     )
 
-    return () => unsubscribe()
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId)
+      unsubscribe()
+    }
   }, [starId, pageSize, filterEntries, filters])
 
   return { data, loading, error }

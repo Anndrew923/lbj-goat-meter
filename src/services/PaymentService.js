@@ -31,8 +31,10 @@ export async function simulatePurchase(userId) {
 
   const profileRef = doc(db, 'profiles', userId)
   await runTransaction(db, async (tx) => {
+    // 階段一：讀取
     const snap = await tx.get(profileRef)
     if (!snap.exists()) throw new Error('Profile not found')
+    // 階段二：寫入（此前不得再 tx.get）
     tx.update(profileRef, {
       isPremium: true,
       updatedAt: serverTimestamp(),

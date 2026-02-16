@@ -50,9 +50,6 @@ let googleProvider = null
 
 const config = buildConfig()
 if (config) {
-  if (import.meta.env.DEV) {
-    console.log('Firebase Project ID:', config.projectId, '— 請核對與 Firebase Console 專案 ID 完全一致，差一個字母都會導致 Firestore 離線')
-  }
   try {
     app = initializeApp(config)
     auth = getAuth(app)

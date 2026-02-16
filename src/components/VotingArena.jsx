@@ -109,8 +109,9 @@ export default function VotingArena({ userId, currentUser }) {
     }
   }
 
-  const handleRevoteReload = () => {
-    window.location.reload()
+  const handleRevoteRetry = () => {
+    setRevoteError(null)
+    handleRevote()
   }
 
   const handleRevoteComplete = () => {
@@ -148,10 +149,12 @@ export default function VotingArena({ userId, currentUser }) {
     const votesRef = collection(db, 'votes')
     try {
       await runTransaction(db, async (tx) => {
+        // ========== 階段一：所有讀取（全部完成後才可寫入） ==========
         const profileSnap = await tx.get(profileRef)
-        if (!profileSnap.exists()) throw new Error(t('common:completeProfileFirst'))
-        const data = profileSnap.data()
+        if (!profileSnap?.exists?.()) throw new Error(t('common:completeProfileFirst'))
+        const data = profileSnap?.data?.() ?? {}
         if (data.hasVoted === true) throw new Error(t('common:alreadyVoted'))
+        const newVoteRef = doc(votesRef)
         const votePayload = {
           starId: STAR_ID,
           userId,
@@ -164,7 +167,7 @@ export default function VotingArena({ userId, currentUser }) {
           city: data.city ?? '',
           createdAt: serverTimestamp(),
         }
-        const newVoteRef = doc(votesRef)
+        // ========== 階段二：所有寫入（此前不得再呼叫 tx.get） ==========
         tx.set(newVoteRef, votePayload)
         tx.update(profileRef, {
           hasVoted: true,
@@ -177,7 +180,7 @@ export default function VotingArena({ userId, currentUser }) {
       setVoteSuccess(true)
       setShowBattleCard(true)
     } catch (err) {
-      const msg = err && typeof err.message === 'string' ? err.message : t('common:submitError')
+      const msg = err?.message != null && typeof err.message === 'string' ? err.message : t('common:submitError')
       setSubmitError(msg)
     } finally {
       setSubmitting(false)
@@ -255,7 +258,7 @@ export default function VotingArena({ userId, currentUser }) {
               onRevote={handleRevote}
               revoking={revoking}
               revoteError={revoteError}
-              onRevoteReload={handleRevoteReload}
+              onRevoteReload={handleRevoteRetry}
               photoURL={currentUser?.photoURL}
               displayName={currentUser?.displayName ?? currentUser?.email}
               voterTeam={profile?.voterTeam}

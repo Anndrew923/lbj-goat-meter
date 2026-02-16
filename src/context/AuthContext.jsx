@@ -228,7 +228,7 @@ export function AuthProvider({ children }) {
   /**
    * 帳號刪除：Firestore 全域清理後再刪除 Auth，嚴禁留下孤兒數據。
    * 若 Firebase 回傳 requires-recent-login，先以 reauthenticateWithPopup 引導用戶重新驗證再執行刪除。
-   * 刪除成功後清空所有 Context 狀態並 window.location.reload() 導回登入畫面，符合合規與本地狀態一致性。
+   * 刪除成功後清空所有 Context 狀態；嚴禁 window.location.reload()，依 i18n 與狀態更新即可。
    */
   const deleteAccount = useCallback(async () => {
     const uid = currentUser?.uid
@@ -245,9 +245,8 @@ export function AuthProvider({ children }) {
       setProfileLoading(false)
       setIsGuest(false)
       if (import.meta.env.DEV) {
-        console.log('[AuthContext] 帳號已刪除，即將重載頁面')
+        console.log('[AuthContext] 帳號已刪除，狀態已清空，不再自動重載')
       }
-      window.location.reload()
     } catch (err) {
       const code = err?.code ?? ''
       if (code === 'auth/requires-recent-login') {
@@ -260,9 +259,8 @@ export function AuthProvider({ children }) {
           setProfileLoading(false)
           setIsGuest(false)
           if (import.meta.env.DEV) {
-            console.log('[AuthContext] 重新驗證後帳號已刪除，即將重載頁面')
+            console.log('[AuthContext] 重新驗證後帳號已刪除，狀態已清空，不再自動重載')
           }
-          window.location.reload()
         } catch (reauthErr) {
           const msg = getAuthErrorMessage(reauthErr)
           setAuthError(msg)

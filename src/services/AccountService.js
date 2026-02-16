@@ -12,6 +12,7 @@
 import {
   collection,
   doc,
+  getDocs,
   limit,
   query,
   runTransaction,
@@ -47,11 +48,11 @@ export async function revokeVote(uid) {
     await runTransaction(db, async (tx) => {
       // ========== 階段一：所有讀取（禁止在後續出現任何 get） ==========
       const profileSnap = await tx.get(profileRef)
-      if (!profileSnap.exists()) throw new Error(i18n.t('common:error_profileNotFoundRevote'))
-      const profileData = profileSnap.data()
+      if (!profileSnap?.exists?.()) throw new Error(i18n.t('common:error_profileNotFoundRevote'))
+      const profileData = profileSnap.data?.() ?? {}
       if (profileData.hasVoted !== true) throw new Error(i18n.t('common:error_hasNotVoted'))
 
-      const raw = profileData.currentVoteId
+      const raw = profileData?.currentVoteId
       const voteDocId = typeof raw === 'string' && raw.length > 0 ? raw : null
 
       if (voteDocId) {
@@ -86,7 +87,7 @@ export async function revokeVote(uid) {
 
     return { deletedVoteId }
   } catch (err) {
-    const errMsg = err && typeof err.message === 'string' ? err.message : String(err)
+    const errMsg = err?.message != null && typeof err.message === 'string' ? err.message : String(err)
     if (import.meta.env.DEV) {
       console.warn('[AccountService] revokeVote 錯誤 — userId:', uid, errMsg)
     }
@@ -96,48 +97,44 @@ export async function revokeVote(uid) {
 
 /**
  * 帳號刪除 — Firestore 全域清理（不含 Auth）。
- * 步驟：(1) 刪除 profiles/{uid}；(2) 刪除該用戶在 votes 中的紀錄（遞減其貢獻的立場計數，由查詢即時反映）。
- * Auth 層的 currentUser.delete() 與重新驗證由呼叫端（AuthContext）負責，以集中處理 requires-recent-login。
+ * 禁止在 Transaction 內使用 query()。正確做法：Transaction 外 getDocs(query) 取得 docId 列表，Transaction 內僅 tx.get(profileRef) + tx.delete。
  *
  * @param {string} uid - 要刪除的用戶 UID
- * @returns {Promise<{ deletedProfile: boolean, deletedVoteIds: string[] }>} deletedProfile 恆為 true（表示流程已執行），實際有無刪除以 DEV 清單為準
+ * @returns {Promise<{ deletedProfile: boolean, deletedVoteIds: string[] }>}
  */
 export async function deleteAccountData(uid) {
   if (!db || !uid) throw new Error(i18n.t('common:error_missingDbOrUid'))
 
   const profileRef = doc(db, 'profiles', uid)
   const votesRef = collection(db, 'votes')
+
+  const voteQuery = query(
+    votesRef,
+    where('userId', '==', uid),
+    where('starId', '==', STAR_ID),
+    limit(500)
+  )
+  const voteSnap = await getDocs(voteQuery)
+  const idsToDelete = (voteSnap?.docs ?? []).map((d) => d?.id).filter((id) => typeof id === 'string' && id.length > 0)
+
   const deletedVoteIds = []
 
   await runTransaction(db, async (tx) => {
-    // 階段一：所有讀取
+    // 第一個動作：tx.get 讀取 profile（Transaction 內唯一的讀取）
     const profileSnap = await tx.get(profileRef)
-    const voteQuery = query(
-      votesRef,
-      where('userId', '==', uid),
-      where('starId', '==', STAR_ID),
-      limit(500)
-    )
-    const voteSnap = await tx.get(voteQuery)
 
-    // 階段二：所有寫入
-    if (profileSnap.exists()) tx.delete(profileRef)
-    const docs = voteSnap.docs
-    if (docs && Array.isArray(docs)) {
-      docs.forEach((d) => {
-        const id = d && d.id
-        if (typeof id === 'string' && id.length > 0) {
-          deletedVoteIds.push(id)
-          tx.delete(doc(db, 'votes', id))
-        }
-      })
-    }
+    // 最後的動作：所有刪除（先 profile 再 votes）
+    if (profileSnap?.exists?.()) tx.delete(profileRef)
+    idsToDelete.forEach((id) => {
+      deletedVoteIds.push(id)
+      tx.delete(doc(db, 'votes', id))
+    })
   })
 
   if (import.meta.env.DEV) {
     const list = [
       `profiles/${uid} 已刪除`,
-      ...deletedVoteIds.map((id) => `votes/${id}`),
+      ...(deletedVoteIds ?? []).map((id) => `votes/${id}`),
     ]
     console.log('[AccountService] 帳號刪除 — 數據清理清單', list)
   }

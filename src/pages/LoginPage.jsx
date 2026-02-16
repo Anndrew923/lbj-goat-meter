@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -6,19 +6,27 @@ import { motion } from 'framer-motion'
 
 export default function LoginPage() {
   const { t } = useTranslation('common')
-  const { currentUser, loading, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
+  const { currentUser, loading, profileLoading, hasProfile, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
     useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const hasNavigatedRef = useRef(false)
 
+  // 導向規則：僅當 currentUser 存在「且」hasProfile 為 true 時才導向 /vote。
+  // 有 User 但沒 Profile → 不導向（原地不動，或由 VotePage 的 Modal 處理）；禁止沒 Profile 就送進戰場。
   useEffect(() => {
     if (loading) return
-    if (currentUser) {
-      const from = location.state?.from?.pathname ?? '/vote'
-      navigate(from, { replace: true })
+    if (profileLoading) return
+    if (!currentUser) {
+      hasNavigatedRef.current = false
+      return
     }
-  }, [currentUser, loading, navigate, location.state?.from?.pathname])
+    if (!hasProfile) return // 有 User 但沒 Profile：不跳轉，讓 VotePage Modal 或 /setup 流程處理
+    if (hasNavigatedRef.current) return
+    hasNavigatedRef.current = true
+    navigate('/vote', { replace: true })
+  }, [currentUser, loading, profileLoading, hasProfile, navigate])
 
   const handleLogin = async () => {
     clearAuthError?.()
@@ -71,9 +79,18 @@ export default function LoginPage() {
         </div>
 
         {authError && (
-          <p className="mb-4 text-red-400 text-sm" role="alert">
-            {authError}
-          </p>
+          <div className="mb-4 flex flex-col gap-2">
+            <p className="text-red-400 text-sm" role="alert">
+              {authError}
+            </p>
+            <button
+              type="button"
+              onClick={() => clearAuthError?.()}
+              className="self-start py-2 px-3 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-400/50 hover:bg-red-500/30"
+            >
+              {t('retry')}
+            </button>
+          </div>
         )}
 
         {/* 按鈕 A：醒目的 Google 登入（金色邊框） */}

@@ -1,15 +1,62 @@
 /**
  * PulseMap — 全球情緒熱力圖（/vote 視覺重心）
  * 依各國統計將區塊染成金色（粉方佔優）或紫色（黑方佔優）；點擊國家可更新 filters 並連動 AnalyticsDashboard。
- * 技術選用：react-simple-maps（SVG 輕量），地圖資料使用具 ISO_A2 的 GeoJSON。
+ * 技術選用：react-simple-maps（SVG 輕量），地圖 import 打包，記憶化 Geographies、畫布比例鎖定、數據緩衝，消除抖動。
  */
-import { useMemo, useState } from 'react'
+import { Component, useMemo, useState, useCallback, useEffect, useRef, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { motion } from 'framer-motion'
 import { useSentimentData } from '../hooks/useSentimentData'
+import worldMap from '../assets/world-110m.json'
 
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+/** 畫布比例：與正式地圖一致，消除 Layout Shift */
+const MAP_ASPECT = 'aspect-[2/1]'
+const MAP_CONTAINER_CLASS = `w-full ${MAP_ASPECT} rounded-lg overflow-hidden bg-gray-800/90 border border-gray-600/50 min-h-0`
+
+/** 地理資料載入前或載入失敗時的靜態網格底圖（與正式地圖容器尺寸一致） */
+function MapStaticGrid({ messageKey = 'loadingMap' }) {
+  const { t } = useTranslation('common')
+  return (
+    <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 overflow-hidden" role="status" aria-label={t(messageKey)}>
+      <div className="px-4 py-2 border-b border-villain-purple/20 flex items-center justify-between">
+        <div className="h-6 w-40 bg-gray-700/60 rounded animate-pulse" />
+        <div className="h-3 w-32 bg-gray-700/40 rounded animate-pulse" />
+      </div>
+      <div className="p-2">
+        <div className={MAP_CONTAINER_CLASS}>
+          <svg viewBox="0 0 800 400" className="w-full h-full text-gray-600/70" aria-hidden="true">
+            <defs>
+              <pattern id="pulsemap-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.4" />
+              </pattern>
+              <linearGradient id="pulsemap-shade" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="currentColor" stopOpacity="0.15" />
+                <stop offset="100%" stopColor="currentColor" stopOpacity="0.05" />
+              </linearGradient>
+            </defs>
+            <rect width="800" height="400" fill="url(#pulsemap-grid)" />
+            <rect width="800" height="400" fill="url(#pulsemap-shade)" />
+            <ellipse cx="200" cy="180" rx="90" ry="70" fill="currentColor" fillOpacity="0.12" />
+            <ellipse cx="520" cy="120" rx="80" ry="50" fill="currentColor" fillOpacity="0.1" />
+            <ellipse cx="400" cy="280" rx="100" ry="60" fill="currentColor" fillOpacity="0.1" />
+          </svg>
+        </div>
+        <p className="mt-2 text-center text-sm text-gray-400 animate-pulse">{t(messageKey)}</p>
+      </div>
+    </div>
+  )
+}
+
+/** 捕獲地圖 fetch/渲染錯誤，顯示靜態網格避免崩潰 */
+class MapErrorBoundary extends Component {
+  state = { hasError: false }
+  static getDerivedStateFromError() { return { hasError: true } }
+  render() {
+    if (this.state.hasError) return <MapStaticGrid messageKey="mapLoadError" />
+    return this.props.children
+  }
+}
 
 const PRO_STANCES = new Set(['goat', 'king', 'machine'])
 const ANTI_STANCES = new Set(['fraud', 'stat_padder', 'mercenary'])
@@ -42,52 +89,101 @@ function getIso2FromGeo(geography) {
   return COUNTRY_ID_TO_ISO2[id] ?? null
 }
 
+/** 穩定 key：優先 geo.rsmKey / geo.id / iso2；最後才用 fallbackIndex 避免重複 key */
+function getGeoKey(geo, iso2, fallbackIndex = 0) {
+  if (geo?.rsmKey != null) return String(geo.rsmKey)
+  if (geo?.id != null) return String(geo.id)
+  if (iso2) return `iso-${iso2}`
+  const p = geo?.properties
+  const name = p?.name ?? p?.NAME ?? p?.ISO_A2
+  return name != null ? `geo-${String(name)}` : `geo-unknown-${fallbackIndex}`
+}
+
+/** 記憶化地球路徑：除非 geographies / byCountry / selectedCountry / hovered 變更，否則不重算 */
+const MemoizedMapPaths = memo(function MemoizedMapPaths({
+  geographies,
+  byCountry,
+  selectedCountry,
+  hovered,
+  setHovered,
+  onFiltersChange,
+}) {
+  const paths = useMemo(() => {
+    const list = geographies ?? []
+    return list.map((geo, index) => {
+      const iso2 = getIso2FromGeo(geo)
+      const isSelected = iso2 && selectedCountry === iso2
+      const isHovered = hovered === iso2
+      let base = 'rgba(55,65,81,0.6)'
+      if (iso2 && byCountry[iso2]) {
+        const stats = byCountry[iso2]
+        if (stats.pro > 0 || stats.anti > 0) {
+          const total = stats.pro + stats.anti
+          const proRatio = stats.pro / total
+          if (proRatio > 0.55) base = 'rgba(212,175,55,0.85)'
+          else if (proRatio < 0.45) base = 'rgba(75,0,130,0.85)'
+          else base = 'rgba(107,114,128,0.8)'
+        }
+      } else if (!iso2) base = 'rgba(55,65,81,0.8)'
+      const fill = (isHovered || isSelected) ? base.replace(/0\.\d+\)/, '1)') : base
+      return (
+        <Geography
+          key={getGeoKey(geo, iso2, index)}
+          geography={geo}
+          fill={fill}
+          stroke="rgba(30,30,30,0.8)"
+          strokeWidth={isSelected ? 1.5 : 0.5}
+          style={{
+            default: { outline: 'none' },
+            hover: { outline: 'none', cursor: onFiltersChange ? 'pointer' : 'default' },
+            pressed: { outline: 'none' },
+          }}
+          onMouseEnter={() => setHovered(iso2)}
+          onMouseLeave={() => setHovered(null)}
+          onClick={() => { if (iso2 && onFiltersChange) onFiltersChange((prev) => ({ ...prev, country: iso2 })) }}
+        />
+      )
+    })
+  }, [geographies, byCountry, selectedCountry, hovered, onFiltersChange, setHovered])
+  return paths
+})
+
+const SENTIMENT_UPDATE_DELAY_MS = 120
+
 export default function PulseMap({ filters, onFiltersChange }) {
   const { t } = useTranslation('common')
   const { data, loading, error } = useSentimentData({}, { pageSize: 800 })
   const [hovered, setHovered] = useState(null)
+  const [bufferedData, setBufferedData] = useState([])
+  const delayRef = useRef(null)
 
-  const byCountry = useMemo(() => aggregateByCountry(data), [data])
-
-  const getFill = (iso2, { hover = false, selected = false } = {}) => {
-    if (!iso2) return 'rgba(55,65,81,0.8)'
-    const stats = byCountry[iso2]
-    let base = 'rgba(55,65,81,0.6)'
-    if (stats && (stats.pro > 0 || stats.anti > 0)) {
-      const total = stats.pro + stats.anti
-      const proRatio = stats.pro / total
-      if (proRatio > 0.55) base = 'rgba(212,175,55,0.85)'
-      else if (proRatio < 0.45) base = 'rgba(75,0,130,0.85)'
-      else base = 'rgba(107,114,128,0.8)'
+  // 緩衝 Firestore 高頻推送：僅在停止更新約 120ms 後才寫入，減少地圖重繪
+  useEffect(() => {
+    if (loading || error) {
+      setBufferedData([])
+      if (delayRef.current) clearTimeout(delayRef.current)
+      return
     }
-    if (hover || selected) return base.replace(/0\.\d+\)/, '1)')
-    return base
-  }
+    const id = setTimeout(() => {
+      setBufferedData(data)
+      delayRef.current = null
+    }, SENTIMENT_UPDATE_DELAY_MS)
+    delayRef.current = id
+    return () => clearTimeout(id)
+  }, [data, loading, error])
 
-  const handleSelect = (iso2) => {
-    if (!iso2 || !onFiltersChange) return
-    onFiltersChange((prev) => ({ ...prev, country: iso2 }))
-  }
-
-  if (loading) {
-    return (
-      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 flex items-center justify-center min-h-[320px]">
-        <p className="text-king-gold animate-pulse" role="status">{t('loadingMap')}</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 min-h-[280px]">
-        <p className="text-red-400" role="alert">{t('mapLoadError')}</p>
-      </div>
-    )
-  }
-
+  const byCountry = useMemo(
+    () => aggregateByCountry(bufferedData ?? []),
+    [bufferedData]
+  )
   const selectedCountry = filters?.country ?? null
+  const setHoveredStable = useCallback((v) => setHovered(v), [])
+
+  // 錯誤時仍用靜態網格；loading 時不卸載地圖，改為遮罩＋轉圈
+  if (error) return <MapStaticGrid messageKey="mapLoadError" />
 
   return (
+    <MapErrorBoundary>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -98,41 +194,39 @@ export default function PulseMap({ filters, onFiltersChange }) {
         <p className="text-xs text-gray-500">{t('mapLegend')}</p>
       </div>
       <div className="p-2">
-        <ComposableMap
-          projection="geoMercator"
-          projectionConfig={{ scale: 120, center: [20, 20] }}
-          width={800}
-          height={400}
-          style={{ maxWidth: '100%', height: 'auto' }}
-        >
-          <Geographies geography={GEO_URL}>
-            {({ geographies }) =>
-              geographies.map((geo) => {
-                const iso2 = getIso2FromGeo(geo)
-                const isSelected = iso2 && selectedCountry === iso2
-                const isHovered = hovered === iso2
-                return (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    fill={getFill(iso2, { hover: isHovered, selected: isSelected })}
-                    stroke="rgba(30,30,30,0.8)"
-                    strokeWidth={isSelected ? 1.5 : 0.5}
-                    style={{
-                      default: { outline: 'none' },
-                      hover: { outline: 'none', cursor: onFiltersChange ? 'pointer' : 'default' },
-                      pressed: { outline: 'none' },
-                    }}
-                    onMouseEnter={() => setHovered(iso2)}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={() => handleSelect(iso2)}
-                  />
-                )
-              })
-            }
-          </Geographies>
-        </ComposableMap>
+        <div className={`${MAP_CONTAINER_CLASS} relative`}>
+          <ComposableMap
+            projection="geoMercator"
+            projectionConfig={{ scale: 120, center: [20, 20] }}
+            width={800}
+            height={400}
+            style={{ width: '100%', height: '100%' }}
+          >
+            <Geographies geography={worldMap}>
+              {({ geographies }) => (
+                <MemoizedMapPaths
+                  geographies={geographies}
+                  byCountry={byCountry}
+                  selectedCountry={selectedCountry}
+                  hovered={hovered}
+                  setHovered={setHoveredStable}
+                  onFiltersChange={onFiltersChange}
+                />
+              )}
+            </Geographies>
+          </ComposableMap>
+          {loading && (
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-gray-900/70 rounded-lg pointer-events-none"
+              role="status"
+              aria-label={t('loadingMap')}
+            >
+              <div className="w-10 h-10 border-2 border-king-gold/60 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
+    </MapErrorBoundary>
   )
 }

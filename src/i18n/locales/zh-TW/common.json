@@ -11,6 +11,7 @@
   "submitError": "提交失敗，請稍後再試",
   "revoteError": "重置時發生錯誤，請重新整理頁面後再試",
   "reloadPage": "重新整理頁面",
+  "retry": "重試",
   "rankLabel": "專屬戰報",
   "rankLabelWithCity": "{{city}} · 專屬戰報",
   "language": "語言",

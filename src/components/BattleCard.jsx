@@ -155,9 +155,9 @@ export default function BattleCard({
               <button
                 type="button"
                 onClick={onRevoteReload}
-                className="py-2 px-3 rounded-lg text-sm font-medium bg-king-gold/20 text-king-gold border border-king-gold/40 hover:bg-king-gold/30"
+                className="py-2 px-3 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-400/50 hover:bg-red-500/30"
               >
-                {t('reloadPage')}
+                {t('retry')}
               </button>
             )}
           </div>

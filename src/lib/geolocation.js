@@ -1,13 +1,23 @@
 /**
  * 地理定位 — 戰區登錄與投票用。
  * 優先使用瀏覽器原生 geolocation 取得經緯度，再以反向地理編碼取得國家／城市；
- * 若用戶拒絕權限或失敗，則備援使用 ip-api.com。
+ * 若用戶拒絕權限或失敗，則備援使用 IP 定位（多源 + 預設座標，避免單一 API 403 導致卡死）。
  */
 
-const IP_API_URL = 'https://ip-api.com/json/?fields=status,countryCode,city,country'
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
 // Nominatim 使用政策要求提供識別應用程式的 User-Agent
 const NOMINATIM_UA = 'GOATMeterLBJ/1.0 (Geolocation for profile setup)'
+
+/** 預設中心（台北）：當所有定位方式皆失敗時使用，確保地圖與表單仍可運作 */
+export const DEFAULT_COORDS = { lat: 25.033, lng: 121.565 }
+export const DEFAULT_COUNTRY = 'TW'
+export const DEFAULT_CITY = 'Taipei'
+
+/** IP 定位 API 列表：依序嘗試；任一 403 即不再嘗試其他源，直接回傳 null 由上層用預設座標。 */
+const IP_API_SOURCES = [
+  { url: 'https://ipapi.co/json/', parse: (d) => (d?.country_code ? { country: d.country_code, city: d.city ?? '' } : null) },
+  { url: 'https://ip-api.com/json/?fields=status,countryCode,city,country', parse: (d) => (d?.status === 'success' && d?.countryCode ? { country: d.countryCode, city: d.city ?? '' } : null) },
+]
 
 /**
  * 以經緯度反向地理編碼取得國家代碼與城市（Nominatim，免 Key）。
@@ -35,61 +45,71 @@ async function reverseGeocode(lat, lon) {
 }
 
 /**
- * 取得當前位置：優先 navigator.geolocation → 反向地理編碼；備援 ip-api。
- * @returns {Promise<{ country: string, city: string, coords?: { lat: number, lng: number }, source: 'geolocation' | 'ip' } | null>}
+ * 取得當前位置：優先 navigator.geolocation → 反向地理編碼；備援 IP 多源；失敗則安靜降級為預設座標（不拋錯）。
+ * @returns {Promise<{ country: string, city: string, coords?: { lat: number, lng: number }, source: 'geolocation' | 'ip' }>}
  */
 export async function getLocation() {
-  if (typeof navigator !== 'undefined' && navigator.geolocation) {
-    try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          timeout: 10000,
-          maximumAge: 300000,
-          enableHighAccuracy: true,
+  try {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      try {
+        const position = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            timeout: 10000,
+            maximumAge: 300000,
+            enableHighAccuracy: true,
+          })
         })
-      })
-      const { latitude: lat, longitude: lng } = position.coords
-      const address = await reverseGeocode(lat, lng)
-      if (address) {
+        const { latitude: lat, longitude: lng } = position.coords
+        const address = await reverseGeocode(lat, lng)
+        if (address) {
+          return {
+            ...address,
+            coords: { lat, lng },
+            source: 'geolocation',
+          }
+        }
         return {
-          ...address,
+          country: '',
+          city: '',
           coords: { lat, lng },
           source: 'geolocation',
         }
+      } catch {
+        // 用戶拒絕或超時：走備援
       }
-      // 坐標已鎖定但反向編碼失敗時仍回傳坐標，國家由備援或手選補齊
-      return {
-        country: '',
-        city: '',
-        coords: { lat, lng },
-        source: 'geolocation',
-      }
-    } catch {
-      // 用戶拒絕或超時：走備援
     }
-  }
 
-  const ipResult = await fetchLocationByIP()
-  if (ipResult) {
-    return { ...ipResult, source: 'ip' }
+    const ipResult = await fetchLocationByIP()
+    if (ipResult) {
+      return { ...ipResult, source: 'ip' }
+    }
+  } catch {
+    // 定位 API 403 或任何異常：安靜降級，不拋出，避免頁面崩潰
   }
-  return null
+  return {
+    country: DEFAULT_COUNTRY,
+    city: DEFAULT_CITY,
+    coords: { ...DEFAULT_COORDS },
+    source: 'ip',
+  }
 }
 
 /**
- * 備援：僅依 IP 取得國家／城市（無經緯度）。
+ * 備援：依 IP 取得國家／城市（多源嘗試，避免單一 API 403 導致失敗）。
  * @returns {Promise<{ country: string, city: string } | null>}
  */
 export async function fetchLocationByIP() {
-  try {
-    const res = await fetch(IP_API_URL, { signal: AbortSignal.timeout(5000) })
-    const data = await res.json()
-    if (data?.status !== 'success' || !data.countryCode) return null
-    return {
-      country: data.countryCode,
-      city: data.city ?? '',
+  for (const { url, parse } of IP_API_SOURCES) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+      if (res.status === 403) return null
+      if (!res.ok) continue
+      const data = await res.json()
+      const parsed = parse(data)
+      if (parsed) return parsed
+    } catch {
+      // 網路或解析錯誤，嘗試下一源
     }
-  } catch {
-    return null
   }
+  return null
 }
