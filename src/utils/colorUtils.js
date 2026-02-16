@@ -1,5 +1,5 @@
 /**
- * 顏色工具：hex 加 alpha，供 BattleCard / StanceRadarChart 邊框光暈、陰影等使用。
+ * 顏色工具：hex 加 alpha，供 BattleCard 邊框光暈、陰影等使用。
  * 僅取前 6 字元作為 RGB，避免 8 字元 hex 重複疊加。
  */
 

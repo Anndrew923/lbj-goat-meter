@@ -1,6 +1,6 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
- * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、雷達、證詞、QR、免責
+ * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、QR、免責
  * 固定 1:1 (640×640)，scale-to-fit 縮放，下載為高解析原稿。
  */
 import { useRef, useCallback, useEffect, useState } from 'react'
@@ -11,12 +11,9 @@ import { Download, RotateCcw } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { STANCE_COLORS } from '../lib/constants'
 import { hexWithAlpha } from '../utils/colorUtils'
-import StanceRadarChart from './StanceRadarChart'
+import { getStance } from '../i18n/i18n'
 
 const CARD_SIZE = 640
-const RADAR_HEIGHT = 220
-/** 雷達圖視覺縮放（1.05 = 略放大，數據氣勢更足） */
-const RADAR_SCALE = 1.05
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200
 
@@ -52,6 +49,7 @@ export default function BattleCard({
   const overlayRef = useRef(null)
   const [containerSize, setContainerSize] = useState({ width: 600, height: 600 })
   const stanceColor = status ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat) : STANCE_COLORS.goat
+  const stanceDisplayName = (getStance(status)?.primary ?? (status ? String(status).toUpperCase() : 'GOAT')).toUpperCase()
   const regionText = [country, city].filter(Boolean).join(' · ') || t('global')
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/` : ''
 
@@ -91,6 +89,7 @@ export default function BattleCard({
     el.style.top = '0'
     el.style.margin = '0'
     el.style.padding = '0'
+    // 下載品質：pixelRatio:2 確保 drop-shadow / text-shadow 銳利；backdrop-blur 依瀏覽器可能與預覽略有差異，請以實際導出 PNG 驗證
     toPng(el, {
       width: CARD_SIZE,
       height: CARD_SIZE,
@@ -248,18 +247,27 @@ export default function BattleCard({
               </div>
             </div>
 
-            {/* 雷達圖：1.05 放大，微縮排版減少 marginBottom */}
-            <div className="flex-shrink-0 flex justify-center mt-2 mb-1" style={{ transform: `scale(${RADAR_SCALE})`, transformOrigin: 'center center' }}>
-              <StanceRadarChart
-                warzoneStats={warzoneStats}
-                userStance={status}
-                height={RADAR_HEIGHT}
+            {/* Power Stance：力量標題（大字 + 霓虹光暈 + 硬邊際光 + 毛玻璃襯底） */}
+            <div className="flex-shrink-0 relative flex items-center justify-center mt-2 mb-2 min-h-[140px] overflow-hidden rounded-xl">
+              {/* 毛玻璃襯底（增加深度） */}
+              <div
+                className="absolute inset-0 -z-10 rounded-xl bg-black/40 backdrop-blur-xl mix-blend-multiply"
+                aria-hidden
               />
+              <span
+                className="relative font-black italic uppercase tracking-tighter leading-none select-none text-[130px]"
+                style={{
+                  color: stanceColor,
+                  filter: `drop-shadow(0 0 30px ${stanceColor}) drop-shadow(0 2px 3px rgba(0,0,0,1))`,
+                }}
+              >
+                {stanceDisplayName}
+              </span>
             </div>
 
-            {/* Evidence Locker：防裁切，與底部區拉開距離 */}
+            {/* Evidence Locker：裁決證詞區（加深背景 + 彩色文字硬邊際光） */}
             {reasonLabels.length > 0 && (
-              <div className="flex-shrink-0 rounded-lg p-3 bg-white/5 backdrop-blur-sm mt-2 mb-3 max-h-[120px] overflow-y-auto overflow-x-hidden">
+              <div className="flex-shrink-0 rounded-lg p-3 bg-black/50 backdrop-blur-md border border-white/10 mt-2 mb-3 max-h-[120px] overflow-y-auto overflow-x-hidden">
                 <p className="text-[10px] text-white/50 uppercase tracking-[0.2em] mb-1.5">
                   {t('battleCard.verdict_evidence')}
                 </p>
@@ -267,7 +275,7 @@ export default function BattleCard({
                   {reasonLabels.map((label, i) => (
                     <span key={i}>
                       {i > 0 && ' / '}
-                      <span style={{ color: stanceColor }}>{label}</span>
+                      <span style={{ color: stanceColor, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>{label}</span>
                     </span>
                   ))}
                 </p>
