@@ -44,6 +44,31 @@ export function getTeamCityKey(value) {
   return team ? team.cityKey : 'teams.other.city'
 }
 
+/**
+ * 戰區主題色（primary / secondary hex），供 BattleCard 動態背景與浮水印。
+ * 僅使用城市＋代表色描述，無官方隊徽。Fallback 為 LBJ 金與深紅。
+ */
+export const TEAM_COLORS = {
+  LAL: { primary: '#FDB927', secondary: '#552583' },
+  GSW: { primary: '#FFC72C', secondary: '#1D428A' },
+  BOS: { primary: '#007A33', secondary: '#BA9653' },
+  MIA: { primary: '#98002E', secondary: '#000000' },
+  CLE: { primary: '#860038', secondary: '#041E42' },
+  CHI: { primary: '#CE1141', secondary: '#000000' },
+  NYK: { primary: '#F58426', secondary: '#006BB6' },
+  MIL: { primary: '#00471B', secondary: '#EEE1C6' },
+  PHX: { primary: '#E56020', secondary: '#1D1160' },
+  DAL: { primary: '#00538C', secondary: '#002B5E' },
+  DEN: { primary: '#0E2240', secondary: '#FEC524' },
+  PHI: { primary: '#006BB6', secondary: '#ED174C' },
+  TOR: { primary: '#CE1141', secondary: '#000000' },
+  SAS: { primary: '#C4CED4', secondary: '#000000' },
+  OKC: { primary: '#007AC1', secondary: '#EF3B24' },
+  OTHER: { primary: '#6B7280', secondary: '#374151' },
+}
+/** 無戰區時使用 LBJ 金與深紅 */
+export const BATTLE_CARD_DEFAULT_COLORS = { primary: '#D4AF37', secondary: '#8B0000' }
+
 /** 常用國家（ISO 代碼），供選單與 IP 定位結果對應 */
 export const COUNTRIES = [
   { value: 'TW', label: '台灣' },

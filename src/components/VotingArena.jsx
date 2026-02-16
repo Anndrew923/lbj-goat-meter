@@ -17,7 +17,8 @@ import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
 import { REASONS_MAX_SELECT } from "../lib/constants";
-import BattleCard from "./BattleCard";
+import { Share2 } from "lucide-react";
+import BattleCardContainer from "./BattleCardContainer";
 import LoginPromptModal from "./LoginPromptModal";
 import StanceCards from "./StanceCards";
 
@@ -318,10 +319,21 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
           <p className="mt-2 text-sm text-gray-400">
             {t("common:thanksVoted")}
           </p>
+          <motion.button
+            type="button"
+            onClick={() => setShowBattleCard(true)}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="mt-4 px-6 py-2.5 rounded-full font-bold bg-gradient-to-r from-king-gold to-king-gold/80 text-black shadow-lg shadow-king-gold/20 transition-all inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-king-gold focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+            aria-label={t("common:viewMyBattleCard")}
+          >
+            <Share2 className="w-4 h-4 shrink-0" aria-hidden />
+            {t("common:viewMyBattleCard")}
+          </motion.button>
         </motion.div>
         <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
           {showBattleCard && (
-            <BattleCard
+            <BattleCardContainer
               key="battle-card"
               open={showBattleCard}
               onClose={() => setShowBattleCard(false)}

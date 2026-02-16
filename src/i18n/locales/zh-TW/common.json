@@ -9,6 +9,7 @@
   "error_warzoneRequired": "請先完成戰區登錄（選擇效忠球隊），再提交投票。",
   "alreadyVoted": "您已投過票",
   "thanksVoted": "感謝您的立場，數據將納入全球統計。",
+  "viewMyBattleCard": "查看我的戰報",
   "chooseReasons": "選擇原因（可複選）",
   "chooseReasonsMax": "最多選 {{max}} 項",
   "submitVote": "投下神聖一票",
@@ -214,5 +215,19 @@
   "teams.thunder.city": "奧城",
   "teams.thunder.colors": "淺藍 / 橙",
   "teams.other.city": "其他",
-  "teams.other.colors": "—"
+  "teams.other.colors": "—",
+  "battleCard": {
+    "conflict_vanguard": "戰區衛道者",
+    "conflict_vanguard_sub": "引領 {{team}} 戰區多數共識。",
+    "conflict_lone_truth": "孤高清醒者",
+    "conflict_lone_truth_sub": "看見 {{team}} 群眾所忽略的真相。",
+    "conflict_traitor": "戰區叛徒",
+    "conflict_traitor_sub": "公然挑戰 {{team}} 戰區的主流敘事。",
+    "stance_default": "認證 {{stance}} 投票者",
+    "stance_default_sub": "你的戰區，你的裁決。",
+    "verdict_evidence": "裁決證詞：",
+    "scan_to_debate": "掃碼加入論戰。",
+    "define_history": "定義歷史。",
+    "disclaimer": "本專案為球迷自製數據分析，與 NBA 及其球隊無關。"
+  }
 }
