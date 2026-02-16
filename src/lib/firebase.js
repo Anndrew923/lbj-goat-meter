@@ -54,6 +54,13 @@ let db = null
 let googleProvider = null
 
 const config = buildConfig()
+if (import.meta.env.DEV) {
+  console.log('🛠️ Firebase Config:', config)
+  console.log('🛠️ 環境變數檢查:', {
+    key: !!import.meta.env.VITE_FIREBASE_API_KEY,
+    domain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  })
+}
 if (config) {
   try {
     app = initializeApp(config)
@@ -73,22 +80,10 @@ if (config) {
 /** 是否已成功初始化；未設定或初始化失敗時為 false，呼叫端應避免使用 auth/db */
 export const isFirebaseReady = Boolean(auth && db)
 
-// 開發環境：診斷用 — 確認 .env 與 Firebase Console 對齊（不輸出 API Key 完整值）
-if (import.meta.env.DEV) {
-  const check = config
-    ? {
-        projectId: config.projectId,
-        authDomain: config.authDomain,
-        hasApiKey: Boolean(config.apiKey?.trim()),
-        isFirebaseReady: Boolean(auth && db),
-      }
-    : { config: null, isFirebaseReady: false }
-  console.log('[Firebase] Config Check:', check)
-  if (!config) {
-    console.warn(
-      '[Firebase] 登入故障排查：1) .env 中 VITE_FIREBASE_API_KEY / AUTH_DOMAIN / PROJECT_ID 需與 Firebase 專案設定一致；2) 修改 .env 後須重啟 npm run dev；3) Console > Authentication > Sign-in method 啟用 Google；4) Authentication > Settings > Authorized domains 加入 localhost'
-    )
-  }
+if (import.meta.env.DEV && !config) {
+  console.warn(
+    '[Firebase] 登入故障排查：1) .env 中 VITE_FIREBASE_API_KEY / AUTH_DOMAIN / PROJECT_ID 需與 Firebase 專案設定一致；2) 修改 .env 後須重啟 npm run dev；3) Console > Authentication > Sign-in method 啟用 Google；4) Authentication > Settings > Authorized domains 加入 localhost'
+  )
 }
 
 export { auth, db, googleProvider }

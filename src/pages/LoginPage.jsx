@@ -125,10 +125,11 @@ export default function LoginPage() {
         </div>
 
         {authError && (
-          <div className="mb-4 flex flex-col gap-2">
-            <p className="text-red-400 text-sm" role="alert">
-              {authError}
-            </p>
+          <div
+            className="relative z-30 mb-4 flex flex-col gap-2 rounded-lg bg-red-950/80 border border-red-400/50 p-4"
+            role="alert"
+          >
+            <p className="text-red-400 text-sm font-medium">{authError}</p>
             <button
               type="button"
               onClick={() => clearAuthError?.()}
