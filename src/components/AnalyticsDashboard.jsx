@@ -1,6 +1,7 @@
 /**
- * AnalyticsDashboard — 高階數據視覺化（置於 AnalystGate 內）
- * 立場雷達圖 + 原因熱點。未授權時套用 blur + grayscale 作為情報誘餌。
+ * AnalyticsDashboard — 高階數據視覺化（僅置於 AnalystGate 內）
+ * 全球戰報大盤（SentimentStats）已完全移出本區，於 VotePage 直接渲染，任何用戶（含訪客）皆可見。
+ * 本組件為「詳細分析」：立場雷達圖 + 原因熱點。未授權時套用 blur + grayscale 作為情報誘餌，點擊解鎖時精準攔截。
  */
 import { useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";

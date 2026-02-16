@@ -140,14 +140,14 @@ export default function VotePage() {
         />
         <section className="relative">
           {analystAdPortal}
-          {/* 公開區 (The Hook)：全球統計卡片，直接渲染 */}
+          {/* 全球戰報大盤：直接渲染，無攔截器，訪客完全可見 */}
           <div className="mb-3">
             <h2 className="text-lg font-semibold text-king-gold">
               {t("globalStats")}
             </h2>
           </div>
           <SentimentStats filters={stableFilters} />
-          {/* 機密區：僅包裹篩選器與詳細數據圖表 */}
+          {/* 以下僅此一層 AnalystGate：僅鎖定篩選器、地圖、詳細分析 */}
           <AnalystGate
             authorized={isAnalystAuthorized}
             onRequestRewardAd={onRequestRewardAd}
@@ -175,10 +175,7 @@ export default function VotePage() {
               authorized={isAnalystAuthorized}
             />
             <div className="mb-6">
-              <PulseMap
-                filters={stableFilters}
-                onFiltersChange={setFilters}
-              />
+              <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
             </div>
             <div className="mt-6">
               <AnalyticsDashboard
