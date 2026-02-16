@@ -8,7 +8,12 @@ import { useTranslation } from 'react-i18next'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { motion } from 'framer-motion'
 import { useSentimentData } from '../hooks/useSentimentData'
-import worldMap from '../assets/world-110m.json'
+
+/** 地圖 TopoJSON：放在 public/，開頭斜線指向根路徑 */
+const GEO_URL = '/countries-110m.json'
+
+/** 穩定空物件，避免 useSentimentData(filters) 每輪新 {} 導致 useEffect 依賴變動 → 無限更新 */
+const EMPTY_SENTIMENT_FILTERS = {}
 
 /** 畫布比例：與正式地圖一致，消除 Layout Shift */
 const MAP_ASPECT = 'aspect-[2/1]'
@@ -152,7 +157,7 @@ const SENTIMENT_UPDATE_DELAY_MS = 120
 
 export default function PulseMap({ filters, onFiltersChange }) {
   const { t } = useTranslation('common')
-  const { data, loading, error } = useSentimentData({}, { pageSize: 800 })
+  const { data, loading, error } = useSentimentData(EMPTY_SENTIMENT_FILTERS, { pageSize: 800 })
   const [hovered, setHovered] = useState(null)
   const [bufferedData, setBufferedData] = useState([])
   const delayRef = useRef(null)
@@ -202,7 +207,7 @@ export default function PulseMap({ filters, onFiltersChange }) {
             height={400}
             style={{ width: '100%', height: '100%' }}
           >
-            <Geographies geography={worldMap}>
+            <Geographies geography={GEO_URL}>
               {({ geographies }) => (
                 <MemoizedMapPaths
                   geographies={geographies}

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import VotePage from './pages/VotePage'
+import SetupPage from './pages/SetupPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -12,6 +13,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <VotePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/setup"
+        element={
+          <ProtectedRoute>
+            <SetupPage />
           </ProtectedRoute>
         }
       />

@@ -114,13 +114,14 @@ export async function deleteAccountData(uid) {
     where('starId', '==', STAR_ID),
     limit(500)
   )
+  // 禁止在 runTransaction 內使用 tx.get(voteQuery)。先在外用 getDocs 取得 docId 列表。
   const voteSnap = await getDocs(voteQuery)
   const idsToDelete = (voteSnap?.docs ?? []).map((d) => d?.id).filter((id) => typeof id === 'string' && id.length > 0)
 
   const deletedVoteIds = []
 
   await runTransaction(db, async (tx) => {
-    // 第一個動作：tx.get 讀取 profile（Transaction 內唯一的讀取）
+    // Transaction 內僅允許：tx.get(profileRef) 與後續 tx.delete，不得再 get 其他 query。
     const profileSnap = await tx.get(profileRef)
 
     // 最後的動作：所有刪除（先 profile 再 votes）

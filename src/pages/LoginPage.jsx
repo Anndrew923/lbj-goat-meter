@@ -13,8 +13,7 @@ export default function LoginPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const hasNavigatedRef = useRef(false)
 
-  // 導向規則：僅當 currentUser 存在「且」hasProfile 為 true 時才導向 /vote。
-  // 有 User 但沒 Profile → 不導向（原地不動，或由 VotePage 的 Modal 處理）；禁止沒 Profile 就送進戰場。
+  // 導向條件必須含 !profileLoading。分流：有 profile → /vote，無 profile → /setup。
   useEffect(() => {
     if (loading) return
     if (profileLoading) return
@@ -22,10 +21,10 @@ export default function LoginPage() {
       hasNavigatedRef.current = false
       return
     }
-    if (!hasProfile) return // 有 User 但沒 Profile：不跳轉，讓 VotePage Modal 或 /setup 流程處理
     if (hasNavigatedRef.current) return
     hasNavigatedRef.current = true
-    navigate('/vote', { replace: true })
+    const to = hasProfile ? '/vote' : '/setup'
+    navigate(to, { replace: true })
   }, [currentUser, loading, profileLoading, hasProfile, navigate])
 
   const handleLogin = async () => {
