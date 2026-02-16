@@ -11,6 +11,7 @@ import {
   doc,
   runTransaction,
   serverTimestamp,
+  increment,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
@@ -39,9 +40,13 @@ function isAntiStance(stance) {
   );
 }
 
-export default function VotingArena({ userId, currentUser }) {
+export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }) {
   const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
+  /** 是否已選擇戰區：profile 存在且 voterTeam 非空，投票必歸屬 16 戰區之一 */
+  const hasSelectedWarzone = Boolean(
+    profile?.voterTeam && String(profile.voterTeam).trim() !== ""
+  );
   const [selectedStance, setSelectedStance] = useState(null);
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -59,7 +64,11 @@ export default function VotingArena({ userId, currentUser }) {
 
   const hasVoted = profile?.hasVoted === true || voteSuccess;
   const canSubmit =
-    profile && !hasVoted && selectedStance && selectedReasons.length > 0;
+    profile &&
+    hasSelectedWarzone &&
+    !hasVoted &&
+    selectedStance &&
+    selectedReasons.length > 0;
 
   /** 每次選定立場或語系變更時重算：隨機排序理由並取得當前語系文案，確保每個理由都有機會被看到且當輪順序穩定。 */
   const reasons = useMemo(
@@ -164,21 +173,37 @@ export default function VotingArena({ userId, currentUser }) {
           throw new Error(t("common:completeProfileFirst"));
         const data = profileSnap?.data?.() ?? {};
         if (data.hasVoted === true) throw new Error(t("common:alreadyVoted"));
+        const warzoneId = String(
+          data.warzoneId ?? data.voterTeam ?? ""
+        ).trim();
+        if (!warzoneId)
+          throw new Error(t("common:error_warzoneRequired"));
         const newVoteRef = doc(votesRef);
         const votePayload = {
           starId: STAR_ID,
           userId,
           status: selectedStance,
           reasons: selectedReasons,
-          voterTeam: data.voterTeam ?? "",
+          warzoneId,
+          voterTeam: warzoneId,
           ageGroup: data.ageGroup ?? "",
           gender: data.gender ?? "",
           country: data.country ?? "",
           city: data.city ?? "",
+          hadWarzoneStats: true,
           createdAt: serverTimestamp(),
         };
         // ========== 階段二：所有寫入（此前不得再呼叫 tx.get） ==========
         tx.set(newVoteRef, votePayload);
+        const warzoneStatsRef = doc(db, "warzoneStats", warzoneId);
+        tx.set(
+          warzoneStatsRef,
+          {
+            totalVotes: increment(1),
+            [selectedStance]: increment(1),
+          },
+          { merge: true }
+        );
         tx.update(profileRef, {
           hasVoted: true,
           currentStance: selectedStance,
@@ -247,6 +272,35 @@ export default function VotingArena({ userId, currentUser }) {
           onClose={() => setShowLoginPrompt(false)}
         />
       </>
+    );
+  }
+
+  if (profile && !hasVoted && !hasSelectedWarzone) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="rounded-xl border-2 border-king-gold/60 bg-gradient-to-b from-king-gold/10 to-villain-purple/10 p-8 text-center"
+      >
+        <div className="mb-6">
+          <h3 className="text-2xl font-black tracking-tight text-king-gold uppercase">
+            {t("common:claimYourWarzone")}
+          </h3>
+          <p className="mt-3 text-gray-300 text-sm max-w-sm mx-auto">
+            {t("common:claimYourWarzoneDesc")}
+          </p>
+        </div>
+        <motion.button
+          type="button"
+          onClick={() => onOpenWarzoneSelect?.()}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.98 }}
+          className="w-full max-w-xs mx-auto py-4 px-6 rounded-xl bg-king-gold text-black font-bold text-lg shadow-lg shadow-king-gold/30 hover:shadow-king-gold/50 transition-shadow"
+          aria-label={t("common:openWarzoneSelect")}
+        >
+          {t("common:openWarzoneSelect")}
+        </motion.button>
+      </motion.div>
     );
   }
 

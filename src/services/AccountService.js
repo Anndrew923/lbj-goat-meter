@@ -19,6 +19,7 @@ import {
   serverTimestamp,
   where,
   deleteField,
+  increment,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import i18n from "../i18n/config";
@@ -57,10 +58,12 @@ export async function revokeVote(uid, resetProfile = false) {
 
       const raw = profileData?.currentVoteId;
       const voteDocId = typeof raw === "string" && raw.length > 0 ? raw : null;
+      let voteData = null;
 
       if (voteDocId) {
         const voteRef = doc(db, "votes", voteDocId);
-        await tx.get(voteRef);
+        const voteSnap = await tx.get(voteRef);
+        voteData = voteSnap?.exists?.() ? voteSnap.data() : null;
       }
 
       // ========== 階段二：所有寫入（此前不得再呼叫 get） ==========
@@ -84,6 +87,22 @@ export async function revokeVote(uid, resetProfile = false) {
       if (voteDocId) {
         tx.delete(doc(db, "votes", voteDocId));
         deletedVoteId = voteDocId;
+        if (voteData?.hadWarzoneStats === true) {
+          const wid =
+            (voteData.warzoneId || voteData.voterTeam || "").trim();
+          const status = voteData.status;
+          if (wid && status) {
+            const warzoneStatsRef = doc(db, "warzoneStats", wid);
+            tx.set(
+              warzoneStatsRef,
+              {
+                totalVotes: increment(-1),
+                [status]: increment(-1),
+              },
+              { merge: true }
+            );
+          }
+        }
       } else if (import.meta.env.DEV) {
         console.warn(
           "[AccountService] 無 currentVoteId（舊資料或未寫入），僅重置 Profile，靜默跳過刪除",

@@ -12,10 +12,11 @@ import LiveTicker from "../components/LiveTicker";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, Settings, AlertTriangle } from "lucide-react";
+import { SlidersHorizontal, Settings, AlertTriangle, LogOut } from "lucide-react";
 
 export default function VotePage() {
-  const { t } = useTranslation("common");
+  const { t, i18n } = useTranslation("common");
+  const isEn = i18n.language === "en";
   const {
     currentUser,
     isGuest,
@@ -38,6 +39,7 @@ export default function VotePage() {
   const [resetStanceConfirmOpen, setResetStanceConfirmOpen] = useState(false);
   const [resetProfileChecked, setResetProfileChecked] = useState(false);
   const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
+  const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
 
   // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
@@ -48,19 +50,27 @@ export default function VotePage() {
   // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
   const needProfileSetup =
     Boolean(currentUser?.uid) && !profileLoading && !hasProfile;
-  const showProfileSetup = needProfileSetup && !profileSetupDismissed;
+  const showProfileSetup =
+    (needProfileSetup && !profileSetupDismissed) || showWarzoneClaimModal;
 
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
       <motion.header
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="fixed top-0 left-0 w-full z-50 bg-black/80 backdrop-blur-xl border-b border-villain-purple/30 flex justify-between items-center pb-4 safe-area-inset-top px-6"
+        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/80 backdrop-blur-xl border-b border-b-[0.5px] border-white/5 pb-4 safe-area-inset-top px-6"
       >
-        <h1 className="text-2xl font-bold text-king-gold">
-          {t("voteBattlefield")}
+        <h1 className="flex flex-row items-baseline">
+          <span className="text-sm tracking-widest text-king-gold/80">
+            {t("voteBattlefieldPart1")}
+          </span>
+          <span
+            className={`text-xl font-black tracking-tighter text-king-gold ml-1.5 ${isEn ? "uppercase" : ""}`}
+          >
+            {t("voteBattlefieldPart2")}
+          </span>
         </h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-x-4">
           <span className="text-sm text-gray-400">
             {isGuest
               ? t("guest")
@@ -79,18 +89,23 @@ export default function VotePage() {
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-king-gold"
+                className={isEn ? "p-2 text-gray-400 hover:text-king-gold rounded-lg" : "flex items-center gap-1.5 text-sm text-gray-400 hover:text-king-gold"}
                 aria-label={t("openSettings")}
               >
                 <Settings className="w-4 h-4" />
-                {t("settings")}
+                {!isEn && t("settings")}
               </button>
               <button
                 type="button"
                 onClick={signOut}
-                className="text-sm text-villain-purple hover:underline"
+                className={isEn ? "p-2 text-villain-purple hover:text-villain-purple/80 rounded-lg" : "text-sm text-villain-purple hover:underline"}
+                aria-label={t("signOut")}
               >
-                {t("signOut")}
+                {isEn ? (
+                  <LogOut className="w-4 h-4" />
+                ) : (
+                  t("signOut")
+                )}
               </button>
             </>
           )}
@@ -105,7 +120,11 @@ export default function VotePage() {
         transition={{ delay: 0.1 }}
         className="mt-8 space-y-8"
       >
-        <VotingArena userId={currentUser?.uid} currentUser={currentUser} />
+        <VotingArena
+          userId={currentUser?.uid}
+          currentUser={currentUser}
+          onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
+        />
         <section>
           <div className="flex items-center justify-between gap-4 mb-3">
             <h2 className="text-lg font-semibold text-king-gold">
@@ -142,9 +161,17 @@ export default function VotePage() {
       {currentUser?.uid && (
         <UserProfileSetup
           open={showProfileSetup}
-          onClose={() => setProfileSetupDismissed(true)}
+          onClose={() => {
+            setProfileSetupDismissed(true);
+            setShowWarzoneClaimModal(false);
+          }}
+          onSaved={() => {
+            setProfileSetupDismissed(true);
+            setShowWarzoneClaimModal(false);
+          }}
           userId={currentUser?.uid}
-          onSaved={() => setProfileSetupDismissed(true)}
+          initialStep={1}
+          initialProfile={showWarzoneClaimModal ? profile : undefined}
         />
       )}
 
@@ -169,10 +196,10 @@ export default function VotePage() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="w-full max-w-lg rounded-t-2xl border-t border-villain-purple/30 bg-gray-900 pt-6 px-6 safe-area-inset-bottom"
+              className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-t-2xl border-t border-villain-purple/30 bg-gray-900 pt-6 px-6"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <h2
                   id="settings-title"
                   className="text-lg font-bold text-king-gold"
@@ -190,51 +217,53 @@ export default function VotePage() {
                   {t("close")}
                 </button>
               </div>
-              {authError && (
-                <p className="mb-4 text-sm text-red-400" role="alert">
-                  {authError}
-                </p>
-              )}
-              {/* Preferences：重置立場（僅已投票時顯示）、語系等，置於 Danger Zone 上方 */}
-              <section className="pb-6 border-b border-villain-purple/20">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                  {t("preferences")}
-                </p>
-                {profile?.hasVoted === true && (
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar settings-modal-content-inset">
+                {authError && (
+                  <p className="mb-4 text-sm text-red-400" role="alert">
+                    {authError}
+                  </p>
+                )}
+                {/* Preferences：重置立場（僅已投票時顯示）、語系等，置於 Danger Zone 上方 */}
+                <section className="pb-6 border-b border-villain-purple/20">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                    {t("preferences")}
+                  </p>
+                  {profile?.hasVoted === true && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearAuthError();
+                        setResetStanceConfirmOpen(true);
+                        setResetProfileChecked(false);
+                      }}
+                      className="w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold"
+                    >
+                      {t("resetStance")}
+                    </button>
+                  )}
+                  <LanguageToggle />
+                </section>
+                {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}
+                <section className="mt-8 pt-8 border-t border-red-900/50">
+                  <p className="text-xs uppercase tracking-wider text-red-400/90 font-semibold mb-2 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" aria-hidden />
+                    {t("dangerZone")}
+                  </p>
+                  <p className="text-sm text-gray-500 mb-4">
+                    {t("dangerZoneDesc")}
+                  </p>
                   <button
                     type="button"
                     onClick={() => {
-                      clearAuthError();
-                      setResetStanceConfirmOpen(true);
-                      setResetProfileChecked(false);
+                      setSettingsOpen(false);
+                      setDeleteConfirmOpen(true);
                     }}
-                    className="w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold"
+                    className="w-full py-3 rounded-xl font-medium text-white bg-red-600 hover:bg-red-700 border border-red-500/50"
                   >
-                    {t("resetStance")}
+                    {t("deleteAccount")}
                   </button>
-                )}
-                <LanguageToggle />
-              </section>
-              {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}
-              <section className="mt-8 pt-6 border-t border-red-900/50">
-                <p className="text-xs uppercase tracking-wider text-red-400/90 font-semibold mb-2 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" aria-hidden />
-                  {t("dangerZone")}
-                </p>
-                <p className="text-sm text-gray-500 mb-4">
-                  {t("dangerZoneDesc")}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    setDeleteConfirmOpen(true);
-                  }}
-                  className="w-full py-3 rounded-xl font-medium text-white bg-red-600 hover:bg-red-700 border border-red-500/50"
-                >
-                  {t("deleteAccount")}
-                </button>
-              </section>
+                </section>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -402,7 +431,10 @@ export default function VotePage() {
                       await revote(resetProfileChecked);
                       setResetStanceConfirmOpen(false);
                       setSettingsOpen(false);
-                      if (resetProfileChecked) setProfileSetupDismissed(false);
+                      if (resetProfileChecked) {
+                        setProfileSetupDismissed(false);
+                        setShowWarzoneClaimModal(true);
+                      }
                     } catch {
                       // 錯誤已寫入 authError，保留彈窗
                     } finally {

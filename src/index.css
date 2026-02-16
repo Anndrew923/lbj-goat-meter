@@ -40,6 +40,11 @@ body {
   flex-shrink: 0;
 }
 
+/* Settings 彈窗：最內層滾動容器底部安全區 + 留白，避免 Delete Account 被導覽列遮擋 */
+.settings-modal-content-inset {
+  padding-bottom: calc(env(safe-area-inset-bottom, 1rem) + 1.5rem);
+}
+
 /* SmartWarzoneSelector：4px 主題金捲軸、隱藏系統預設 */
 .warzone-selector-list {
   scrollbar-width: thin;

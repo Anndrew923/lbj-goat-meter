@@ -32,9 +32,9 @@ const INITIAL_FORM = {
   city: '',
 }
 
-export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
+export default function UserProfileSetup({ open, onClose, userId, onSaved, initialStep = 1, initialProfile }) {
   const { t, i18n } = useTranslation('common')
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(initialStep)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [form, setForm] = useState({
@@ -43,10 +43,20 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
   const [geoLoading, setGeoLoading] = useState(true)
   const [locationSource, setLocationSource] = useState(null) // 'geolocation' | 'ip' | null
 
+  // 僅在 open 變為 true 時初始化 step/form，避免 initialProfile 參考變動時重置表單；有 initialProfile 時預填全部欄位
   useEffect(() => {
     if (!open) return
-    setStep(1)
-    setForm({ ...INITIAL_FORM })
+    const stepVal = initialStep ?? 1
+    setStep(stepVal)
+    const base = { ...INITIAL_FORM }
+    if (initialProfile) {
+      base.ageGroup = initialProfile.ageGroup ?? ''
+      base.gender = initialProfile.gender ?? ''
+      base.voterTeam = initialProfile.voterTeam ?? ''
+      base.country = initialProfile.country ?? ''
+      base.city = initialProfile.city ?? ''
+    }
+    setForm(base)
     setGeoLoading(true)
     setLocationSource(null)
     getLocation()
@@ -61,6 +71,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
         }
       })
       .finally(() => setGeoLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 僅在 open 時初始化，避免 profile 參考變動重置表單
   }, [open])
 
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
@@ -74,6 +85,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
 
   const handleBack = () => setStep(1)
 
+  /** Step 1 資料暫存於 form state，僅在 Step 2 完成後一次性寫入 Firestore，保證原子性 */
   const handleSubmit = async () => {
     if (!userId || !canSubmit) return
     setSaving(true)
@@ -146,7 +158,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
       >
         <div className="p-6 border-b border-villain-purple/30 flex-shrink-0">
           <h2 id="profile-setup-title" className="text-xl font-bold text-king-gold">
-            {t('profileSetupTitle')}
+            {step === 1 ? t('profileSetupTitleStep1') : t('profileSetupTitleStep2')}
           </h2>
           <p className="text-sm text-gray-400 mt-1">
             {step === 1 ? t('step1Title') : t('step2Title')}
@@ -294,7 +306,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                 disabled={!canNextStep1}
                 className="px-4 py-2 rounded-lg bg-king-gold text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {t('next')}
+                {t('nextSelectWarzone')}
               </button>
             </>
           ) : (
