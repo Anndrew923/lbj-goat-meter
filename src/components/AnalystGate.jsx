@@ -1,10 +1,12 @@
 /**
- * AnalystGate — 情報權限閘口（全廣告驅動）
- * 僅依 authorized 決定是否解鎖；按鈕固定為「解鎖情報」並觸發 onRequestRewardAd。
+ * AnalystGate — 純情報閘門（僅依 authorized 驅動）
+ * 無 isPremium / purchasing / simulatePurchase；僅接收 authorized 與 onRequestRewardAd，
+ * 解鎖時渲染 children，未解鎖時顯示模糊誘餌 + 解鎖按鈕。
  */
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { Lock } from "lucide-react";
+import { triggerHaptic } from "../utils/hapticUtils";
 
 export default function AnalystGate({
   children,
@@ -27,6 +29,7 @@ export default function AnalystGate({
   const buttonLabel = gateButtonText ?? t("intelGateButton");
 
   const handleUnlockClick = () => {
+    triggerHaptic(10);
     onRequestRewardAd?.(() => {});
   };
 

@@ -13,6 +13,7 @@ import ReconPermissionIndicator from "../components/ReconPermissionIndicator";
 import LiveTicker from "../components/LiveTicker";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
+import { triggerHaptic } from "../utils/hapticUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   SlidersHorizontal,
@@ -140,7 +141,7 @@ export default function VotePage() {
         />
         <section className="relative">
           {analystAdPortal}
-          {/* 全球戰報大盤：直接渲染，無攔截器，訪客完全可見 */}
+          {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/訪客皆可直接看到 */}
           <div className="mb-3">
             <h2 className="text-lg font-semibold text-king-gold">
               {t("globalStats")}
@@ -159,7 +160,10 @@ export default function VotePage() {
               <ReconPermissionIndicator authorized={isAnalystAuthorized} />
               <button
                 type="button"
-                onClick={() => setFilterDrawerOpen(true)}
+                onClick={() => {
+                  triggerHaptic(10);
+                  setFilterDrawerOpen(true);
+                }}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
                 aria-label={t("openFilter")}
               >

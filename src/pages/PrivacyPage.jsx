@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Shield, ArrowLeft } from 'lucide-react'
 import LanguageToggle from '../components/LanguageToggle'
+import { triggerHaptic } from '../utils/hapticUtils'
 
 /**
  * 戰區隱私守則 (Warzone Privacy Protocol) — 公開頁面，不需登入即可查看。
@@ -25,6 +26,7 @@ export default function PrivacyPage() {
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <Link
             to="/"
+            onClick={() => triggerHaptic(10)}
             className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-king-gold transition-colors"
             aria-label={t('backToApp')}
           >
@@ -97,6 +99,7 @@ export default function PrivacyPage() {
         <footer className="mt-12 pt-6 border-t border-gray-800">
           <Link
             to="/"
+            onClick={() => triggerHaptic(10)}
             className="inline-flex items-center gap-2 py-2 px-4 rounded-xl border border-villain-purple/40 text-gray-300 hover:border-king-gold/50 hover:text-king-gold transition-colors"
             aria-label={t('backToApp')}
           >
