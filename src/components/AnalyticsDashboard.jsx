@@ -16,31 +16,95 @@ import {
 } from 'recharts'
 import { useSentimentData } from '../hooks/useSentimentData'
 import { getStancesForArena, getReasonLabelMap } from '../i18n/i18n'
+import { STANCE_COLORS } from '../lib/constants'
 
 const LIKE_STANCES = new Set(['goat', 'king', 'machine'])
 const DISLIKE_STANCES = new Set(['fraud', 'stat_padder', 'mercenary'])
+const LABEL_OFFSET_PX = 20
 
 export default function AnalyticsDashboard({ filters = {} }) {
   const { t, i18n } = useTranslation('common')
   const stableFilters = useMemo(() => ({ ...filters }), [filters])
   const { data, loading, error } = useSentimentData(stableFilters, { pageSize: 500 })
+  // 語系切換時需重算（getReasonLabelMap 透過 getReasonsResource 讀取當前語系）
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- i18n.language 用於語系切換時使 map 失效
   const reasonLabelMap = useMemo(() => getReasonLabelMap(), [i18n.language])
 
   const radarData = useMemo(() => {
     const rows = getStancesForArena()
     const total = data.length
-    if (total === 0) return rows.map((s) => ({ stance: s.secondary, value: 0, fullMark: 100 }))
+    if (total === 0) {
+      return rows.map((s) => ({
+        stanceKey: s.value,
+        title: s.primary,
+        stance: s.secondary,
+        value: 0,
+        fullMark: 100,
+      }))
+    }
     const byStatus = {}
     data.forEach((v) => {
       const s = v.status ?? 'unknown'
       byStatus[s] = (byStatus[s] ?? 0) + 1
     })
     return rows.map((s) => ({
+      stanceKey: s.value,
+      title: s.primary,
       stance: s.secondary,
       value: total > 0 ? Math.round(((byStatus[s.value] ?? 0) / total) * 100) : 0,
       fullMark: 100,
     }))
   }, [data])
+
+  /** 最高票立場的色碼，供 Radar stroke 聯動 */
+  const topStanceStroke = useMemo(() => {
+    if (!radarData.length) return STANCE_COLORS.goat
+    const top = radarData.reduce((a, b) => (a.value >= b.value ? a : b), radarData[0])
+    return STANCE_COLORS[top.stanceKey] ?? STANCE_COLORS.goat
+  }, [radarData])
+
+  /** 藥丸標籤：rect(rx=12) + 依角度推離 20px，邊框/文字聯動 STANCE_COLORS */
+  const renderPolarAngleTick = ({ payload, index, x, y }) => {
+    const count = radarData.length
+    const dataPoint = radarData[index]
+    const angleDeg = count > 0 ? 90 + (360 / count) * index : 90
+    const rad = (angleDeg * Math.PI) / 180
+    const dx = LABEL_OFFSET_PX * Math.cos(rad)
+    const dy = LABEL_OFFSET_PX * Math.sin(rad)
+    const tx = x + dx
+    const ty = y + dy
+    const isLeft = angleDeg > 90 && angleDeg < 270
+    const textAnchor = isLeft ? 'end' : 'start'
+    const label = dataPoint?.title ?? payload?.title ?? payload?.value ?? ''
+    const stanceKey = dataPoint?.stanceKey ?? payload?.stanceKey ?? 'goat'
+    const strokeColor = STANCE_COLORS[stanceKey] ?? '#D4AF37'
+    const pillWidth = Math.max(56, (label.length || 1) * 6 + 20)
+    const pillHeight = 22
+    return (
+      <g transform={`translate(${tx},${ty})`}>
+        <rect
+          x={textAnchor === 'end' ? -pillWidth : 0}
+          y={-pillHeight / 2}
+          width={pillWidth}
+          height={pillHeight}
+          rx={12}
+          fill="rgba(255,255,255,0.05)"
+          stroke={strokeColor}
+          strokeWidth={1}
+        />
+        <text
+          textAnchor={textAnchor}
+          fill={strokeColor}
+          fontSize={11}
+          dominantBaseline="middle"
+          x={textAnchor === 'end' ? -8 : 8}
+          y={0}
+        >
+          {label}
+        </text>
+      </g>
+    )
+  }
 
   const topReasons = useMemo(() => {
     const likeCounts = {}
@@ -83,39 +147,42 @@ export default function AnalyticsDashboard({ filters = {} }) {
   return (
     <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 space-y-6">
       <h3 className="text-lg font-bold text-king-gold">{t('radarTitle')}</h3>
-      <div className="h-64">
+      <div className="h-64 min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart
             data={radarData}
-            margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
+            margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
+            outerRadius="90%"
+            startAngle={90}
             isAnimationActive
             animationDuration={400}
             animationEasing="ease-out"
           >
-            <PolarGrid stroke="rgba(75,0,130,0.3)" />
+            <PolarGrid stroke="rgba(255,255,255,0.1)" />
             <PolarAngleAxis
-              dataKey="stance"
-              tick={{ fill: '#D4AF37', fontSize: 11 }}
-              tickLine={{ stroke: 'rgba(212,175,55,0.3)' }}
+              dataKey="title"
+              tick={renderPolarAngleTick}
+              tickLine={false}
             />
             <PolarRadiusAxis
               angle={90}
               domain={[0, 100]}
-              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
             />
             <Radar
               name={t('radarShareName')}
               dataKey="value"
-              stroke="#D4AF37"
-              fill="#D4AF37"
-              fillOpacity={0.4}
-              strokeWidth={2}
+              stroke={topStanceStroke}
+              fill={topStanceStroke}
+              fillOpacity={0.35}
+              strokeWidth={4}
               isAnimationActive
               animationDuration={400}
             />
             <Tooltip
               contentStyle={{ backgroundColor: '#1f2937', border: '1px solid rgba(75,0,130,0.5)', borderRadius: 8 }}
               labelStyle={{ color: '#D4AF37' }}
+              labelFormatter={(label, payload) => payload?.[0]?.payload?.stance ?? label}
               formatter={(value) => [`${value}%`, t('radarShareLabel')]}
             />
           </RadarChart>

@@ -94,21 +94,30 @@ export async function getLocation() {
   }
 }
 
+/** 是否為 localhost（開發環境常遇 CORS / 429，直接跳過 IP 請求避免控制台刷錯） */
+function isLocalhost() {
+  if (typeof window === 'undefined') return false
+  const host = window.location?.hostname ?? ''
+  return host === 'localhost' || host === '127.0.0.1' || host === ''
+}
+
 /**
  * 備援：依 IP 取得國家／城市（多源嘗試，避免單一 API 403 導致失敗）。
+ * 在 localhost 不請求，直接回傳 null，由上層使用預設值，避免 CORS/429/403 刷屏。
  * @returns {Promise<{ country: string, city: string } | null>}
  */
 export async function fetchLocationByIP() {
+  if (isLocalhost()) return null
   for (const { url, parse } of IP_API_SOURCES) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
       if (res.status === 403) return null
-      if (!res.ok) continue
+      if (res.status === 429 || !res.ok) continue
       const data = await res.json()
       const parsed = parse(data)
       if (parsed) return parsed
     } catch {
-      // 網路或解析錯誤，嘗試下一源
+      // CORS、網路或解析錯誤，嘗試下一源
     }
   }
   return null

@@ -7,15 +7,14 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { db, isFirebaseReady } from '../lib/firebase'
-import { TEAMS } from '../lib/constants'
+import { getTeamCityKey } from '../lib/constants'
 import { getStanceDisplayTicker } from '../i18n/i18n'
 
 const TICKER_LIMIT = 10
 
 function getTeamFanLabel(voterTeam, t) {
-  const team = TEAMS.find((x) => x.value === voterTeam)
-  if (!team) return t('someFan')
-  const label = t(`team_${team.value}`)
+  if (!voterTeam) return t('someFan')
+  const label = t(getTeamCityKey(voterTeam))
   return `${label}${t('fanSuffix')}`
 }
 

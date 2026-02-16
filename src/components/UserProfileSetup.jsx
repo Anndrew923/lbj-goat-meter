@@ -4,18 +4,20 @@
  * Step 2：派系效忠（支持的球隊，以城市+代表色暗示）+ 地理（國家，IP 預填或手選）
  * 寫入 Firestore profiles 集合，與 docs/SCHEMA.md 對齊。
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { getLocation } from '../lib/geolocation'
-import { AGE_GROUPS, GENDERS, TEAMS, COUNTRIES } from '../lib/constants'
+import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from '../lib/constants'
+import { getCountryOptions } from '../data/countries'
+import SmartWarzoneSelector from './SmartWarzoneSelector'
 
 function getOptionKey(type, value) {
   if (type === 'ageGroup') return value === '45+' ? 'ageGroup_45_plus' : `ageGroup_${value.replace(/-/g, '_')}`
   if (type === 'gender') return `gender_${value}`
-  if (type === 'team') return `team_${value}`
+  if (type === 'team') return getTeamCityKey(value)
   if (type === 'country') return `country_${value}`
   return value
 }
@@ -31,7 +33,7 @@ const INITIAL_FORM = {
 }
 
 export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
-  const { t } = useTranslation('common')
+  const { t, i18n } = useTranslation('common')
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -88,6 +90,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
           voterTeam: form.voterTeam,
           country: form.country,
           city: form.city.trim() || '',
+          hasProfile: true,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -111,12 +114,20 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open, onClose])
 
-  if (!open) return null
+  const getCountryOptionKey = useCallback((v) => getOptionKey('country', v), [])
 
-  const countryOptions = COUNTRIES.map((c) => ({ value: c.value, label: t(getOptionKey('country', c.value)) }))
-  if (form.country && !COUNTRIES.some((c) => c.value === form.country)) {
-    countryOptions.push({ value: form.country, label: t('detectedCountry', { code: form.country }) })
-  }
+  const countryOptions = useMemo(() => {
+    const list = [...getCountryOptions(i18n.language || 'en')]
+    const code = (form.country || '').toString().trim()
+    const normalized = code === 'OTHER' ? 'OTHER' : code.toUpperCase().slice(0, 2)
+    if (normalized && !list.some((c) => c.value === normalized)) {
+      const label = normalized === 'OTHER' ? t('other') : t('detectedCountry', { code: normalized })
+      list.push({ value: normalized, label })
+    }
+    return list
+  }, [form.country, t, i18n.language])
+
+  if (!open) return null
 
   return (
     <div
@@ -130,10 +141,10 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-md rounded-xl bg-gray-900 border border-villain-purple/40 shadow-xl overflow-hidden"
+        className="w-full max-w-md max-h-[85vh] flex flex-col rounded-xl bg-gray-900 border border-villain-purple/40 shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 border-b border-villain-purple/30">
+        <div className="p-6 border-b border-villain-purple/30 flex-shrink-0">
           <h2 id="profile-setup-title" className="text-xl font-bold text-king-gold">
             {t('profileSetupTitle')}
           </h2>
@@ -142,7 +153,10 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
           </p>
         </div>
 
-        <div className="p-6 min-h-[280px]">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-behavior-contain relative">
+          {/* 頂部漸層：提示上方無更多內容 */}
+          <div className="sticky top-0 left-0 right-0 h-5 bg-gradient-to-b from-gray-900 to-transparent pointer-events-none z-10" aria-hidden />
+          <div className="p-6 pt-2 min-h-[280px] pb-10">
           <AnimatePresence mode="wait">
             {step === 1 && (
               <motion.div
@@ -205,20 +219,24 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
               >
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('supportTeamLabel')}</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {TEAMS.map(({ value, colorHint }) => (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {TEAMS.map(({ value, cityKey, colorKey }) => (
                       <button
                         key={value}
                         type="button"
                         onClick={() => update('voterTeam', value)}
-                        className={`px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                        className={`px-2 py-2 rounded-lg text-left transition-colors min-w-0 flex flex-col min-h-[3.25rem] justify-center ${
                           form.voterTeam === value
                             ? 'bg-villain-purple/60 text-white ring-1 ring-king-gold/50'
                             : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                         }`}
                       >
-                        <span className="font-medium">{t(getOptionKey('team', value))}</span>
-                        <span className="block text-xs opacity-80" aria-hidden>{colorHint}</span>
+                        <span className="font-medium block truncate text-xs md:text-sm" title={t(cityKey)}>
+                          {t(cityKey)}
+                        </span>
+                        <span className="block text-[10px] md:text-xs opacity-80 truncate break-words line-clamp-2" aria-hidden>
+                          {t(colorKey)}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -228,17 +246,13 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
                   {geoLoading ? (
                     <p className="text-sm text-gray-500" role="status">{t('gettingLocation')}</p>
                   ) : (
-                    <select
+                    <SmartWarzoneSelector
                       value={form.country}
-                      onChange={(e) => update('country', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none"
+                      onChange={(v) => update('country', v)}
+                      options={countryOptions}
+                      getOptionKey={getCountryOptionKey}
                       aria-label={t('countryLabel')}
-                    >
-                      <option value="">{t('pleaseSelect')}</option>
-                      {countryOptions.map(({ value, label }) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
+                    />
                   )}
                 </div>
                 <div>
@@ -263,9 +277,12 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved }) {
               {saveError}
             </p>
           )}
+          </div>
+          {/* 底部漸層：提示下方還有內容，引導向下捲動 */}
+          <div className="sticky bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-gray-900 to-transparent pointer-events-none z-10" aria-hidden />
         </div>
 
-        <div className="p-6 pt-0 flex justify-between gap-3">
+        <div className="p-6 pt-0 flex justify-between gap-3 flex-shrink-0 border-t border-villain-purple/20">
           {step === 1 ? (
             <>
               <button type="button" onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white">

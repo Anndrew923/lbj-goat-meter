@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SlidersHorizontal, X } from 'lucide-react'
-import { AGE_GROUPS, GENDERS, TEAMS } from '../lib/constants'
+import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from '../lib/constants'
 
 const defaultFilters = {
   ageGroup: '',
@@ -18,7 +18,7 @@ const defaultFilters = {
 function getOptionKey(type, value) {
   if (type === 'ageGroup') return value === '45+' ? 'ageGroup_45_plus' : `ageGroup_${value.replace(/-/g, '_')}`
   if (type === 'gender') return `gender_${value}`
-  if (type === 'team') return `team_${value}`
+  if (type === 'team') return getTeamCityKey(value)
   return value
 }
 

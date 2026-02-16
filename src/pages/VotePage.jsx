@@ -1,40 +1,54 @@
-import { useEffect, useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { useAuth } from '../context/AuthContext'
-import UserProfileSetup from '../components/UserProfileSetup'
-import VotingArena from '../components/VotingArena'
-import AnalystGate from '../components/AnalystGate'
-import SentimentStats from '../components/SentimentStats'
-import AnalyticsDashboard from '../components/AnalyticsDashboard'
-import FilterFunnel from '../components/FilterFunnel'
-import LiveTicker from '../components/LiveTicker'
-import PulseMap from '../components/PulseMap'
-import LanguageToggle from '../components/LanguageToggle'
-import { motion, AnimatePresence } from 'framer-motion'
-import { SlidersHorizontal, Settings, AlertTriangle } from 'lucide-react'
+import { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { useAuth } from "../context/AuthContext";
+import UserProfileSetup from "../components/UserProfileSetup";
+import VotingArena from "../components/VotingArena";
+import AnalystGate from "../components/AnalystGate";
+import SentimentStats from "../components/SentimentStats";
+import AnalyticsDashboard from "../components/AnalyticsDashboard";
+import FilterFunnel from "../components/FilterFunnel";
+import LiveTicker from "../components/LiveTicker";
+import PulseMap from "../components/PulseMap";
+import LanguageToggle from "../components/LanguageToggle";
+import { motion, AnimatePresence } from "framer-motion";
+import { SlidersHorizontal, Settings, AlertTriangle } from "lucide-react";
 
 export default function VotePage() {
-  const { t } = useTranslation('common')
-  const { currentUser, isGuest, signOut, deleteAccount, hasProfile, profileLoading, authError, clearAuthError } = useAuth()
-  const navigate = useNavigate()
-  const [profileSetupDismissed, setProfileSetupDismissed] = useState(false)
-  const [filters, setFilters] = useState({})
-  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const stableFilters = useMemo(() => ({ ...filters }), [filters])
+  const { t } = useTranslation("common");
+  const {
+    currentUser,
+    isGuest,
+    signOut,
+    deleteAccount,
+    hasProfile,
+    profile,
+    profileLoading,
+    authError,
+    clearAuthError,
+    revote,
+  } = useAuth();
+  const navigate = useNavigate();
+  const [profileSetupDismissed, setProfileSetupDismissed] = useState(false);
+  const [filters, setFilters] = useState({});
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [resetStanceConfirmOpen, setResetStanceConfirmOpen] = useState(false);
+  const [resetProfileChecked, setResetProfileChecked] = useState(false);
+  const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
+  const stableFilters = useMemo(() => ({ ...filters }), [filters]);
 
   // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
   useEffect(() => {
-    setProfileSetupDismissed(false)
-  }, [currentUser?.uid])
+    setProfileSetupDismissed(false);
+  }, [currentUser?.uid]);
 
   // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
   const needProfileSetup =
-    Boolean(currentUser?.uid) && !profileLoading && !hasProfile
-  const showProfileSetup = needProfileSetup && !profileSetupDismissed
+    Boolean(currentUser?.uid) && !profileLoading && !hasProfile;
+  const showProfileSetup = needProfileSetup && !profileSetupDismissed;
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
@@ -43,18 +57,22 @@ export default function VotePage() {
         animate={{ opacity: 1 }}
         className="flex justify-between items-center border-b border-villain-purple/30 pb-4"
       >
-        <h1 className="text-2xl font-bold text-king-gold">{t('voteBattlefield')}</h1>
+        <h1 className="text-2xl font-bold text-king-gold">
+          {t("voteBattlefield")}
+        </h1>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-400">
-            {isGuest ? t('guest') : (currentUser?.displayName ?? currentUser?.email)}
+            {isGuest
+              ? t("guest")
+              : (currentUser?.displayName ?? currentUser?.email)}
           </span>
           {isGuest ? (
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={() => navigate("/")}
               className="text-sm text-king-gold hover:underline"
             >
-              {t('signIn')}
+              {t("signIn")}
             </button>
           ) : (
             <>
@@ -62,17 +80,17 @@ export default function VotePage() {
                 type="button"
                 onClick={() => setSettingsOpen(true)}
                 className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-king-gold"
-                aria-label={t('openSettings')}
+                aria-label={t("openSettings")}
               >
                 <Settings className="w-4 h-4" />
-                {t('settings')}
+                {t("settings")}
               </button>
               <button
                 type="button"
                 onClick={signOut}
                 className="text-sm text-villain-purple hover:underline"
               >
-                {t('signOut')}
+                {t("signOut")}
               </button>
             </>
           )}
@@ -88,15 +106,17 @@ export default function VotePage() {
         <VotingArena userId={currentUser?.uid} currentUser={currentUser} />
         <section>
           <div className="flex items-center justify-between gap-4 mb-3">
-            <h2 className="text-lg font-semibold text-king-gold">{t('globalStats')}</h2>
+            <h2 className="text-lg font-semibold text-king-gold">
+              {t("globalStats")}
+            </h2>
             <button
               type="button"
               onClick={() => setFilterDrawerOpen(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
-              aria-label={t('openFilter')}
+              aria-label={t("openFilter")}
             >
               <SlidersHorizontal className="w-4 h-4" />
-              {t('filter')}
+              {t("filter")}
             </button>
           </div>
           <FilterFunnel
@@ -134,52 +154,83 @@ export default function VotePage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => { setSettingsOpen(false); clearAuthError() }}
+            onClick={() => {
+              setSettingsOpen(false);
+              clearAuthError();
+            }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="settings-title"
           >
             <motion.div
-              initial={{ y: '100%' }}
+              initial={{ y: "100%" }}
               animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 300 }}
               className="w-full max-w-lg rounded-t-2xl border-t border-villain-purple/30 bg-gray-900 p-6 pb-safe"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 id="settings-title" className="text-lg font-bold text-king-gold">{t('settings')}</h2>
+                <h2
+                  id="settings-title"
+                  className="text-lg font-bold text-king-gold"
+                >
+                  {t("settings")}
+                </h2>
                 <button
                   type="button"
-                  onClick={() => { setSettingsOpen(false); clearAuthError() }}
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    clearAuthError();
+                  }}
                   className="text-gray-400 hover:text-white"
                 >
-                  {t('close')}
+                  {t("close")}
                 </button>
               </div>
               {authError && (
-                <p className="mb-4 text-sm text-red-400" role="alert">{authError}</p>
+                <p className="mb-4 text-sm text-red-400" role="alert">
+                  {authError}
+                </p>
               )}
-              {/* Preferences：語系等，置於 Danger Zone 上方 */}
+              {/* Preferences：重置立場（僅已投票時顯示）、語系等，置於 Danger Zone 上方 */}
               <section className="pb-6 border-b border-villain-purple/20">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">{t('preferences')}</p>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                  {t("preferences")}
+                </p>
+                {profile?.hasVoted === true && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAuthError();
+                      setResetStanceConfirmOpen(true);
+                      setResetProfileChecked(false);
+                    }}
+                    className="w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold"
+                  >
+                    {t("resetStance")}
+                  </button>
+                )}
                 <LanguageToggle />
               </section>
               {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}
               <section className="mt-8 pt-6 border-t border-red-900/50">
                 <p className="text-xs uppercase tracking-wider text-red-400/90 font-semibold mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4" aria-hidden />
-                  {t('dangerZone')}
+                  {t("dangerZone")}
                 </p>
                 <p className="text-sm text-gray-500 mb-4">
-                  {t('dangerZoneDesc')}
+                  {t("dangerZoneDesc")}
                 </p>
                 <button
                   type="button"
-                  onClick={() => { setSettingsOpen(false); setDeleteConfirmOpen(true) }}
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setDeleteConfirmOpen(true);
+                  }}
                   className="w-full py-3 rounded-xl font-medium text-white bg-red-600 hover:bg-red-700 border border-red-500/50"
                 >
-                  {t('deleteAccount')}
+                  {t("deleteAccount")}
                 </button>
               </section>
             </motion.div>
@@ -200,8 +251,8 @@ export default function VotePage() {
             aria-labelledby="delete-confirm-title"
             onClick={() => {
               if (!deleting) {
-                setDeleteConfirmOpen(false)
-                clearAuthError()
+                setDeleteConfirmOpen(false);
+                clearAuthError();
               }
             }}
           >
@@ -212,11 +263,14 @@ export default function VotePage() {
               className="w-full max-w-sm rounded-2xl border border-red-900/60 bg-gray-900 p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 id="delete-confirm-title" className="text-lg font-bold text-red-400 mb-2">
-                {t('deleteConfirmTitle')}
+              <h3
+                id="delete-confirm-title"
+                className="text-lg font-bold text-red-400 mb-2"
+              >
+                {t("deleteConfirmTitle")}
               </h3>
               <p className="text-sm text-gray-400 mb-4">
-                {t('deleteConfirmDesc')}
+                {t("deleteConfirmDesc")}
               </p>
               {authError && (
                 <div className="mb-4 flex flex-col gap-2">
@@ -228,35 +282,137 @@ export default function VotePage() {
                     onClick={() => clearAuthError()}
                     className="self-start py-2 px-3 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-400/50 hover:bg-red-500/30"
                   >
-                    {t('retry')}
+                    {t("retry")}
                   </button>
                 </div>
               )}
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => { setDeleteConfirmOpen(false); clearAuthError() }}
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    clearAuthError();
+                  }}
                   className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 hover:bg-gray-800"
                 >
-                  {t('cancel')}
+                  {t("cancel")}
                 </button>
                 <button
                   type="button"
                   onClick={async () => {
-                    setDeleting(true)
-                    clearAuthError()
+                    setDeleting(true);
+                    clearAuthError();
                     try {
-                      await deleteAccount()
+                      await deleteAccount();
                     } catch {
                       // 錯誤已由 AuthContext 寫入 authError，保留彈窗讓用戶閱讀後自行關閉
                     } finally {
-                      setDeleting(false)
+                      setDeleting(false);
                     }
                   }}
                   disabled={deleting}
                   className="flex-1 py-3 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {deleting ? t('deleting') : t('deletePermanently')}
+                  {deleting ? t("deleting") : t("deletePermanently")}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 重置立場二次確認彈窗：可勾選一併重設個人資料，成功後若 hasProfile 為 false 會自動彈出戰區登錄 */}
+      <AnimatePresence>
+        {resetStanceConfirmOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="reset-stance-confirm-title"
+            aria-describedby="reset-stance-confirm-desc"
+            onClick={() => {
+              if (!resetStanceSubmitting) {
+                setResetStanceConfirmOpen(false);
+                clearAuthError();
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl border border-villain-purple/40 bg-gray-900 p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3
+                id="reset-stance-confirm-title"
+                className="text-lg font-bold text-king-gold mb-2"
+              >
+                {t("resetStanceConfirmTitle")}
+              </h3>
+              <p
+                id="reset-stance-confirm-desc"
+                className="text-sm text-gray-400 mb-4"
+              >
+                {t("resetStanceConfirmDesc")}
+              </p>
+              <label className="flex items-start gap-3 mb-4 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={resetProfileChecked}
+                  onChange={(e) => setResetProfileChecked(e.target.checked)}
+                  className="mt-1 rounded border-gray-500 text-king-gold focus:ring-king-gold/50"
+                  aria-describedby="reset-profile-option-label"
+                />
+                <span
+                  id="reset-profile-option-label"
+                  className="text-sm text-gray-300"
+                >
+                  {t("resetProfileOption")}
+                </span>
+              </label>
+              {authError && (
+                <p className="text-sm text-red-400 mb-4" role="alert">
+                  {authError}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetStanceConfirmOpen(false);
+                    clearAuthError();
+                  }}
+                  disabled={resetStanceSubmitting}
+                  className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 hover:bg-gray-800 disabled:opacity-60"
+                >
+                  {t("cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setResetStanceSubmitting(true);
+                    clearAuthError();
+                    try {
+                      await revote(resetProfileChecked);
+                      setResetStanceConfirmOpen(false);
+                      setSettingsOpen(false);
+                      if (resetProfileChecked) setProfileSetupDismissed(false);
+                    } catch {
+                      // 錯誤已寫入 authError，保留彈窗
+                    } finally {
+                      setResetStanceSubmitting(false);
+                    }
+                  }}
+                  disabled={resetStanceSubmitting}
+                  className="flex-1 py-3 rounded-xl font-bold text-white bg-king-gold text-black hover:bg-king-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {resetStanceSubmitting
+                    ? t("resettingStance")
+                    : t("resetStance")}
                 </button>
               </div>
             </motion.div>
@@ -264,5 +420,5 @@ export default function VotePage() {
         )}
       </AnimatePresence>
     </div>
-  )
+  );
 }

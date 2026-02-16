@@ -15,19 +15,34 @@ export const GENDERS = [
   { value: 'o', label: '其他' },
 ]
 
-/** 球隊選項：城市名稱 + 代表色暗示（voterTeam 為寫入 Firestore 用代碼） */
+/**
+ * 球隊選項：僅存 value（Firestore 用）與 i18n key，不硬編碼任何語系文字。
+ * 共 16 項含「其他」；城市與代表色由 teams.<id>.city / teams.<id>.colors 翻譯鍵提供。
+ */
 export const TEAMS = [
-  { value: 'LAL', label: '洛杉磯', colorHint: '金／紫' },
-  { value: 'GSW', label: '灣區', colorHint: '金／藍' },
-  { value: 'BOS', label: '波士頓', colorHint: '綠' },
-  { value: 'MIA', label: '邁阿密', colorHint: '紅／黑' },
-  { value: 'CLE', label: '克里夫蘭', colorHint: '酒紅' },
-  { value: 'CHI', label: '芝加哥', colorHint: '紅' },
-  { value: 'NYK', label: '紐約', colorHint: '橙／藍' },
-  { value: 'MIL', label: '密爾瓦基', colorHint: '綠' },
-  { value: 'PHX', label: '鳳凰城', colorHint: '橙／紫' },
-  { value: 'OTHER', label: '其他', colorHint: '—' },
+  { id: 'lakers', value: 'LAL', cityKey: 'teams.lakers.city', colorKey: 'teams.lakers.colors' },
+  { id: 'warriors', value: 'GSW', cityKey: 'teams.warriors.city', colorKey: 'teams.warriors.colors' },
+  { id: 'celtics', value: 'BOS', cityKey: 'teams.celtics.city', colorKey: 'teams.celtics.colors' },
+  { id: 'heat', value: 'MIA', cityKey: 'teams.heat.city', colorKey: 'teams.heat.colors' },
+  { id: 'cavaliers', value: 'CLE', cityKey: 'teams.cavaliers.city', colorKey: 'teams.cavaliers.colors' },
+  { id: 'bulls', value: 'CHI', cityKey: 'teams.bulls.city', colorKey: 'teams.bulls.colors' },
+  { id: 'knicks', value: 'NYK', cityKey: 'teams.knicks.city', colorKey: 'teams.knicks.colors' },
+  { id: 'bucks', value: 'MIL', cityKey: 'teams.bucks.city', colorKey: 'teams.bucks.colors' },
+  { id: 'suns', value: 'PHX', cityKey: 'teams.suns.city', colorKey: 'teams.suns.colors' },
+  { id: 'mavericks', value: 'DAL', cityKey: 'teams.mavericks.city', colorKey: 'teams.mavericks.colors' },
+  { id: 'nuggets', value: 'DEN', cityKey: 'teams.nuggets.city', colorKey: 'teams.nuggets.colors' },
+  { id: 'sixers', value: 'PHI', cityKey: 'teams.sixers.city', colorKey: 'teams.sixers.colors' },
+  { id: 'raptors', value: 'TOR', cityKey: 'teams.raptors.city', colorKey: 'teams.raptors.colors' },
+  { id: 'spurs', value: 'SAS', cityKey: 'teams.spurs.city', colorKey: 'teams.spurs.colors' },
+  { id: 'thunder', value: 'OKC', cityKey: 'teams.thunder.city', colorKey: 'teams.thunder.colors' },
+  { id: 'other', value: 'OTHER', cityKey: 'teams.other.city', colorKey: 'teams.other.colors' },
 ]
+
+/** 依 value（如 LAL）取得城市翻譯鍵，供 BattleCard / LiveTicker / Filter 等使用，語系切換時自動更新 */
+export function getTeamCityKey(value) {
+  const team = TEAMS.find((t) => t.value === value)
+  return team ? team.cityKey : 'teams.other.city'
+}
 
 /** 常用國家（ISO 代碼），供選單與 IP 定位結果對應 */
 export const COUNTRIES = [
@@ -55,6 +70,16 @@ export const STANCES = [
   { value: 'machine', theme: 'machine-silver' },
   { value: 'stat_padder', theme: 'rust-copper' },
 ]
+
+/** 立場 → 主題色（hex），供 StanceCards / 雷達圖藥丸與描邊聯動 */
+export const STANCE_COLORS = {
+  goat: '#D4AF37',
+  fraud: '#4B0082',
+  king: '#B42832',
+  mercenary: '#3C3C41',
+  machine: '#C0C0C8',
+  stat_padder: '#B87333',
+}
 
 /** 依立場動態顯示的原因標籤（用於標籤雲）；value 為寫入 votes.reasons 的代碼；對抗版佔位以維持流程 */
 export const REASONS_BY_STANCE = {
