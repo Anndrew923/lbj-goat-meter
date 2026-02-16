@@ -1,15 +1,27 @@
 import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { motion } from 'framer-motion'
 
+const languages = [
+  { code: 'en', label: 'EN' },
+  { code: 'zh-TW', label: '中文' },
+]
+
+/** 將 i18n.language 正規化為與 config SUPPORTED_LANGS 一致，供高亮比對 */
+function resolveDisplayLanguage(lng) {
+  if (!lng) return 'zh-TW'
+  if (lng === 'zh-TW') return 'zh-TW'
+  if (lng.startsWith('en')) return 'en'
+  return 'zh-TW'
+}
+
 export default function LoginPage() {
-  const { t } = useTranslation('common')
+  const { t, i18n } = useTranslation('common')
   const { currentUser, loading, profileLoading, hasProfile, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
     useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const hasNavigatedRef = useRef(false)
 
@@ -45,9 +57,42 @@ export default function LoginPage() {
     navigate('/vote', { replace: true })
   }
 
+  /** 語言切換器 UI（與 config 持久化連動），loading 與主內容皆顯示 */
+  const renderLanguageSwitcher = () => (
+    <div className="absolute top-6 right-6 z-20" role="group" aria-label={t('language')}>
+      <div className="flex items-center bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10 shadow-lg">
+        {languages.map((lang) => {
+          const isActive = resolveDisplayLanguage(i18n.language) === lang.code
+          return (
+            <button
+              key={lang.code}
+              type="button"
+              onClick={() => i18n.changeLanguage(lang.code)}
+              aria-pressed={isActive}
+              aria-label={lang.code === 'en' ? t('lang_en') : t('lang_zhTW')}
+              className={`relative px-4 py-1.5 text-sm font-bold rounded-full transition-colors duration-200 ${
+                isActive ? 'text-white' : 'text-white/50 hover:text-white/80'
+              }`}
+            >
+              {isActive && (
+                <motion.div
+                  layoutId="activeLangGlow"
+                  className="absolute inset-0 bg-king-gold/20 border border-king-gold/50 rounded-full shadow-[0_0_15px_rgba(212,175,55,0.3)] z-0"
+                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">{lang.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center relative">
+        {renderLanguageSwitcher()}
         <p className="text-king-gold animate-pulse" role="status" aria-live="polite">
           {t('loading')}
         </p>
@@ -56,7 +101,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative">
+      {renderLanguageSwitcher()}
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
