@@ -81,31 +81,72 @@ export const STANCE_COLORS = {
   stat_padder: '#B87333',
 }
 
-/** 依立場動態顯示的原因標籤（用於標籤雲）；value 為寫入 votes.reasons 的代碼；對抗版佔位以維持流程 */
+/**
+ * 立場理由矩陣 — 懂行級 LBJ 生涯註解（Architecture First）
+ *
+ * 設計意圖：不以簡單字串陣列呈現，改為「物件矩陣」以便：
+ * - Key：寫入 Firestore votes.reasons 的識別碼，便於分析與儀表板聚合。
+ * - Label：對應 i18n 鍵值（arena.reasons.<stance>.<key>），語系檔內為 primary / secondary。
+ * - Weight：視覺權重（high = 略大/加亮，normal = 預設），讓核心論點脫穎而出。
+ * - Category：歸類（honors / controversy / stats / leadership / legacy 等），供未來篩選或標籤雲分組。
+ *
+ * 每個理由的選取都有辯論意圖：例如 FRAUD 的 2011 總決賽是無法繞過的爭議核心，
+ * GOAT 的 1-3 逆轉與 4-1-1 是正面論述的支柱，MERCENARY 的 LeGM 則對應社群梗與道德爭議。
+ */
+export const REASON_WEIGHT = Object.freeze({ HIGH: 'high', NORMAL: 'normal' })
+export const REASON_CATEGORY = Object.freeze({
+  HONORS: 'honors',
+  CONTROVERSY: 'controversy',
+  STATS: 'stats',
+  LEADERSHIP: 'leadership',
+  LEGACY: 'legacy',
+  NARRATIVE: 'narrative',
+})
+
+/** 多選上限：強迫用戶選出「最精華」的論點，避免理由堆砌。 */
+export const REASONS_MAX_SELECT = 3
+
 export const REASONS_BY_STANCE = {
   goat: [
-    { value: '411', label: '411 工程' },
-    { value: 'longevity', label: '長青' },
-    { value: 'iq', label: '球商' },
-  ],
-  fraud: [
-    { value: 'narrative', label: '爭議敘事' },
-    { value: 'overrated', label: '過譽' },
+    { key: 'comeback_2016', labelKey: 'reasons.goat.comeback_2016', weight: 'high', category: 'honors' },
+    { key: '411_first', labelKey: 'reasons.goat.411_first', weight: 'high', category: 'stats' },
+    { key: 'eight_finals', labelKey: 'reasons.goat.eight_finals', weight: 'high', category: 'honors' },
+    { key: 'death_stare_2012', labelKey: 'reasons.goat.death_stare_2012', weight: 'normal', category: 'legacy' },
+    { key: 'ultimate_answer', labelKey: 'reasons.goat.ultimate_answer', weight: 'normal', category: 'legacy' },
   ],
   king: [
-    { value: 'leadership', label: '領袖' },
-    { value: 'legacy', label: '傳承' },
-  ],
-  mercenary: [
-    { value: 'superteam', label: '抱團' },
-    { value: 'business', label: '利益取向' },
+    { key: 'highest_iq', labelKey: 'reasons.king.highest_iq', weight: 'high', category: 'leadership' },
+    { key: '2018_solo', labelKey: 'reasons.king.2018_solo', weight: 'high', category: 'honors' },
+    { key: 'floor_general', labelKey: 'reasons.king.floor_general', weight: 'normal', category: 'leadership' },
+    { key: 'oldest_allstar', labelKey: 'reasons.king.oldest_allstar', weight: 'normal', category: 'stats' },
+    { key: 'kid_from_akron', labelKey: 'reasons.king.kid_from_akron', weight: 'normal', category: 'legacy' },
   ],
   machine: [
-    { value: 'consistency', label: '穩定' },
-    { value: 'durability', label: '耐戰' },
+    { key: 'body_investment', labelKey: 'reasons.machine.body_investment', weight: 'high', category: 'stats' },
+    { key: '22_years_peak', labelKey: 'reasons.machine.22_years_peak', weight: 'high', category: 'stats' },
+    { key: '27_7_7', labelKey: 'reasons.machine.27_7_7', weight: 'normal', category: 'stats' },
+    { key: 'playoffs_pts_king', labelKey: 'reasons.machine.playoffs_pts_king', weight: 'normal', category: 'stats' },
+    { key: 'the_block', labelKey: 'reasons.machine.the_block', weight: 'normal', category: 'honors' },
+  ],
+  fraud: [
+    { key: '2011_finals', labelKey: 'reasons.fraud.2011_finals', weight: 'high', category: 'controversy' },
+    { key: 'the_decision', labelKey: 'reasons.fraud.the_decision', weight: 'high', category: 'controversy' },
+    { key: 'leflop', labelKey: 'reasons.fraud.leflop', weight: 'normal', category: 'controversy' },
+    { key: 'passing_clutch', labelKey: 'reasons.fraud.passing_clutch', weight: 'normal', category: 'controversy' },
+    { key: 'finals_4_6', labelKey: 'reasons.fraud.finals_4_6', weight: 'high', category: 'stats' },
+  ],
+  mercenary: [
+    { key: 'superteam_era', labelKey: 'reasons.mercenary.superteam_era', weight: 'high', category: 'controversy' },
+    { key: 'legm', labelKey: 'reasons.mercenary.legm', weight: 'high', category: 'controversy' },
+    { key: 'ring_chaser', labelKey: 'reasons.mercenary.ring_chaser', weight: 'normal', category: 'narrative' },
+    { key: 'no_loyalty', labelKey: 'reasons.mercenary.no_loyalty', weight: 'normal', category: 'narrative' },
+    { key: 'coach_killer', labelKey: 'reasons.mercenary.coach_killer', weight: 'normal', category: 'controversy' },
   ],
   stat_padder: [
-    { value: 'numbers', label: '數據' },
-    { value: 'empty_stats', label: '刷數據' },
+    { key: '40k_hunter', labelKey: 'reasons.stat_padder.40k_hunter', weight: 'high', category: 'stats' },
+    { key: 'garbage_time', labelKey: 'reasons.stat_padder.garbage_time', weight: 'normal', category: 'stats' },
+    { key: 'walking_defense', labelKey: 'reasons.stat_padder.walking_defense', weight: 'normal', category: 'controversy' },
+    { key: 'ball_dominant', labelKey: 'reasons.stat_padder.ball_dominant', weight: 'normal', category: 'narrative' },
+    { key: 'stats_over_wins', labelKey: 'reasons.stat_padder.stats_over_wins', weight: 'high', category: 'narrative' },
   ],
 }

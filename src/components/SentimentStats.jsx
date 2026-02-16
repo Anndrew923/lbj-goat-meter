@@ -7,8 +7,11 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useSentimentData } from '../hooks/useSentimentData'
 import { getStancesForArena } from '../i18n/i18n'
+import { STANCE_COLORS } from '../lib/constants'
 
 const EMPTY_FILTERS = {}
+/** 未知／其他立場的進度條 fallback 色（與 gray-500 一致） */
+const FALLBACK_BAR_COLOR = '#6b7280'
 
 export default function SentimentStats({ filters = EMPTY_FILTERS }) {
   const { t } = useTranslation('common')
@@ -50,8 +53,9 @@ export default function SentimentStats({ filters = EMPTY_FILTERS }) {
   const { total, byStatus, otherCount } = stats
   const orderedStanceRows = getStancesForArena()
 
-  const renderBar = (statusKey, label, theme, count) => {
+  const renderBar = (statusKey, label, count) => {
     const pct = total > 0 ? (count / total) * 100 : 0
+    const barColor = STANCE_COLORS[statusKey] ?? FALLBACK_BAR_COLOR
     return (
       <motion.div
         key={statusKey}
@@ -59,30 +63,17 @@ export default function SentimentStats({ filters = EMPTY_FILTERS }) {
         animate={{ opacity: 1 }}
         className="flex items-center gap-3"
       >
-        <span className="w-20 text-sm text-gray-300 truncate">{label}</span>
-        <div className="flex-1 h-6 rounded-full bg-gray-800 overflow-hidden">
+        <span className="min-w-[70px] shrink-0 text-sm text-gray-300">{label}</span>
+        <div className="flex-1 h-6 rounded-full bg-gray-800 overflow-hidden min-w-0">
           <motion.div
-            className={`h-full rounded-full ${
-              theme === 'king-gold'
-                ? 'bg-king-gold'
-                : theme === 'villain-purple'
-                  ? 'bg-villain-purple'
-                  : theme === 'crown-red'
-                    ? 'bg-red-600'
-                    : theme === 'graphite'
-                      ? 'bg-gray-600'
-                      : theme === 'machine-silver'
-                        ? 'bg-gray-400'
-                        : theme === 'rust-copper'
-                          ? 'bg-amber-600'
-                          : 'bg-gray-500'
-            }`}
+            className="h-full rounded-full"
+            style={{ backgroundColor: barColor }}
             initial={false}
             animate={{ width: `${pct}%` }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
           />
         </div>
-        <span className="w-12 text-right text-sm text-gray-400">{count}</span>
+        <span className="min-w-[30px] shrink-0 text-right text-sm text-gray-400">{count}</span>
       </motion.div>
     )
   }
@@ -92,12 +83,12 @@ export default function SentimentStats({ filters = EMPTY_FILTERS }) {
       <h3 className="text-lg font-bold text-king-gold mb-2">{t('globalVoteDistribution')}</h3>
       <p className="text-sm text-gray-400 mb-4">{t('totalVotesCount', { count: total })}</p>
       <div className="space-y-3">
-        {orderedStanceRows.map(({ value: status, theme, secondary: label }) => {
+        {orderedStanceRows.map(({ value: status, primary }) => {
           const count = byStatus[status] ?? 0
-          return renderBar(status, label ?? status, theme ?? 'gray', count)
+          return renderBar(status, primary ?? status, count)
         })}
         {otherCount > 0 &&
-          renderBar('other', t('other'), 'gray', otherCount)}
+          renderBar('other', t('other'), otherCount)}
       </div>
     </div>
   )

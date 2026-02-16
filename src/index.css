@@ -10,11 +10,34 @@
   --color-graphite: #3C3C41;
   --color-machine-silver: #C0C0C8;
   --color-rust-copper: #B87333;
+  /* Safe area：單一來源，避免 Tailwind 任意值中 env() 逗號解析問題 */
+  --safe-area-inset-top: env(safe-area-inset-top, 1rem);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 2rem);
 }
 
+html,
+body {
+  overscroll-behavior-y: none;
+}
 body {
   margin: 0;
   min-height: 100vh;
+}
+
+/* 頂部安全區（固定 Header 用） */
+.safe-area-inset-top {
+  padding-top: var(--safe-area-inset-top);
+}
+
+/* 底部安全區（主容器、底部抽屜用） */
+.safe-area-inset-bottom {
+  padding-bottom: var(--safe-area-inset-bottom);
+}
+
+/* 與固定 Header 等高的佔位，避免首屏內容被遮擋 */
+.header-spacer {
+  height: calc(var(--safe-area-inset-top) + 4rem);
+  flex-shrink: 0;
 }
 
 /* SmartWarzoneSelector：4px 主題金捲軸、隱藏系統預設 */

@@ -22,16 +22,24 @@
  *
  * 4. **潛在影響**：新增語系（如 ja）時，需在 arena 中擴充 tertiary 或改為 locale key 結構，
  *    並在 getStance / getReason 中依 locale 選擇欄位；品牌詞仍只讀 brand，不隨語系變動。
+ *
+ * 5. **懂行級理由矩陣**（LBJ 生涯最終註解）：
+ *    - 理由以 key 識別、labelKey 對應 arena.reasons.<stance>.<key>.primary/secondary。
+ *    - 設計意圖：例如 FRAUD 的 2011 總決賽是 LBJ 辯論中無法繞過的爭議核心；GOAT 的 1-3 逆轉與 4-1-1 為正面論述支柱；
+ *      MERCENARY 的 LeGM 對應社群梗與道德爭議。見 constants.REASONS_BY_STANCE 與各語系 arena.json。
  */
 
 import arenaData from './arena.json'
 import brandData from './brand.json'
-import { STANCES } from '../lib/constants'
+import { STANCES, REASONS_BY_STANCE } from '../lib/constants'
 import i18n from './config'
 
 const STANCE_ORDER = STANCES.map((s) => s.value)
 
-/** 取得當前語系的 arena.reasons，供 getReason / getReasonsForStance 使用，語系切換後即時生效 */
+/**
+ * 取得當前語系的 arena.reasons（結構：reasons[stance][key] = { primary, secondary }），
+ * 供 getReason / getReasonsForStance 使用，語系切換後即時生效。
+ */
 function getReasonsResource() {
   const lng = i18n.language || 'zh-TW'
   const bundle = typeof i18n.getResourceBundle === 'function' && i18n.getResourceBundle(lng, 'arena')
@@ -94,16 +102,17 @@ export function getStancesForArena() {
 
 /**
  * 取得單一原因標籤的雙層語義；primary 會經 resolveBrand 處理。
+ * 對應新結構：reasons[stance][key] = { primary, secondary }。
  * @param {string} stanceKey - 立場 value
- * @param {string} reasonValue - 原因 value（如 '411', 'leGM'）
+ * @param {string} reasonValue - 原因 key（如 'comeback_2016', '2011_finals'）
  * @returns {{ primary: string, secondary: string } | null}
  */
 export function getReason(stanceKey, reasonValue) {
   if (stanceKey == null || reasonValue == null) return null
   const reasons = getReasonsResource()
-  const list = reasons[stanceKey]
-  if (!Array.isArray(list)) return null
-  const entry = list.find((r) => r.value === reasonValue)
+  const stanceReasons = reasons[stanceKey]
+  if (!stanceReasons || typeof stanceReasons !== 'object') return null
+  const entry = stanceReasons[reasonValue]
   if (!entry) return null
   return {
     primary: resolveBrand(entry.primary),
@@ -112,17 +121,19 @@ export function getReason(stanceKey, reasonValue) {
 }
 
 /**
- * 取得某立場下的原因列表（用於標籤雲按鈕），每項含 value、primary、secondary。
+ * 取得某立場下的原因列表（用於標籤雲按鈕），每項含 value（= key）、primary、secondary、weight、category。
+ * 順序依 constants.REASONS_BY_STANCE；隨機排序由 VotingArena 在渲染時對本列表做 shuffle，確保每個理由都有機會被看到。
  */
 export function getReasonsForStance(stanceKey) {
   if (stanceKey == null || typeof stanceKey !== 'string') return []
-  const reasons = getReasonsResource()
-  const list = reasons[stanceKey]
+  const list = REASONS_BY_STANCE[stanceKey]
   if (!Array.isArray(list)) return []
   return list.map((r) => ({
-    value: r.value,
-    primary: resolveBrand(r.primary),
-    secondary: r.secondary ?? r.primary,
+    value: r.key,
+    primary: resolveBrand(i18n.t('arena:' + r.labelKey + '.primary')),
+    secondary: i18n.t('arena:' + r.labelKey + '.secondary'),
+    weight: r.weight,
+    category: r.category,
   }))
 }
 
@@ -169,15 +180,17 @@ export function getStanceDisplayTicker(stanceKey) {
  * 所有原因 value -> 單一顯示標籤（secondary）的映射，供儀表板等處使用。
  * 依 STANCE_ORDER 迭代，同一 value 出現在多立場（如 iq）時以首次出現為準，與 getStancesForArena 順序一致。
  */
-/** 依當前語系建立 reason value -> 顯示標籤（secondary）的映射；語系切換後需重新呼叫以更新。 */
+/** 依當前語系建立 reason key -> 顯示標籤（secondary）的映射；語系切換後需重新呼叫以更新。 */
 export function getReasonLabelMap() {
   const m = {}
-  const reasons = getReasonsResource()
   STANCE_ORDER.forEach((stanceKey) => {
-    const list = reasons[stanceKey]
+    const list = REASONS_BY_STANCE[stanceKey]
     if (!Array.isArray(list)) return
     list.forEach((r) => {
-      if (m[r.value] === undefined) m[r.value] = r.secondary ?? r.primary
+      if (m[r.key] === undefined) {
+        const semantic = getReason(stanceKey, r.key)
+        m[r.key] = semantic ? semantic.secondary : r.key
+      }
     })
   })
   return m

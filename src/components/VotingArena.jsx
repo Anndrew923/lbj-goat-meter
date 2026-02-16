@@ -3,7 +3,7 @@
  * 六大立場對抗版：雙層語義（primary 大寫粗體英文 + secondary 細體中文），
  * 所有文案經 t() 讀取，禁止硬編碼；GOAT 金閃／FRAUD 紫碎動畫。
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,9 +15,20 @@ import {
 import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
+import { REASONS_MAX_SELECT } from "../lib/constants";
 import BattleCard from "./BattleCard";
 import LoginPromptModal from "./LoginPromptModal";
 import StanceCards from "./StanceCards";
+
+/** Fisher–Yates shuffle，不改動原陣列，用於每次選立場時隨機排序理由，確保每個理由都有機會被看到。 */
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 const STAR_ID = "lbj";
 
@@ -29,7 +40,7 @@ function isAntiStance(stance) {
 }
 
 export default function VotingArena({ userId, currentUser }) {
-  const { t } = useTranslation(["arena", "common"]);
+  const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
   const [selectedStance, setSelectedStance] = useState(null);
   const [selectedReasons, setSelectedReasons] = useState([]);
@@ -49,6 +60,13 @@ export default function VotingArena({ userId, currentUser }) {
   const hasVoted = profile?.hasVoted === true || voteSuccess;
   const canSubmit =
     profile && !hasVoted && selectedStance && selectedReasons.length > 0;
+
+  /** 每次選定立場或語系變更時重算：隨機排序理由並取得當前語系文案，確保每個理由都有機會被看到且當輪順序穩定。 */
+  const reasons = useMemo(
+    () =>
+      selectedStance ? shuffle(getReasonsForStance(selectedStance)) : [],
+    [selectedStance, i18n.language],
+  );
 
   useEffect(() => {
     return () => {
@@ -70,9 +88,11 @@ export default function VotingArena({ userId, currentUser }) {
   }, [profile?.hasVoted, voteSuccess]);
 
   const toggleReason = (value) => {
-    setSelectedReasons((prev) =>
-      prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value],
-    );
+    setSelectedReasons((prev) => {
+      if (prev.includes(value)) return prev.filter((r) => r !== value);
+      if (prev.length >= REASONS_MAX_SELECT) return prev;
+      return [...prev, value];
+    });
   };
 
   const handleRevote = async () => {
@@ -280,7 +300,6 @@ export default function VotingArena({ userId, currentUser }) {
     );
   }
 
-  const reasons = selectedStance ? getReasonsForStance(selectedStance) : [];
   const anti = isAntiStance(selectedStance);
 
   return (
@@ -294,7 +313,7 @@ export default function VotingArena({ userId, currentUser }) {
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ type: "spring", stiffness: 300, damping: 24 }}
-        className="mb-6"
+        className="mb-4"
       >
         <StanceCards
           selectedStance={selectedStance}
@@ -311,30 +330,47 @@ export default function VotingArena({ userId, currentUser }) {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="mb-6"
+            className="mb-4"
           >
-            <p className="text-sm text-gray-400 mb-2">
+            <p className="text-sm text-gray-400 mb-2" id="choose-reasons-hint">
               {t("common:chooseReasons")}
+              <span className="ml-1 text-gray-500">
+                （{t("common:chooseReasonsMax", { max: REASONS_MAX_SELECT })}）
+              </span>
             </p>
-            <div className="flex flex-wrap gap-2">
-              {reasons.map(({ value, secondary }) => (
-                <motion.button
-                  key={value}
-                  type="button"
-                  onClick={() => toggleReason(value)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                    selectedReasons.includes(value)
-                      ? anti
-                        ? "bg-villain-purple/70 text-white"
-                        : "bg-king-gold/80 text-black"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                  }`}
-                >
-                  {secondary}
-                </motion.button>
-              ))}
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-labelledby="choose-reasons-hint"
+            >
+              {reasons.map(({ value, secondary, weight }) => {
+                const isSelected = selectedReasons.includes(value);
+                const atMax = selectedReasons.length >= REASONS_MAX_SELECT;
+                const disabled = !isSelected && atMax;
+                return (
+                  <motion.button
+                    key={value}
+                    type="button"
+                    onClick={() => toggleReason(value)}
+                    disabled={disabled}
+                    aria-pressed={isSelected}
+                    aria-label={secondary}
+                    whileHover={!disabled ? { scale: 1.05 } : {}}
+                    whileTap={!disabled ? { scale: 0.95 } : {}}
+                    className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                      weight === "high" ? "font-semibold" : ""
+                    } ${
+                      isSelected
+                        ? anti
+                          ? "bg-villain-purple/70 text-white"
+                          : "bg-king-gold/80 text-black"
+                        : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                    } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+                  >
+                    {secondary}
+                  </motion.button>
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -352,7 +388,7 @@ export default function VotingArena({ userId, currentUser }) {
         disabled={!canSubmit || submitting}
         whileHover={canSubmit ? { scale: 1.02 } : {}}
         whileTap={canSubmit ? { scale: 0.98 } : {}}
-        className="w-full py-3 rounded-lg bg-king-gold text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {submitting ? t("common:submitting") : t("common:submitVote")}
       </motion.button>

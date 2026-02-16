@@ -8,30 +8,47 @@
     "stat_padder": { "primary": "STAT PADDER", "secondary": "Numbers-focused stat-padder" }
   },
   "reasons": {
-    "goat": [
-      { "value": "411", "primary": "411 Project", "secondary": "411 Project" },
-      { "value": "longevity", "primary": "Longevity", "secondary": "Longevity" },
-      { "value": "iq", "primary": "Basketball IQ", "secondary": "Basketball IQ" }
-    ],
-    "fraud": [
-      { "value": "narrative", "primary": "Narrative", "secondary": "Narrative" },
-      { "value": "overrated", "primary": "Overrated", "secondary": "Overrated" }
-    ],
-    "king": [
-      { "value": "leadership", "primary": "Leadership", "secondary": "Leadership" },
-      { "value": "legacy", "primary": "Legacy", "secondary": "Legacy" }
-    ],
-    "mercenary": [
-      { "value": "superteam", "primary": "Superteam", "secondary": "Superteam" },
-      { "value": "business", "primary": "Business", "secondary": "Business" }
-    ],
-    "machine": [
-      { "value": "consistency", "primary": "Consistency", "secondary": "Consistency" },
-      { "value": "durability", "primary": "Durability", "secondary": "Durability" }
-    ],
-    "stat_padder": [
-      { "value": "numbers", "primary": "Numbers", "secondary": "Numbers" },
-      { "value": "empty_stats", "primary": "Empty stats", "secondary": "Empty stats" }
-    ]
+    "goat": {
+      "comeback_2016": { "primary": "1-3 Comeback", "secondary": "2016 epic 1-3 comeback" },
+      "411_first": { "primary": "4-1-1 Club", "secondary": "4-1-1 first ever (40K/10K/10K)" },
+      "eight_finals": { "primary": "8 Straight Finals", "secondary": "8 straight years ruling the Finals" },
+      "death_stare_2012": { "primary": "Death Stare G6", "secondary": "2012 Death Stare (Game 6 vs Celtics)" },
+      "ultimate_answer": { "primary": "Ultimate Two-Way", "secondary": "Ultimate two-way basketball answer" }
+    },
+    "king": {
+      "highest_iq": { "primary": "Highest Basketball IQ", "secondary": "Highest basketball IQ ever" },
+      "2018_solo": { "primary": "2018 Solo Run", "secondary": "2018 playoffs single-handedly" },
+      "floor_general": { "primary": "Floor General", "secondary": "Floor general" },
+      "oldest_allstar": { "primary": "Oldest All-Star", "secondary": "Oldest active All-Star" },
+      "kid_from_akron": { "primary": "The Kid from Akron", "secondary": "The Kid from Akron" }
+    },
+    "machine": {
+      "body_investment": { "primary": "$20M Body", "secondary": "$20M body investment" },
+      "22_years_peak": { "primary": "22-Year Peak", "secondary": "22 years at peak" },
+      "27_7_7": { "primary": "27-7-7", "secondary": "27-7-7 steady output" },
+      "playoffs_pts_king": { "primary": "Playoffs Scoring King", "secondary": "Playoffs all-time scoring leader" },
+      "the_block": { "primary": "The Block", "secondary": "The Block specialist" }
+    },
+    "fraud": {
+      "2011_finals": { "primary": "2011 Finals Meltdown", "secondary": "2011 Finals disappeared (8pt game)" },
+      "the_decision": { "primary": "The Decision", "secondary": "The Decision" },
+      "leflop": { "primary": "LeFlop", "secondary": "LeFlop acting" },
+      "passing_clutch": { "primary": "Passing in Clutch", "secondary": "Passing in clutch moments" },
+      "finals_4_6": { "primary": "4-6 in Finals", "secondary": "4-6 in Finals" }
+    },
+    "mercenary": {
+      "superteam_era": { "primary": "Superteam Era", "secondary": "Superteam era pioneer" },
+      "legm": { "primary": "LeGM", "secondary": "LeGM (trade teammates)" },
+      "ring_chaser": { "primary": "Ring Chaser", "secondary": "Ring-chasing nomad" },
+      "no_loyalty": { "primary": "No One-Team Loyalty", "secondary": "No one-team loyalty" },
+      "coach_killer": { "primary": "Coach Killer", "secondary": "Coach killer" }
+    },
+    "stat_padder": {
+      "40k_hunter": { "primary": "40,000-Point Hunt", "secondary": "40,000-point record hunter" },
+      "garbage_time": { "primary": "Garbage Time Stats", "secondary": "Garbage time stat-padding" },
+      "walking_defense": { "primary": "Walking Defense", "secondary": "Walking defense in late career" },
+      "ball_dominant": { "primary": "Ball Dominance", "secondary": "Ball dominance at teammates' cost" },
+      "stats_over_wins": { "primary": "Stats Over Wins", "secondary": "Stats over win rate" }
+    }
   }
 }

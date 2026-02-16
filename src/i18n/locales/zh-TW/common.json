@@ -6,6 +6,7 @@
   "alreadyVoted": "您已投過票",
   "thanksVoted": "感謝您的立場，數據將納入全球統計。",
   "chooseReasons": "選擇原因（可複選）",
+  "chooseReasonsMax": "最多選 {{max}} 項",
   "submitVote": "投下神聖一票",
   "submitting": "提交中…",
   "submitError": "提交失敗，請稍後再試",

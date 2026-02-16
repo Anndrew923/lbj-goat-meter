@@ -6,6 +6,10 @@ import { motion } from "framer-motion";
 import { getStancesForArena } from "../i18n/i18n";
 import { STANCE_COLORS } from "../lib/constants";
 
+function getStanceColor(value) {
+  return STANCE_COLORS[value] ?? "#9ca3af";
+}
+
 /** 依 theme 與選中狀態取得按鈕/卡片樣式 */
 function getStanceCardClass(theme, isSelected) {
   if (!isSelected) {
@@ -53,12 +57,11 @@ export default function StanceCards({
   fraudShatter = false,
 }) {
   const rows = getStancesForArena();
-  const stanceColor = (value) => STANCE_COLORS[value] ?? "#9ca3af";
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
       {rows.map(({ value, theme, primary, secondary }) => {
-        const color = stanceColor(value);
+        const color = getStanceColor(value);
         const watermarkLetter = (primary && primary[0]) || value[0];
         return (
           <motion.button
@@ -70,14 +73,14 @@ export default function StanceCards({
             aria-label={`${primary}: ${secondary}`}
             whileHover={disabled ? undefined : { scale: 1.02 }}
             whileTap={disabled ? undefined : { scale: 0.98 }}
-            className={`relative min-h-[140px] rounded-lg text-left p-6 transition-colors flex flex-col items-start justify-end overflow-hidden ${getStanceCardClass(
+            className={`relative min-h-[110px] rounded-lg text-left px-4 py-2.5 transition-colors flex flex-col items-start justify-end overflow-hidden disabled:cursor-not-allowed ${getStanceCardClass(
               theme,
               selectedStance === value
             )}`}
           >
             {/* 背景水印：巨大字母 */}
             <span
-              className="absolute right-[-5%] bottom-[-5%] text-9xl font-black opacity-[0.05] italic pointer-events-none select-none"
+              className="absolute right-[-5%] bottom-[-5%] text-7xl sm:text-8xl lg:text-9xl font-black opacity-[0.05] italic pointer-events-none select-none"
               style={{ color }}
               aria-hidden
             >
@@ -106,12 +109,12 @@ export default function StanceCards({
               />
             )}
             <span
-              className="relative z-0 text-3xl md:text-4xl font-black uppercase tracking-tighter leading-tight"
+              className="relative z-0 text-2xl sm:text-3xl lg:text-4xl font-black uppercase tracking-tighter leading-tight"
               style={{ color: selectedStance === value ? undefined : color }}
             >
               {primary}
             </span>
-            <span className="relative z-0 text-[10px] font-normal opacity-90 mt-1 line-clamp-2">
+            <span className="relative z-0 text-[9px] sm:text-[10px] font-normal opacity-90 mt-0.5 line-clamp-2">
               {secondary}
             </span>
           </motion.button>

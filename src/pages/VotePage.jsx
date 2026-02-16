@@ -51,11 +51,11 @@ export default function VotePage() {
   const showProfileSetup = needProfileSetup && !profileSetupDismissed;
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
+    <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
       <motion.header
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="flex justify-between items-center border-b border-villain-purple/30 pb-4"
+        className="fixed top-0 left-0 w-full z-50 bg-black/80 backdrop-blur-xl border-b border-villain-purple/30 flex justify-between items-center pb-4 safe-area-inset-top px-6"
       >
         <h1 className="text-2xl font-bold text-king-gold">
           {t("voteBattlefield")}
@@ -96,6 +96,8 @@ export default function VotePage() {
           )}
         </div>
       </motion.header>
+      {/* 與固定 Header 等高的 Spacer，避免首屏內容被遮擋 */}
+      <div className="header-spacer" aria-hidden />
       <LiveTicker />
       <motion.main
         initial={{ opacity: 0, y: 10 }}
@@ -167,7 +169,7 @@ export default function VotePage() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="w-full max-w-lg rounded-t-2xl border-t border-villain-purple/30 bg-gray-900 p-6 pb-safe"
+              className="w-full max-w-lg rounded-t-2xl border-t border-villain-purple/30 bg-gray-900 pt-6 px-6 safe-area-inset-bottom"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-6">

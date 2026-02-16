@@ -1,8 +1,8 @@
 /**
  * AnalyticsDashboard — 高階數據視覺化（置於 AnalystGate 內）
- * 立場雷達圖 + 原因熱點（所選群體 like/dislike Top 3 原因）。
+ * 立場雷達圖 + 原因熱點。標籤使用 Recharts 傳入的 (x,y,cx,cy) 做徑向位移。
  */
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import {
@@ -20,7 +20,8 @@ import { STANCE_COLORS } from '../lib/constants'
 
 const LIKE_STANCES = new Set(['goat', 'king', 'machine'])
 const DISLIKE_STANCES = new Set(['fraud', 'stat_padder', 'mercenary'])
-const LABEL_OFFSET_PX = 20
+/** 標籤沿徑向再外推像素 */
+const LABEL_OFFSET_PX = 30
 
 export default function AnalyticsDashboard({ filters = {} }) {
   const { t, i18n } = useTranslation('common')
@@ -63,27 +64,38 @@ export default function AnalyticsDashboard({ filters = {} }) {
     return STANCE_COLORS[top.stanceKey] ?? STANCE_COLORS.goat
   }, [radarData])
 
-  /** 藥丸標籤：rect(rx=12) + 依角度推離 20px，邊框/文字聯動 STANCE_COLORS */
-  const renderPolarAngleTick = ({ payload, index, x, y }) => {
-    const count = radarData.length
+  /**
+   * 藥丸標籤：使用 Recharts 傳入的 x, y, cx, cy，沿徑向外推 LABEL_OFFSET_PX。
+   * 藥丸與文字皆置中（text-anchor middle, rect 以中心為原點）。
+   */
+  const renderPolarAngleTick = useCallback(({ x, y, cx, cy, payload, index }) => {
+    const numX = Number(x)
+    const numY = Number(y)
+    if (!Number.isFinite(numX) || !Number.isFinite(numY)) {
+      return null
+    }
     const dataPoint = radarData[index]
-    const angleDeg = count > 0 ? 90 + (360 / count) * index : 90
-    const rad = (angleDeg * Math.PI) / 180
-    const dx = LABEL_OFFSET_PX * Math.cos(rad)
-    const dy = LABEL_OFFSET_PX * Math.sin(rad)
-    const tx = x + dx
-    const ty = y + dy
-    const isLeft = angleDeg > 90 && angleDeg < 270
-    const textAnchor = isLeft ? 'end' : 'start'
     const label = dataPoint?.title ?? payload?.title ?? payload?.value ?? ''
     const stanceKey = dataPoint?.stanceKey ?? payload?.stanceKey ?? 'goat'
     const strokeColor = STANCE_COLORS[stanceKey] ?? '#D4AF37'
-    const pillWidth = Math.max(56, (label.length || 1) * 6 + 20)
+    const pillWidth = Math.max(56, (label.length || 1) * 10 + 20)
     const pillHeight = 22
+
+    const centerX = cx != null ? Number(cx) : numX
+    const centerY = cy != null ? Number(cy) : numY
+    const radius = Math.sqrt((numX - centerX) ** 2 + (numY - centerY) ** 2)
+    const safeRadius = radius > 0 ? radius : 1
+    const unitX = (numX - centerX) / safeRadius
+    const unitY = (numY - centerY) / safeRadius
+    const finalX = numX + unitX * LABEL_OFFSET_PX
+    const finalY = numY + unitY * LABEL_OFFSET_PX
+    const tx = Number.isFinite(finalX) ? finalX : numX
+    const ty = Number.isFinite(finalY) ? finalY : numY
+
     return (
       <g transform={`translate(${tx},${ty})`}>
         <rect
-          x={textAnchor === 'end' ? -pillWidth : 0}
+          x={-pillWidth / 2}
           y={-pillHeight / 2}
           width={pillWidth}
           height={pillHeight}
@@ -93,18 +105,18 @@ export default function AnalyticsDashboard({ filters = {} }) {
           strokeWidth={1}
         />
         <text
-          textAnchor={textAnchor}
+          textAnchor="middle"
+          dominantBaseline="central"
           fill={strokeColor}
           fontSize={11}
-          dominantBaseline="middle"
-          x={textAnchor === 'end' ? -8 : 8}
+          x={0}
           y={0}
         >
           {label}
         </text>
       </g>
     )
-  }
+  }, [radarData])
 
   const topReasons = useMemo(() => {
     const likeCounts = {}
@@ -151,8 +163,8 @@ export default function AnalyticsDashboard({ filters = {} }) {
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart
             data={radarData}
-            margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
-            outerRadius="90%"
+            margin={{ top: 40, right: 60, bottom: 40, left: 60 }}
+            outerRadius="80%"
             startAngle={90}
             isAnimationActive
             animationDuration={400}
