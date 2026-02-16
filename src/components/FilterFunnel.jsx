@@ -8,9 +8,8 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, X } from "lucide-react";
 import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from "../lib/constants";
-
-/** 已授權狀態燈色（戰術美金綠） */
-const RECON_AUTHORIZED_COLOR = "#00E676";
+import { triggerHaptic } from "../utils/hapticUtils";
+import ReconPermissionIndicator from "./ReconPermissionIndicator";
 
 const defaultFilters = {
   ageGroup: "",
@@ -45,12 +44,18 @@ export default function FilterFunnel({
   const locked = authorized === false;
 
   const update = (key, value) => {
-    if (locked) return;
+    if (locked) {
+      triggerHaptic([30, 50, 30]);
+      return;
+    }
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const clearAll = () => {
-    if (locked) return;
+    if (locked) {
+      triggerHaptic([30, 50, 30]);
+      return;
+    }
     setFilters({ ...defaultFilters });
   };
 
@@ -95,39 +100,12 @@ export default function FilterFunnel({
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              {/* 篩選器頂端的授權指示燈：無障礙 role=status、aria-live 供朗讀器播報 */}
-              <div
-                className="flex items-center gap-2 px-4 pt-3 pb-1 border-b border-white/5"
-                role="status"
-                aria-live="polite"
-                aria-label={
-                  authorized
-                    ? t("reconPermissionAuthorized")
-                    : t("reconPermissionRestricted")
-                }
-              >
-                <div
-                  className={`w-2 h-2 rounded-full shrink-0 ${authorized ? "animate-pulse" : "bg-gray-600"}`}
-                  style={
-                    authorized
-                      ? {
-                          backgroundColor: RECON_AUTHORIZED_COLOR,
-                          boxShadow: `0 0 8px ${RECON_AUTHORIZED_COLOR}`,
-                        }
-                      : undefined
-                  }
-                  aria-hidden
+              {/* 篩選器頂端偵查權限指示燈 */}
+              <div className="px-4 pt-3 pb-1 border-b border-white/5">
+                <ReconPermissionIndicator
+                  authorized={authorized}
+                  className="text-[10px]"
                 />
-                <span
-                  className={`text-[10px] font-mono tracking-widest uppercase ${authorized ? "" : "text-gray-500"}`}
-                  style={
-                    authorized ? { color: RECON_AUTHORIZED_COLOR } : undefined
-                  }
-                >
-                  {authorized
-                    ? t("reconPermissionAuthorized")
-                    : t("reconPermissionRestricted")}
-                </span>
               </div>
               <div
                 className={`p-4 space-y-5 overflow-y-auto ${locked ? "pointer-events-none opacity-50" : ""}`}

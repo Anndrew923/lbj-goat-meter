@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import UserProfileSetup from "../components/UserProfileSetup";
@@ -9,6 +9,7 @@ import SentimentStats from "../components/SentimentStats";
 import AnalyticsDashboard from "../components/AnalyticsDashboard";
 import { useAnalystAuth } from "../hooks/useAnalystAuth";
 import FilterFunnel from "../components/FilterFunnel";
+import ReconPermissionIndicator from "../components/ReconPermissionIndicator";
 import LiveTicker from "../components/LiveTicker";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
@@ -139,6 +140,14 @@ export default function VotePage() {
         />
         <section className="relative">
           {analystAdPortal}
+          {/* 公開區 (The Hook)：全球統計卡片，直接渲染 */}
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold text-king-gold">
+              {t("globalStats")}
+            </h2>
+          </div>
+          <SentimentStats filters={stableFilters} />
+          {/* 機密區：僅包裹篩選器與詳細數據圖表 */}
           <AnalystGate
             authorized={isAnalystAuthorized}
             onRequestRewardAd={onRequestRewardAd}
@@ -146,10 +155,8 @@ export default function VotePage() {
             gateDescription={t("intelGateDesc")}
             gateButtonText={t("intelGateButton")}
           >
-            <div className="flex items-center justify-between gap-4 mb-3">
-              <h2 className="text-lg font-semibold text-king-gold">
-                {t("globalStats")}
-              </h2>
+            <div className="flex items-center justify-between gap-4 mb-3 mt-8">
+              <ReconPermissionIndicator authorized={isAnalystAuthorized} />
               <button
                 type="button"
                 onClick={() => setFilterDrawerOpen(true)}
@@ -167,18 +174,18 @@ export default function VotePage() {
               onFiltersChange={setFilters}
               authorized={isAnalystAuthorized}
             />
-            <AnalystGate>
-              <div className="mb-6">
-                <PulseMap
-                  filters={stableFilters}
-                  onFiltersChange={setFilters}
-                />
-              </div>
-              <SentimentStats filters={stableFilters} />
-              <div className="mt-6">
-                <AnalyticsDashboard filters={stableFilters} />
-              </div>
-            </AnalystGate>
+            <div className="mb-6">
+              <PulseMap
+                filters={stableFilters}
+                onFiltersChange={setFilters}
+              />
+            </div>
+            <div className="mt-6">
+              <AnalyticsDashboard
+                filters={stableFilters}
+                authorized={isAnalystAuthorized}
+              />
+            </div>
           </AnalystGate>
         </section>
       </motion.main>
@@ -266,6 +273,13 @@ export default function VotePage() {
                       {t("resetStance")}
                     </button>
                   )}
+                  <Link
+                    to="/privacy"
+                    onClick={() => setSettingsOpen(false)}
+                    className="block w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold text-center"
+                  >
+                    {t("privacyPolicy")}
+                  </Link>
                   <LanguageToggle />
                 </section>
                 {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}

@@ -96,6 +96,9 @@ export const STANCES = [
   { value: 'stat_padder', theme: 'rust-copper' },
 ]
 
+/** 偵查授權指示燈色（戰術美金綠），與 FilterFunnel / VotePage RECON 燈一致 */
+export const RECON_AUTHORIZED_COLOR = '#00E676'
+
 /** 立場 → 主題色（hex），供 StanceCards / BattleCard 霓虹與描邊聯動 */
 export const STANCE_COLORS = {
   goat: '#D4AF37',

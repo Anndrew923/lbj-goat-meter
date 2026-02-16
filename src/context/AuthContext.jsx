@@ -33,6 +33,7 @@ import {
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { auth, googleProvider, db, isFirebaseReady } from "../lib/firebase";
 import { deleteAccountData, revokeVote } from "../services/AccountService";
+import { triggerHaptic } from "../utils/hapticUtils";
 import i18n from "../i18n/config";
 
 const AuthContext = createContext(null);
@@ -229,6 +230,7 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = useCallback(async () => {
     setAuthError(null);
     if (!isFirebaseReady || !auth || !googleProvider) {
+      triggerHaptic([30, 50, 30]);
       setAuthError(i18n.t("common:authError_firebaseNotReady"));
       if (import.meta.env.DEV)
         console.warn("[AuthContext] Firebase 未就緒，無法執行登入");
@@ -237,6 +239,7 @@ export function AuthProvider({ children }) {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
+      triggerHaptic([30, 50, 30]);
       const message = getAuthErrorMessage(err);
       setAuthError(message);
       if (import.meta.env.DEV) {

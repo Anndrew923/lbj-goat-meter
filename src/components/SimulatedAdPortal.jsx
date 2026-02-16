@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
+import { triggerHaptic } from '../utils/hapticUtils'
 
 const DEFAULT_DURATION = 5
 
@@ -40,6 +41,7 @@ export default function SimulatedAdPortal({
           if (!hasFiredRef.current) {
             hasFiredRef.current = true
             setTimeout(() => {
+              triggerHaptic([20, 40, 20])
               onWatchedRef.current?.()
               onCloseRef.current?.()
             }, 0)

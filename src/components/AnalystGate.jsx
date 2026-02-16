@@ -1,66 +1,34 @@
 /**
- * AnalystGate — 金流／情報權限閘口（分析師通行證）
- *
- * - 金流模式（預設）：authorized 未傳時以 currentUser.isPremium 判斷；解鎖 CTA 為「模擬購買」。
- * - 情報模式：傳入 authorized、onRequestRewardAd 與 gateTitle/gateDescription/gateButtonText，
- *    用於「篩選/數據分析」區塊的偵查授權，解鎖按鈕觸發激勵廣告。
+ * AnalystGate — 情報權限閘口（全廣告驅動）
+ * 僅依 authorized 決定是否解鎖；按鈕固定為「解鎖情報」並觸發 onRequestRewardAd。
  */
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { useAuth } from "../context/AuthContext";
-import { Lock, Loader2 } from "lucide-react";
-import { simulatePurchase } from "../services/PaymentService";
+import { Lock } from "lucide-react";
 
 export default function AnalystGate({
   children,
-  /** 情報模式：顯式授權狀態（未傳則以 isPremium 判斷） */
+  /** 偵查授權狀態，僅此屬性決定是否解鎖 */
   authorized,
-  /** 情報模式：解鎖按鈕觸發激勵廣告 */
+  /** 解鎖按鈕觸發激勵廣告 */
   onRequestRewardAd,
-  /** 情報模式：覆蓋標題 */
+  /** 覆蓋標題（預設 intelGateTitle） */
   gateTitle,
-  /** 情報模式：覆蓋描述 */
+  /** 覆蓋描述（預設 intelGateDesc） */
   gateDescription,
-  /** 情報模式：覆蓋按鈕文案 */
+  /** 覆蓋按鈕文案（預設 intelGateButton） */
   gateButtonText,
 }) {
   const { t } = useTranslation("common");
-  const { currentUser, refreshEntitlements } = useAuth();
-  const [purchasing, setPurchasing] = useState(false);
+  const isUnlocked = authorized === true;
 
-  const isIntelMode =
-    typeof authorized === "boolean" &&
-    (onRequestRewardAd != null || gateTitle != null);
-  const isUnlocked = isIntelMode
-    ? authorized === true
-    : currentUser?.isPremium === true;
-
-  const handleSimulatePurchase = async () => {
-    if (!currentUser?.uid || purchasing) return;
-    setPurchasing(true);
-    try {
-      await simulatePurchase(currentUser.uid);
-      await refreshEntitlements();
-    } catch (err) {
-      console.error("[AnalystGate] simulatePurchase failed", err);
-    } finally {
-      setPurchasing(false);
-    }
-  };
+  const title = gateTitle ?? t("intelGateTitle");
+  const description = gateDescription ?? t("intelGateDesc");
+  const buttonLabel = gateButtonText ?? t("intelGateButton");
 
   const handleUnlockClick = () => {
-    if (isIntelMode && onRequestRewardAd) {
-      onRequestRewardAd(() => {});
-    } else {
-      handleSimulatePurchase();
-    }
+    onRequestRewardAd?.(() => {});
   };
-
-  const title = gateTitle ?? t("unlockAnalystTitle");
-  const description = gateDescription ?? t("unlockAnalystDesc");
-  const buttonLabel = gateButtonText ?? t("simulatePurchase");
-  const useAdButton = isIntelMode && onRequestRewardAd;
 
   if (isUnlocked) {
     return <>{children}</>;
@@ -92,31 +60,13 @@ export default function AnalystGate({
           <motion.button
             type="button"
             onClick={handleUnlockClick}
-            disabled={!useAdButton && purchasing}
-            whileHover={
-              (!useAdButton && !purchasing) || useAdButton
-                ? { scale: 1.03 }
-                : {}
-            }
-            whileTap={
-              (!useAdButton && !purchasing) || useAdButton
-                ? { scale: 0.98 }
-                : {}
-            }
-            className="px-6 py-3 rounded-lg bg-king-gold text-black font-semibold disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mx-auto"
+            disabled={!onRequestRewardAd}
+            whileHover={onRequestRewardAd ? { scale: 1.03 } : undefined}
+            whileTap={onRequestRewardAd ? { scale: 0.98 } : undefined}
+            className="px-6 py-3 rounded-lg bg-king-gold text-black font-semibold flex items-center justify-center gap-2 mx-auto disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {!useAdButton && purchasing ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
-                {t("paymentProcessing")}
-              </>
-            ) : (
-              buttonLabel
-            )}
+            {buttonLabel}
           </motion.button>
-          {!isIntelMode && (
-            <p className="mt-3 text-xs text-gray-500">{t("sandboxNote")}</p>
-          )}
         </motion.div>
       </div>
     </div>

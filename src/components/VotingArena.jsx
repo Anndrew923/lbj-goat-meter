@@ -17,6 +17,7 @@ import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
 import { REASONS_MAX_SELECT } from "../lib/constants";
+import { triggerHaptic } from "../utils/hapticUtils";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
 import LoginPromptModal from "./LoginPromptModal";
@@ -166,6 +167,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
         setTimeout(() => setFraudShatter(false), 800),
       );
     }
+    triggerHaptic(10);
     setSelectedStance(value);
   };
 
@@ -222,9 +224,11 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
           updatedAt: serverTimestamp(),
         });
       });
+      triggerHaptic(50);
       setVoteSuccess(true);
       setShowBattleCard(true);
     } catch (err) {
+      triggerHaptic([30, 50, 30]);
       const msg =
         err?.message != null && typeof err.message === "string"
           ? err.message

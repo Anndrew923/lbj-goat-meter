@@ -1,7 +1,6 @@
 /**
  * AnalyticsDashboard — 高階數據視覺化（置於 AnalystGate 內）
- * 立場雷達圖 + 原因熱點。標籤使用 Recharts 傳入的 (x,y,cx,cy) 做徑向位移。
- * 偵查授權由 useAnalystAuth（src/hooks/useAnalystAuth.js）提供，供篩選區塊掛載變現引擎。
+ * 立場雷達圖 + 原因熱點。未授權時套用 blur + grayscale 作為情報誘餌。
  */
 import { useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,7 +23,7 @@ const DISLIKE_STANCES = new Set(["fraud", "stat_padder", "mercenary"]);
 /** 標籤沿徑向再外推像素 */
 const LABEL_OFFSET_PX = 30;
 
-export default function AnalyticsDashboard({ filters = {} }) {
+export default function AnalyticsDashboard({ filters = {}, authorized = true }) {
   const { t, i18n } = useTranslation("common");
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
   const { data, loading, error } = useSentimentData(stableFilters, {
@@ -154,9 +153,14 @@ export default function AnalyticsDashboard({ filters = {} }) {
     };
   }, [data, reasonLabelMap]);
 
+  const blurStyle = authorized ? undefined : { filter: "blur(12px) grayscale(0.5)" };
+
   if (loading) {
     return (
-      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
+      <div
+        className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center transition-[filter] duration-300"
+        style={blurStyle}
+      >
         <p className="text-king-gold animate-pulse" role="status">
           {t("loadingDashboard")}
         </p>
@@ -166,7 +170,10 @@ export default function AnalyticsDashboard({ filters = {} }) {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+      <div
+        className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 transition-[filter] duration-300"
+        style={blurStyle}
+      >
         <p className="text-red-400" role="alert">
           {t("loadErrorShort")}
         </p>
@@ -175,7 +182,10 @@ export default function AnalyticsDashboard({ filters = {} }) {
   }
 
   return (
-    <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 space-y-6">
+    <div
+      className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 space-y-6 transition-[filter] duration-300"
+      style={blurStyle}
+    >
       <h3 className="text-lg font-bold text-king-gold">{t("radarTitle")}</h3>
       <div className="h-64 min-w-0">
         <ResponsiveContainer width="100%" height="100%">
