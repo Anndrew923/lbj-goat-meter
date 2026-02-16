@@ -3,7 +3,7 @@
  * 六大立場對抗版：雙層語義（primary 大寫粗體英文 + secondary 細體中文），
  * 所有文案經 t() 讀取，禁止硬編碼；GOAT 金閃／FRAUD 紫碎動畫。
  */
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -20,6 +20,7 @@ import { REASONS_MAX_SELECT } from "../lib/constants";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
 import LoginPromptModal from "./LoginPromptModal";
+import SimulatedAdPortal from "./SimulatedAdPortal";
 import StanceCards from "./StanceCards";
 
 /** Fisher–Yates shuffle，不改動原陣列，用於每次選立場時隨機排序理由，確保每個理由都有機會被看到。 */
@@ -62,6 +63,14 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
   const [revoteError, setRevoteError] = useState(null);
   const revoteExitRef = useRef(false);
   const [revoteCompleteKey, setRevoteCompleteKey] = useState(0);
+  const [showSimulatedAd, setShowSimulatedAd] = useState(false);
+  const pendingOnWatchedRef = useRef(null);
+
+  /** 模擬廣告：點擊下載時開啟 SimulatedAdPortal，倒數結束後執行解鎖並觸發 handleDownload(true)。 */
+  const onRequestRewardAd = useCallback((onWatched) => {
+    pendingOnWatchedRef.current = onWatched;
+    setShowSimulatedAd(true);
+  }, []);
 
   const hasVoted = profile?.hasVoted === true || voteSuccess;
   const canSubmit =
@@ -359,9 +368,19 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
                   : t("common:rankLabel")
               }
               exit={{ opacity: 0, scale: 0.8 }}
+              onRequestRewardAd={onRequestRewardAd}
             />
           )}
         </AnimatePresence>
+        <SimulatedAdPortal
+          open={showSimulatedAd}
+          onWatched={() => {
+            pendingOnWatchedRef.current?.();
+            pendingOnWatchedRef.current = null;
+            setShowSimulatedAd(false);
+          }}
+          onClose={() => setShowSimulatedAd(false)}
+        />
       </>
     );
   }

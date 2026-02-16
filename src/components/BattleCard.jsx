@@ -1,7 +1,7 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、QR、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放，下載為高解析原稿。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；640×640 高清下載需 isExportReady（廣告解鎖後自動觸發一次下載）。
  */
 import { useRef, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -43,6 +43,9 @@ export default function BattleCard({
   battleSubtitle = "",
   warzoneStats = null,
   isTitleUppercase = true,
+  isExportReady = false,
+  onExportUnlock,
+  onRequestRewardAd,
 }) {
   const { t } = useTranslation("common");
   const cardRef = useRef(null);
@@ -105,47 +108,62 @@ export default function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
-  const handleDownload = useCallback(() => {
-    const el = cardRef.current;
-    if (!el) return;
-    const prev = {
-      transform: el.style.transform,
-      transformOrigin: el.style.transformOrigin,
-      left: el.style.left,
-      top: el.style.top,
-      margin: el.style.margin,
-      padding: el.style.padding,
-    };
-    el.style.transform = "scale(1)";
-    el.style.transformOrigin = "top left";
-    el.style.left = "0";
-    el.style.top = "0";
-    el.style.margin = "0";
-    el.style.padding = "0";
-    // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
-    toPng(el, {
-      width: CARD_SIZE,
-      height: CARD_SIZE,
-      backgroundColor: "#0a0a0a",
-      pixelRatio: 2,
-      cacheBust: true,
-    })
-      .then((dataUrl) => {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${Date.now()}.png`;
-        a.click();
+  /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
+  const handleDownload = useCallback(
+    (forceUnlock = false) => {
+      if (!isExportReady && !forceUnlock) {
+        if (onRequestRewardAd && onExportUnlock) {
+          onRequestRewardAd(() => {
+            onExportUnlock();
+            handleDownload(true);
+          });
+        }
+        return;
+      }
+      // 雙重防護：無 isExportReady 且非廣告回調的 forceUnlock 時絕不執行 toPng
+      if (!isExportReady && !forceUnlock) return;
+      const el = cardRef.current;
+      if (!el) return;
+      const prev = {
+        transform: el.style.transform,
+        transformOrigin: el.style.transformOrigin,
+        left: el.style.left,
+        top: el.style.top,
+        margin: el.style.margin,
+        padding: el.style.padding,
+      };
+      el.style.transform = "scale(1)";
+      el.style.transformOrigin = "top left";
+      el.style.left = "0";
+      el.style.top = "0";
+      el.style.margin = "0";
+      el.style.padding = "0";
+      // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
+      toPng(el, {
+        width: CARD_SIZE,
+        height: CARD_SIZE,
+        backgroundColor: "#0a0a0a",
+        pixelRatio: 2,
+        cacheBust: true,
       })
-      .catch((err) => console.error("[BattleCard] toPng failed", err))
-      .finally(() => {
-        el.style.transform = prev.transform;
-        el.style.transformOrigin = prev.transformOrigin;
-        el.style.left = prev.left;
-        el.style.top = prev.top;
-        el.style.margin = prev.margin;
-        el.style.padding = prev.padding;
-      });
-  }, [battleTitle]);
+        .then((dataUrl) => {
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${Date.now()}.png`;
+          a.click();
+        })
+        .catch((err) => console.error("[BattleCard] toPng failed", err))
+        .finally(() => {
+          el.style.transform = prev.transform;
+          el.style.transformOrigin = prev.transformOrigin;
+          el.style.left = prev.left;
+          el.style.top = prev.top;
+          el.style.margin = prev.margin;
+          el.style.padding = prev.padding;
+        });
+    },
+    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd],
+  );
 
   if (!open) return null;
 
