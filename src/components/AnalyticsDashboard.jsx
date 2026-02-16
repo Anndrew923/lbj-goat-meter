@@ -1,6 +1,7 @@
 /**
  * AnalyticsDashboard — 高階數據視覺化（置於 AnalystGate 內）
  * 立場雷達圖 + 原因熱點。標籤使用 Recharts 傳入的 (x,y,cx,cy) 做徑向位移。
+ * 偵查授權由 useAnalystAuth（src/hooks/useAnalystAuth.js）提供，供篩選區塊掛載變現引擎。
  */
 import { useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'

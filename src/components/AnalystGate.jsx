@@ -1,10 +1,9 @@
 /**
- * AnalystGate — 金流權限閘口（分析師通行證）
+ * AnalystGate — 金流／情報權限閘口（分析師通行證）
  *
- * 設計意圖：與業務邏輯完全解耦的權限層。
- * - 當 currentUser.isPremium 為 false 時，遮蔽子內容並顯示「解鎖全球精細化分析報告」的 CTA。
- * - 「模擬購買」呼叫 PaymentService.simulatePurchase，經 2 秒後以 Transaction 更新 Firestore profiles.isPremium，
- *    再透過 refreshEntitlements 同步至 Context，閘口開啟。
+ * - 金流模式（預設）：authorized 未傳時以 currentUser.isPremium 判斷；解鎖 CTA 為「模擬購買」。
+ * - 情報模式：傳入 authorized、onRequestRewardAd 與 gateTitle/gateDescription/gateButtonText，
+ *    用於「篩選/數據分析」區塊的偵查授權，解鎖按鈕觸發激勵廣告。
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -13,12 +12,25 @@ import { useAuth } from '../context/AuthContext'
 import { Lock, Loader2 } from 'lucide-react'
 import { simulatePurchase } from '../services/PaymentService'
 
-export default function AnalystGate({ children }) {
+export default function AnalystGate({
+  children,
+  /** 情報模式：顯式授權狀態（未傳則以 isPremium 判斷） */
+  authorized,
+  /** 情報模式：解鎖按鈕觸發激勵廣告 */
+  onRequestRewardAd,
+  /** 情報模式：覆蓋標題 */
+  gateTitle,
+  /** 情報模式：覆蓋描述 */
+  gateDescription,
+  /** 情報模式：覆蓋按鈕文案 */
+  gateButtonText,
+}) {
   const { t } = useTranslation('common')
   const { currentUser, refreshEntitlements } = useAuth()
   const [purchasing, setPurchasing] = useState(false)
 
-  const isUnlocked = currentUser?.isPremium === true
+  const isIntelMode = typeof authorized === 'boolean' && (onRequestRewardAd != null || gateTitle != null)
+  const isUnlocked = isIntelMode ? authorized === true : currentUser?.isPremium === true
 
   const handleSimulatePurchase = async () => {
     if (!currentUser?.uid || purchasing) return
@@ -32,6 +44,19 @@ export default function AnalystGate({ children }) {
       setPurchasing(false)
     }
   }
+
+  const handleUnlockClick = () => {
+    if (isIntelMode && onRequestRewardAd) {
+      onRequestRewardAd(() => {})
+    } else {
+      handleSimulatePurchase()
+    }
+  }
+
+  const title = gateTitle ?? t('unlockAnalystTitle')
+  const description = gateDescription ?? t('unlockAnalystDesc')
+  const buttonLabel = gateButtonText ?? t('simulatePurchase')
+  const useAdButton = isIntelMode && onRequestRewardAd
 
   if (isUnlocked) {
     return <>{children}</>
@@ -55,28 +80,28 @@ export default function AnalystGate({ children }) {
           <div className="inline-flex rounded-full bg-villain-purple/30 p-4 mb-4">
             <Lock className="w-10 h-10 text-villain-purple" aria-hidden />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">{t('unlockAnalystTitle')}</h3>
+          <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
           <p className="text-sm text-gray-400 mb-6">
-            {t('unlockAnalystDesc')}
+            {description}
           </p>
           <motion.button
             type="button"
-            onClick={handleSimulatePurchase}
-            disabled={purchasing}
-            whileHover={!purchasing ? { scale: 1.03 } : {}}
-            whileTap={!purchasing ? { scale: 0.98 } : {}}
+            onClick={handleUnlockClick}
+            disabled={!useAdButton && purchasing}
+            whileHover={(!useAdButton && !purchasing) || useAdButton ? { scale: 1.03 } : {}}
+            whileTap={(!useAdButton && !purchasing) || useAdButton ? { scale: 0.98 } : {}}
             className="px-6 py-3 rounded-lg bg-king-gold text-black font-semibold disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mx-auto"
           >
-            {purchasing ? (
+            {!useAdButton && purchasing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
                 {t('paymentProcessing')}
               </>
             ) : (
-              t('simulatePurchase')
+              buttonLabel
             )}
           </motion.button>
-          <p className="mt-3 text-xs text-gray-500">{t('sandboxNote')}</p>
+          {!isIntelMode && <p className="mt-3 text-xs text-gray-500">{t('sandboxNote')}</p>}
         </motion.div>
       </div>
     </div>

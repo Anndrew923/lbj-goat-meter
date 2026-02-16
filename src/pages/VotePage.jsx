@@ -7,6 +7,7 @@ import VotingArena from "../components/VotingArena";
 import AnalystGate from "../components/AnalystGate";
 import SentimentStats from "../components/SentimentStats";
 import AnalyticsDashboard from "../components/AnalyticsDashboard";
+import { useAnalystAuth } from "../hooks/useAnalystAuth";
 import FilterFunnel from "../components/FilterFunnel";
 import LiveTicker from "../components/LiveTicker";
 import PulseMap from "../components/PulseMap";
@@ -41,6 +42,7 @@ export default function VotePage() {
   const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
   const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
+  const { isAnalystAuthorized, onRequestRewardAd, analystAdPortal } = useAnalystAuth();
 
   // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
   useEffect(() => {
@@ -125,35 +127,45 @@ export default function VotePage() {
           currentUser={currentUser}
           onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
         />
-        <section>
-          <div className="flex items-center justify-between gap-4 mb-3">
-            <h2 className="text-lg font-semibold text-king-gold">
-              {t("globalStats")}
-            </h2>
-            <button
-              type="button"
-              onClick={() => setFilterDrawerOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
-              aria-label={t("openFilter")}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              {t("filter")}
-            </button>
-          </div>
-          <FilterFunnel
-            open={filterDrawerOpen}
-            onClose={() => setFilterDrawerOpen(false)}
-            filters={stableFilters}
-            onFiltersChange={setFilters}
-          />
-          <AnalystGate>
-            <div className="mb-6">
-              <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
+        <section className="relative">
+          {analystAdPortal}
+          <AnalystGate
+            authorized={isAnalystAuthorized}
+            onRequestRewardAd={onRequestRewardAd}
+            gateTitle={t("intelGateTitle")}
+            gateDescription={t("intelGateDesc")}
+            gateButtonText={t("intelGateButton")}
+          >
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <h2 className="text-lg font-semibold text-king-gold">
+                {t("globalStats")}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setFilterDrawerOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
+                aria-label={t("openFilter")}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                {t("filter")}
+              </button>
             </div>
-            <SentimentStats filters={stableFilters} />
-            <div className="mt-6">
-              <AnalyticsDashboard filters={stableFilters} />
-            </div>
+            <FilterFunnel
+              open={filterDrawerOpen}
+              onClose={() => setFilterDrawerOpen(false)}
+              filters={stableFilters}
+              onFiltersChange={setFilters}
+              authorized={isAnalystAuthorized}
+            />
+            <AnalystGate>
+              <div className="mb-6">
+                <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
+              </div>
+              <SentimentStats filters={stableFilters} />
+              <div className="mt-6">
+                <AnalyticsDashboard filters={stableFilters} />
+              </div>
+            </AnalystGate>
           </AnalystGate>
         </section>
       </motion.main>

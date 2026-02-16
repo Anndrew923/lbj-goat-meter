@@ -108,10 +108,11 @@ export default function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
-  /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
+  /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock === true 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
   const handleDownload = useCallback(
     (forceUnlock = false) => {
-      if (!isExportReady && !forceUnlock) {
+      const isExplicitUnlock = forceUnlock === true;
+      if (!isExportReady && !isExplicitUnlock) {
         if (onRequestRewardAd && onExportUnlock) {
           onRequestRewardAd(() => {
             onExportUnlock();
@@ -120,8 +121,8 @@ export default function BattleCard({
         }
         return;
       }
-      // 雙重防護：無 isExportReady 且非廣告回調的 forceUnlock 時絕不執行 toPng
-      if (!isExportReady && !forceUnlock) return;
+      // 雙重防護：無 isExportReady 且非廣告回調的顯式 true 時絕不執行 toPng（杜絕 Event 等 truthy 誤觸）
+      if (!isExportReady && !isExplicitUnlock) return;
       const el = cardRef.current;
       if (!el) return;
       const prev = {
@@ -427,7 +428,7 @@ export default function BattleCard({
           <div className="flex-shrink-0 flex flex-col items-center w-full max-w-sm gap-y-4">
             <button
               type="button"
-              onClick={handleDownload}
+              onClick={() => handleDownload()}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-king-gold text-black font-bold"
             >
               <Download className="w-5 h-5 shrink-0" aria-hidden />
