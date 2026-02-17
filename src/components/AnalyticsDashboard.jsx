@@ -1,7 +1,6 @@
 /**
  * AnalyticsDashboard — 高階數據視覺化（僅置於 AnalystGate 內）
- * 全球戰報大盤（SentimentStats）已完全移出本區，於 VotePage 直接渲染，任何用戶（含訪客）皆可見。
- * 本組件為「詳細分析」：立場雷達圖 + 原因熱點。未授權時套用 blur + grayscale 作為情報誘餌，點擊解鎖時精準攔截。
+ * 數據來自 WarzoneDataContext（global_summary）：雷達圖 + 原因熱點（reasonCountsLike/Dislike）+ 地圖著色（countryCounts）。
  */
 import { useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,28 +14,29 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { useSentimentData } from "../hooks/useSentimentData";
+import { useWarzoneData } from "../context/WarzoneDataContext";
 import { getStancesForArena, getReasonLabelMap } from "../i18n/i18n";
 import { STANCE_COLORS } from "../lib/constants";
 
-const LIKE_STANCES = new Set(["goat", "king", "machine"]);
-const DISLIKE_STANCES = new Set(["fraud", "stat_padder", "mercenary"]);
 /** 標籤沿徑向再外推像素 */
 const LABEL_OFFSET_PX = 30;
 
-export default function AnalyticsDashboard({ filters = {}, authorized = true }) {
+/** 從 { [key]: count } 取前 n 名，轉成 { value, label }[] */
+function topReasonsFromCounts(counts, labelMap, n = 3) {
+  return Object.entries(counts ?? {})
+    .filter(([, c]) => Number(c) > 0)
+    .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+    .slice(0, n)
+    .map(([value]) => ({ value, label: labelMap[value] ?? value }));
+}
+
+export default function AnalyticsDashboard({ authorized = true }) {
   const { t, i18n } = useTranslation("common");
-  const stableFilters = useMemo(() => ({ ...filters }), [filters]);
-  const { data, loading, error } = useSentimentData(stableFilters, {
-    pageSize: 500,
-  });
-  // 語系切換時需重算（getReasonLabelMap 透過 getReasonsResource 讀取當前語系）
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- i18n.language 用於語系切換時使 map 失效
-  const reasonLabelMap = useMemo(() => getReasonLabelMap(), [i18n.language]);
+  const { summary, loading, error } = useWarzoneData();
 
   const radarData = useMemo(() => {
     const rows = getStancesForArena();
-    const total = data.length;
+    const total = summary.totalVotes ?? 0;
     if (total === 0) {
       return rows.map((s) => ({
         stanceKey: s.value,
@@ -46,20 +46,15 @@ export default function AnalyticsDashboard({ filters = {}, authorized = true }) 
         fullMark: 100,
       }));
     }
-    const byStatus = {};
-    data.forEach((v) => {
-      const s = v.status ?? "unknown";
-      byStatus[s] = (byStatus[s] ?? 0) + 1;
-    });
     return rows.map((s) => ({
       stanceKey: s.value,
       title: s.primary,
       stance: s.secondary,
       value:
-        total > 0 ? Math.round(((byStatus[s.value] ?? 0) / total) * 100) : 0,
+        Math.round(((summary[s.value] ?? 0) / total) * 100),
       fullMark: 100,
     }));
-  }, [data]);
+  }, [summary]);
 
   /** 最高票立場的色碼，供 Radar stroke 聯動 */
   const topStanceStroke = useMemo(() => {
@@ -128,31 +123,15 @@ export default function AnalyticsDashboard({ filters = {}, authorized = true }) 
     [radarData],
   );
 
-  const topReasons = useMemo(() => {
-    const likeCounts = {};
-    const dislikeCounts = {};
-    data.forEach((v) => {
-      const reasons = Array.isArray(v.reasons) ? v.reasons : [];
-      if (LIKE_STANCES.has(v.status)) {
-        reasons.forEach((r) => {
-          likeCounts[r] = (likeCounts[r] ?? 0) + 1;
-        });
-      } else if (DISLIKE_STANCES.has(v.status)) {
-        reasons.forEach((r) => {
-          dislikeCounts[r] = (dislikeCounts[r] ?? 0) + 1;
-        });
-      }
-    });
-    const top = (obj, n) =>
-      Object.entries(obj)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, n)
-        .map(([value]) => ({ value, label: reasonLabelMap[value] || value }));
-    return {
-      like: top(likeCounts, 3),
-      dislike: top(dislikeCounts, 3),
-    };
-  }, [data, reasonLabelMap]);
+  /** 原因熱點：來自 global_summary.reasonCountsLike / reasonCountsDislike */
+  const reasonLabelMap = useMemo(() => getReasonLabelMap(), [i18n.language]);
+  const topReasons = useMemo(
+    () => ({
+      like: topReasonsFromCounts(summary.reasonCountsLike, reasonLabelMap, 3),
+      dislike: topReasonsFromCounts(summary.reasonCountsDislike, reasonLabelMap, 3),
+    }),
+    [summary.reasonCountsLike, summary.reasonCountsDislike, reasonLabelMap]
+  );
 
   const blurStyle = authorized ? undefined : { filter: "blur(12px) grayscale(0.5)" };
 

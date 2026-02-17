@@ -29,7 +29,7 @@ import {
   deleteUser,
   reauthenticateWithPopup,
 } from "firebase/auth";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, getDocFromCache, onSnapshot } from "firebase/firestore";
 import { auth, googleProvider, db, isFirebaseReady } from "../lib/firebase";
 import {
   loginWithGoogleForFirebase,
@@ -50,7 +50,14 @@ const IS_PREMIUM_RETRY_MAX = 2;
 
 async function fetchIsPremium(uid) {
   if (!db) return false;
-  const snap = await getDoc(doc(db, "profiles", uid));
+  const profileRef = doc(db, "profiles", uid);
+  try {
+    const snap = await getDocFromCache(profileRef);
+    if (snap.exists()) return snap.data()?.isPremium === true;
+  } catch {
+    // 緩存無此文件或未啟用持久化，改向伺服器請求
+  }
+  const snap = await getDoc(profileRef);
   return snap.exists() && snap.data()?.isPremium === true;
 }
 

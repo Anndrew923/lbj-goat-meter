@@ -1,16 +1,13 @@
 /**
  * LiveTicker — 即時戰報跑馬燈
- * 使用 Firestore onSnapshot 監聽最近 10 筆投票，以 framer-motion 淡入與橫向滾動呈現。
+ * 數據來自 WarzoneDataContext（global_summary.recentVotes），嚴禁掃描 votes 集合。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
-import { db, isFirebaseReady } from '../lib/firebase'
+import { useWarzoneData } from '../context/WarzoneDataContext'
 import { getTeamCityKey } from '../lib/constants'
 import { getStanceDisplayTicker } from '../i18n/i18n'
-
-const TICKER_LIMIT = 10
 
 function getTeamFanLabel(voterTeam, t) {
   if (!voterTeam) return t('someFan')
@@ -34,40 +31,11 @@ function formatTimeAgo(createdAt, t) {
 
 export default function LiveTicker() {
   const { t } = useTranslation('common')
-  const [items, setItems] = useState([])
-  const unsubRef = useRef(null)
-
-  // 僅在 db 就緒後延遲啟動監聽，避免連線未穩定時 onSnapshot 導致 Listen Stream 報錯、戰區卡死
-  useEffect(() => {
-    if (!isFirebaseReady || !db) return
-    let cancelled = false
-    const timer = setTimeout(() => {
-      if (cancelled) return
-      const q = query(
-        collection(db, 'votes'),
-        orderBy('createdAt', 'desc'),
-        limit(TICKER_LIMIT)
-      )
-      unsubRef.current = onSnapshot(
-        q,
-        (snap) => {
-          if (!cancelled) {
-            const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-            setItems(list)
-          }
-        },
-        (err) => console.warn('[LiveTicker] onSnapshot error', err)
-      )
-    }, 0)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-      if (unsubRef.current) {
-        unsubRef.current()
-        unsubRef.current = null
-      }
-    }
-  }, [])
+  const { recentVotes } = useWarzoneData()
+  const items = useMemo(
+    () => (recentVotes ?? []).map((v, i) => ({ id: `recent-${i}`, ...v })),
+    [recentVotes]
+  )
 
   if (items.length === 0) return null
 

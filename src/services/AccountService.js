@@ -23,6 +23,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import i18n from "../i18n/config";
+import { GLOBAL_SUMMARY_DOC_ID, PRO_STANCES, ANTI_STANCES, STANCE_KEYS } from "../lib/constants";
 
 const STAR_ID = "lbj";
 
@@ -60,10 +61,13 @@ export async function revokeVote(uid, resetProfile = false) {
       const voteDocId = typeof raw === "string" && raw.length > 0 ? raw : null;
       let voteData = null;
 
+      const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
+      let globalSnap = null;
       if (voteDocId) {
         const voteRef = doc(db, "votes", voteDocId);
         const voteSnap = await tx.get(voteRef);
         voteData = voteSnap?.exists?.() ? voteSnap.data() : null;
+        globalSnap = await tx.get(globalSummaryRef);
       }
 
       // ========== 階段二：所有寫入（此前不得再呼叫 get） ==========
@@ -87,10 +91,10 @@ export async function revokeVote(uid, resetProfile = false) {
       if (voteDocId) {
         tx.delete(doc(db, "votes", voteDocId));
         deletedVoteId = voteDocId;
+        const status = voteData?.status;
         if (voteData?.hadWarzoneStats === true) {
           const wid =
             (voteData.warzoneId || voteData.voterTeam || "").trim();
-          const status = voteData.status;
           if (wid && status) {
             const warzoneStatsRef = doc(db, "warzoneStats", wid);
             tx.set(
@@ -102,6 +106,48 @@ export async function revokeVote(uid, resetProfile = false) {
               { merge: true }
             );
           }
+        }
+        if (globalSnap?.exists?.() && status) {
+          const globalData = globalSnap.data();
+          const prevTotal = typeof globalData.totalVotes === "number" ? globalData.totalVotes : 0;
+          const newTotal = Math.max(0, prevTotal - 1);
+          const stanceCounts = {};
+          STANCE_KEYS.forEach((key) => {
+            const v = typeof globalData[key] === "number" ? globalData[key] : 0;
+            stanceCounts[key] = key === status ? Math.max(0, v - 1) : v;
+          });
+          const reasonCountsLike = { ...(typeof globalData.reasonCountsLike === "object" && globalData.reasonCountsLike !== null && !Array.isArray(globalData.reasonCountsLike) ? globalData.reasonCountsLike : {}) };
+          const reasonCountsDislike = { ...(typeof globalData.reasonCountsDislike === "object" && globalData.reasonCountsDislike !== null && !Array.isArray(globalData.reasonCountsDislike) ? globalData.reasonCountsDislike : {}) };
+          (voteData.reasons || []).forEach((r) => {
+            if (PRO_STANCES.has(status)) {
+              reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) - 1;
+              if (reasonCountsLike[r] <= 0) delete reasonCountsLike[r];
+            } else if (ANTI_STANCES.has(status)) {
+              reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) - 1;
+              if (reasonCountsDislike[r] <= 0) delete reasonCountsDislike[r];
+            }
+          });
+          const countryCounts = { ...(typeof globalData.countryCounts === "object" && globalData.countryCounts !== null && !Array.isArray(globalData.countryCounts) ? globalData.countryCounts : {}) };
+          const cc = String(voteData.country ?? "").toUpperCase().slice(0, 2);
+          if (cc && countryCounts[cc]) {
+            const cur = countryCounts[cc];
+            const pro = Math.max(0, (cur.pro ?? 0) - (PRO_STANCES.has(status) ? 1 : 0));
+            const anti = Math.max(0, (cur.anti ?? 0) - (ANTI_STANCES.has(status) ? 1 : 0));
+            if (pro > 0 || anti > 0) countryCounts[cc] = { pro, anti };
+            else delete countryCounts[cc];
+          }
+          tx.set(
+            globalSummaryRef,
+            {
+              totalVotes: newTotal,
+              ...stanceCounts,
+              reasonCountsLike,
+              reasonCountsDislike,
+              countryCounts,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
         }
       } else if (import.meta.env.DEV) {
         console.warn(

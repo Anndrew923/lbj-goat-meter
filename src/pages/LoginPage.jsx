@@ -122,7 +122,7 @@ export default function LoginPage() {
             alt="GOAT Meter 皇冠裂變圖標"
             className="w-48 h-48 mx-auto object-contain my-6 drop-shadow-lg"
             decoding="async"
-            fetchPriority="high"
+            fetchpriority="high"
           />
         </div>
 

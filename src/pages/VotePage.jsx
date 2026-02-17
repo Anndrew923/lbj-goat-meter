@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
+import { WarzoneDataProvider } from "../context/WarzoneDataContext";
 import UserProfileSetup from "../components/UserProfileSetup";
 import VotingArena from "../components/VotingArena";
 import AnalystGate from "../components/AnalystGate";
@@ -127,8 +128,9 @@ export default function VotePage() {
       </motion.header>
       {/* 與固定 Header 等高的 Spacer，避免首屏內容被遮擋 */}
       <div className="header-spacer" aria-hidden />
-      <LiveTicker />
-      <motion.main
+      <WarzoneDataProvider>
+        <LiveTicker />
+        <motion.main
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
@@ -147,7 +149,7 @@ export default function VotePage() {
               {t("globalStats")}
             </h2>
           </div>
-          <SentimentStats filters={stableFilters} />
+          <SentimentStats />
           {/* 以下僅此一層 AnalystGate：僅鎖定篩選器、地圖、詳細分析 */}
           <AnalystGate
             authorized={isAnalystAuthorized}
@@ -182,14 +184,12 @@ export default function VotePage() {
               <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
             </div>
             <div className="mt-6">
-              <AnalyticsDashboard
-                filters={stableFilters}
-                authorized={isAnalystAuthorized}
-              />
+              <AnalyticsDashboard authorized={isAnalystAuthorized} />
             </div>
           </AnalystGate>
         </section>
       </motion.main>
+      </WarzoneDataProvider>
 
       {currentUser?.uid && (
         <UserProfileSetup

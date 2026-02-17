@@ -92,18 +92,39 @@ interface VoteDoc {
 
 ---
 
-## 4. 組件／服務相依關係（本階段）
+## 4. 全球聚合文件 `warzoneStats/global_summary`（極致節流）
+
+圖表與跳表**嚴禁**直接掃描 `votes` 集合，一律改讀此單一文件以將「數千次讀取」簡化為「1 次讀取」。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `totalVotes` | `number` | 全球總票數 |
+| `goat` / `fraud` / `king` / `mercenary` / `machine` / `stat_padder` | `number` | 各立場計數 |
+| `recentVotes` | `array` | 最近 10 筆投票摘要：`{ status, city, country, voterTeam, createdAt }` |
+| `reasonCountsLike` | `map<string, number>` | 粉方理由次數（reason key → 次數），供原因熱點「喜歡」 |
+| `reasonCountsDislike` | `map<string, number>` | 黑方理由次數，供原因熱點「不喜歡」 |
+| `countryCounts` | `map<string, { pro, anti }>` | 各國 pro/anti 票數（ISO2 → `{ pro, anti }`），供地圖著色 |
+| `updatedAt` | `Timestamp` | 最後更新時間 |
+
+- **寫入**：投票時 `handleSubmit` 與撤銷時 `revokeVote` 在各自 Transaction 內同步更新本文件（含 reasonCounts 與 countryCounts）。
+- **讀取**：僅在 `WarzoneDataContext` 內開啟**唯一一個** `onSnapshot(warzoneStats/global_summary)`，再分發給 SentimentStats、AnalyticsDashboard、LiveTicker、PulseMap。
+
+---
+
+## 5. 組件／服務相依關係（本階段）
 
 ```
-AuthContext (currentUser)
+AuthContext (currentUser, profiles/{uid} 單一 Document 監聽)
     ↓
 UserProfileSetup (寫入 profiles)
     ↓
-VotePage / 投票表單 (讀 profiles → 寫入 votes)
+VotePage / 投票表單 (讀 profiles → 寫入 votes + global_summary)
     ↓
-useSentimentData (讀 votes，漏斗過濾)
+WarzoneDataContext (唯一 onSnapshot: warzoneStats/global_summary)
+    ↓
+SentimentStats、AnalyticsDashboard、LiveTicker、PulseMap（嚴禁掃描 votes）
 ```
 
 ---
 
-*最後更新：依布魯斯執行指令 #2 數據建模與多維度過濾漏斗實作。*
+*最後更新：極致節流重構 — 聚合文件 + WarzoneDataContext 單一監聽。*

@@ -1,15 +1,13 @@
 /**
  * SentimentStats — 全球戰報大盤（Global Pulse）
- * 使用 useSentimentData 實時監聽全球投票，進度條顏色與 STANCE_COLORS 對齊，百分比加總精確 100%。
+ * 數據來自 WarzoneDataContext（warzoneStats/global_summary），嚴禁掃描 votes 集合。
  */
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { useSentimentData } from "../hooks/useSentimentData";
+import { useWarzoneData } from "../context/WarzoneDataContext";
 import { getStancesForArena } from "../i18n/i18n";
 import { STANCE_COLORS, RECON_AUTHORIZED_COLOR } from "../lib/constants";
-
-const EMPTY_FILTERS = {};
 /** 未知／其他立場的進度條 fallback 色（與 gray-500 一致） */
 const FALLBACK_BAR_COLOR = "#6b7280";
 /** 動態計數器動畫時長（ms） */
@@ -68,32 +66,22 @@ function useAnimatedCount(target) {
   return display;
 }
 
-export default function SentimentStats({ filters = EMPTY_FILTERS }) {
-  const { t, i18n } = useTranslation("common");
-  const stableFilters = useMemo(
-    () =>
-      filters && Object.keys(filters).length ? { ...filters } : EMPTY_FILTERS,
-    [filters],
-  );
-  const { data, loading, error } = useSentimentData(stableFilters, {
-    pageSize: 500,
-  });
+export default function SentimentStats() {
+  const { t } = useTranslation("common");
+  const { summary, loading, error } = useWarzoneData();
 
   const stats = useMemo(() => {
-    const total = data.length;
-    if (total === 0) return { total: 0, byStatus: {}, otherCount: 0 };
-    const byStatus = {};
-    data.forEach((v) => {
-      const s = v.status ?? "unknown";
-      byStatus[s] = (byStatus[s] ?? 0) + 1;
-    });
-    const knownValues = new Set(getStancesForArena().map((s) => s.value));
-    const otherCount = Object.entries(byStatus).reduce(
-      (sum, [status, count]) => (knownValues.has(status) ? sum : sum + count),
-      0,
-    );
-    return { total, byStatus, otherCount };
-  }, [data]);
+    const total = summary.totalVotes ?? 0;
+    const byStatus = {
+      goat: summary.goat ?? 0,
+      fraud: summary.fraud ?? 0,
+      king: summary.king ?? 0,
+      mercenary: summary.mercenary ?? 0,
+      machine: summary.machine ?? 0,
+      stat_padder: summary.stat_padder ?? 0,
+    };
+    return { total, byStatus, otherCount: 0 };
+  }, [summary]);
 
   const rowsWithPct = useMemo(() => {
     const orderedStanceRows = getStancesForArena();
@@ -106,7 +94,7 @@ export default function SentimentStats({ filters = EMPTY_FILTERS }) {
       rows.push({ key: "other", label: t("other"), count: stats.otherCount });
     }
     return normalizePctTo100(rows);
-  }, [stats, t, i18n.language]);
+  }, [stats, t]);
 
   const totalVotesDisplay = useAnimatedCount(stats.total);
 

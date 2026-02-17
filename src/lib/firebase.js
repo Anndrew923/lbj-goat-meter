@@ -18,7 +18,7 @@
  */
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
-import { initializeFirestore } from 'firebase/firestore'
+import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
 
 const requiredKeys = [
   'VITE_FIREBASE_API_KEY',
@@ -68,6 +68,16 @@ if (config) {
     // 《最強肉體》長輪詢配置：自動偵測長輪詢，減少 WebChannel 在開發環境的連線報錯
     db = initializeFirestore(app, {
       experimentalAutoDetectLongPolling: true,
+    })
+    // 緩存策略：優先讀取本地 IndexedDB，減少伺服器 Reads（尤其對不常變動的 profiles / warzoneStats）
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err?.code === 'failed-precondition') {
+        if (import.meta.env.DEV) console.warn('[Firebase] 持久化：另一分頁已啟用，本分頁使用記憶體緩存')
+      } else if (err?.code === 'unimplemented') {
+        if (import.meta.env.DEV) console.warn('[Firebase] 持久化：此瀏覽器不支援 IndexedDB 離線持久化')
+      } else if (import.meta.env.DEV) {
+        console.warn('[Firebase] enableIndexedDbPersistence 失敗:', err?.message ?? err)
+      }
     })
     googleProvider = new GoogleAuthProvider()
   } catch (err) {

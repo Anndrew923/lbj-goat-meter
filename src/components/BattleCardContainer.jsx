@@ -104,6 +104,7 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
         backgroundColor: '#0a0a0a',
         pixelRatio: 2,
         cacheBust: true,
+        skipFonts: true, // 避免讀取跨域 CSS（如 Google Fonts）觸發 SecurityError
       })
       if (Capacitor.isNativePlatform()) {
         const albumIdentifier = await ensureGoatAlbumIdentifier()

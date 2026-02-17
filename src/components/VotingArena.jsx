@@ -16,7 +16,7 @@ import {
 import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
-import { REASONS_MAX_SELECT } from "../lib/constants";
+import { REASONS_MAX_SELECT, GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from "../lib/constants";
 import { triggerHaptic } from "../utils/hapticUtils";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
@@ -190,6 +190,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
     const profileRef = doc(db, "profiles", userId);
     const votesRef = collection(db, "votes");
     try {
+      const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
       await runTransaction(db, async (tx) => {
         // ========== 階段一：所有讀取（全部完成後才可寫入） ==========
         const profileSnap = await tx.get(profileRef);
@@ -202,6 +203,8 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
         ).trim();
         if (!warzoneId)
           throw new Error(t("common:error_warzoneRequired"));
+        const globalSnap = await tx.get(globalSummaryRef);
+        const globalData = globalSnap?.exists?.() ? globalSnap.data() : {};
         const newVoteRef = doc(votesRef);
         const votePayload = {
           starId: STAR_ID,
@@ -225,6 +228,49 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
           {
             totalVotes: increment(1),
             [selectedStance]: increment(1),
+          },
+          { merge: true }
+        );
+        const prevTotal = typeof globalData.totalVotes === "number" ? globalData.totalVotes : 0;
+        const prevRecent = Array.isArray(globalData.recentVotes) ? globalData.recentVotes : [];
+        const newTotal = prevTotal + 1;
+        const stanceCounts = {};
+        STANCE_KEYS.forEach((key) => {
+          stanceCounts[key] = (typeof globalData[key] === "number" ? globalData[key] : 0) + (key === selectedStance ? 1 : 0);
+        });
+        const newRecentEntry = {
+          status: selectedStance,
+          city: data.city ?? "",
+          country: data.country ?? "",
+          voterTeam: warzoneId,
+          createdAt: serverTimestamp(),
+        };
+        const newRecentVotes = [newRecentEntry, ...prevRecent].slice(0, 10);
+        const reasonCountsLike = { ...(typeof globalData.reasonCountsLike === "object" && globalData.reasonCountsLike !== null && !Array.isArray(globalData.reasonCountsLike) ? globalData.reasonCountsLike : {}) };
+        const reasonCountsDislike = { ...(typeof globalData.reasonCountsDislike === "object" && globalData.reasonCountsDislike !== null && !Array.isArray(globalData.reasonCountsDislike) ? globalData.reasonCountsDislike : {}) };
+        (selectedReasons || []).forEach((r) => {
+          if (PRO_STANCES.has(selectedStance)) reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
+          else if (ANTI_STANCES.has(selectedStance)) reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
+        });
+        const countryCounts = { ...(typeof globalData.countryCounts === "object" && globalData.countryCounts !== null && !Array.isArray(globalData.countryCounts) ? globalData.countryCounts : {}) };
+        const cc = String(data.country ?? "").toUpperCase().slice(0, 2);
+        if (cc) {
+          const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };
+          countryCounts[cc] = {
+            pro: (prev.pro ?? 0) + (PRO_STANCES.has(selectedStance) ? 1 : 0),
+            anti: (prev.anti ?? 0) + (ANTI_STANCES.has(selectedStance) ? 1 : 0),
+          };
+        }
+        tx.set(
+          globalSummaryRef,
+          {
+            totalVotes: newTotal,
+            ...stanceCounts,
+            recentVotes: newRecentVotes,
+            reasonCountsLike,
+            reasonCountsDislike,
+            countryCounts,
+            updatedAt: serverTimestamp(),
           },
           { merge: true }
         );

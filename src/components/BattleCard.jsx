@@ -1,6 +1,6 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
- * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、QR、免責
+ * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
  * 固定 1:1 (640×640)，scale-to-fit 縮放；640×640 高清下載需 isExportReady（廣告解鎖後自動觸發一次下載）。
  */
 import { useRef, useCallback, useEffect, useState } from "react";
@@ -8,8 +8,8 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Download, RotateCcw } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { STANCE_COLORS } from "../lib/constants";
+import crownIcon from "../assets/goat-crown-icon.png";
 import { hexWithAlpha } from "../utils/colorUtils";
 import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
@@ -80,8 +80,6 @@ export default function BattleCard({
       })()
     : [stanceDisplayName, ""];
   const regionText = [country, city].filter(Boolean).join(" · ") || t("global");
-  const shareUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/` : "";
 
   const availableHeight = Math.max(
     0,
@@ -377,7 +375,7 @@ export default function BattleCard({
                     </div>
                   )}
 
-                  {/* 底部：地區 + 排名 + QR 區（上提 20px 緩解擁擠，維持安全邊距） */}
+                  {/* 底部：地區 + 排名 + 品牌鋼印區（上提 20px 緩解擁擠，維持安全邊距） */}
                   <div className="mt-auto -mt-5 pt-3 flex flex-wrap items-end justify-between gap-2 border-t border-white/10 px-1">
                     <div className="flex flex-col min-w-0">
                       <span
@@ -393,27 +391,26 @@ export default function BattleCard({
                         {rankLabel ?? t("rankLabel")}
                       </span>
                     </div>
-                    <div className="flex flex-row items-center gap-3 text-right flex-shrink-0 min-w-0">
-                      <div className="text-right">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-white/90">
-                          {t("battleCard.scan_to_debate")}
-                        </p>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-white/90">
-                          {t("battleCard.define_history")}
-                        </p>
-                      </div>
-                      {shareUrl && (
-                        <div className="p-5 flex-shrink-0">
-                          <QRCodeSVG
-                            value={shareUrl}
-                            size={64}
-                            fgColor="white"
-                            bgColor="transparent"
-                            className="flex-shrink-0"
-                            aria-hidden
-                          />
-                        </div>
-                      )}
+                    {/* 品牌鋼印容器：靠右、不壓縮，供 toPng 導出與小屏佈局穩定 */}
+                    <div
+                      className="flex items-end gap-3 justify-end flex-shrink-0 pb-1"
+                      role="group"
+                      aria-label="GOAT Meter"
+                    >
+                      <img
+                        src={crownIcon}
+                        alt=""
+                        className="w-14 h-14 object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.6)]"
+                        aria-hidden
+                      />
+                      <span
+                        className="text-king-gold font-secondary font-bold text-xl tracking-wider uppercase"
+                        style={{
+                          textShadow: "0 0 10px rgba(255,215,0,0.5)",
+                        }}
+                      >
+                        GOAT Meter
+                      </span>
                     </div>
                   </div>
 

@@ -7,6 +7,11 @@
  * - 支援「全球 → 國家 → 城市」與「年齡 / 性別 / 球隊」的多維度交叉查詢。
  * - 大盤百分比精準度（加總 100%）由消費端（如 SentimentStats）依本 data 做整數分配校準。
  *
+ * Reads 優化注意：
+ * - 本 Hook 訂閱的是「Collection 查詢」而非單一 Document，每次掛載 = 一組 Listener，會計入 Reads。
+ * - 多個組件（如 SentimentStats + AnalyticsDashboard + PulseMap）各自呼叫會產生多組訂閱；若 filters 相同可考慮上層共用一筆 data 再分發。
+ * - 卸載時必定執行 return () => unsubscribe()，避免殘留監聽器。
+ *
  * 為何需要複合索引 (Composite Indexes)？
  * - Firestore 對「多欄位查詢」有硬性規定：只要在單一查詢中對「多個不同欄位」使用
  *   where()（或 where() 搭配 orderBy()），就必須事先在 Firebase Console 建立對應的
@@ -93,6 +98,7 @@ export function useSentimentData(filters = {}, options = {}) {
       timeoutId = null
     }, SNAPSHOT_TIMEOUT_MS)
 
+    if (import.meta.env.DEV) console.log("Firebase Fetching [useSentimentData] votes 查詢訂閱 (Collection query)", { starId, filterEntries: filterEntries.length })
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {

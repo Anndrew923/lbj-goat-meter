@@ -14,6 +14,9 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        secondary: ['"Rajdhani"', 'sans-serif'],
+      },
       keyframes: {
         'border-blink': {
           '0%, 100%': { borderColor: 'rgb(212 175 55 / 0.95)', boxShadow: '0 0 12px rgb(212 175 55 / 0.4)' },

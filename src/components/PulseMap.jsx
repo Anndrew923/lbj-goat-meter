@@ -1,19 +1,15 @@
 /**
  * PulseMap — 全球情緒熱力圖（/vote 視覺重心）
- * 依各國統計將區塊染成金色（粉方佔優）或紫色（黑方佔優）；點擊國家可更新 filters 並連動 AnalyticsDashboard。
- * 技術選用：react-simple-maps（SVG 輕量），地圖 import 打包，記憶化 Geographies、畫布比例鎖定、數據緩衝，消除抖動。
+ * 數據來自 WarzoneDataContext（global_summary.countryCounts），依各國 pro/anti 著色，點擊國家可更新 filters。
  */
-import { Component, useMemo, useState, useCallback, useEffect, useRef, memo } from 'react'
+import { Component, useMemo, useState, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { motion } from 'framer-motion'
-import { useSentimentData } from '../hooks/useSentimentData'
+import { useWarzoneData } from '../context/WarzoneDataContext'
 
 /** 地圖 TopoJSON：放在 public/，開頭斜線指向根路徑 */
 const GEO_URL = '/countries-110m.json'
-
-/** 穩定空物件，避免 useSentimentData(filters) 每輪新 {} 導致 useEffect 依賴變動 → 無限更新 */
-const EMPTY_SENTIMENT_FILTERS = {}
 
 /** 畫布比例：與正式地圖一致，消除 Layout Shift */
 const MAP_ASPECT = 'aspect-[2/1]'
@@ -61,22 +57,6 @@ class MapErrorBoundary extends Component {
     if (this.state.hasError) return <MapStaticGrid messageKey="mapLoadError" />
     return this.props.children
   }
-}
-
-const PRO_STANCES = new Set(['goat', 'king', 'machine'])
-const ANTI_STANCES = new Set(['fraud', 'stat_padder', 'mercenary'])
-
-/** 依投票數據按國家彙總：pro 與 anti 票數，用於著色 */
-function aggregateByCountry(data) {
-  const byCountry = {}
-  data.forEach((v) => {
-    const cc = (v.country ?? '').toUpperCase().slice(0, 2)
-    if (!cc) return
-    if (!byCountry[cc]) byCountry[cc] = { pro: 0, anti: 0 }
-    if (PRO_STANCES.has(v.status)) byCountry[cc].pro += 1
-    else if (ANTI_STANCES.has(v.status)) byCountry[cc].anti += 1
-  })
-  return byCountry
 }
 
 /** world-atlas TopoJSON 的 id 多為數字，需對應至 ISO 代碼；此處用常見 2 碼對照（可擴充） */
@@ -153,33 +133,15 @@ const MemoizedMapPaths = memo(function MemoizedMapPaths({
   return paths
 })
 
-const SENTIMENT_UPDATE_DELAY_MS = 120
-
 export default function PulseMap({ filters, onFiltersChange }) {
   const { t } = useTranslation('common')
-  const { data, loading, error } = useSentimentData(EMPTY_SENTIMENT_FILTERS, { pageSize: 800 })
+  const { summary, loading, error } = useWarzoneData()
   const [hovered, setHovered] = useState(null)
-  const [bufferedData, setBufferedData] = useState([])
-  const delayRef = useRef(null)
 
-  // 緩衝 Firestore 高頻推送：僅在停止更新約 120ms 後才寫入，減少地圖重繪
-  useEffect(() => {
-    if (loading || error) {
-      setBufferedData([])
-      if (delayRef.current) clearTimeout(delayRef.current)
-      return
-    }
-    const id = setTimeout(() => {
-      setBufferedData(data)
-      delayRef.current = null
-    }, SENTIMENT_UPDATE_DELAY_MS)
-    delayRef.current = id
-    return () => clearTimeout(id)
-  }, [data, loading, error])
-
+  /** 來自 global_summary.countryCounts：{ [iso2]: { pro, anti } } */
   const byCountry = useMemo(
-    () => aggregateByCountry(bufferedData ?? []),
-    [bufferedData]
+    () => (typeof summary.countryCounts === 'object' && summary.countryCounts !== null && !Array.isArray(summary.countryCounts) ? summary.countryCounts : {}),
+    [summary.countryCounts]
   )
   const selectedCountry = filters?.country ?? null
   const setHoveredStable = useCallback((v) => setHovered(v), [])

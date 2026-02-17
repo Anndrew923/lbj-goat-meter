@@ -96,6 +96,17 @@ export const STANCES = [
   { value: 'stat_padder', theme: 'rust-copper' },
 ]
 
+/** 全球聚合文件 ID（warzoneStats/global_summary）：圖表與跳表嚴禁掃描 votes，一律讀此文件以極致節流 */
+export const GLOBAL_SUMMARY_DOC_ID = 'global_summary'
+
+/** 立場鍵列表，與 STANCES 順序一致，供 global_summary 計數欄位使用 */
+export const STANCE_KEYS = STANCES.map((s) => s.value)
+
+/** 粉方立場（原因熱點「喜歡」、地圖 pro 計數） */
+export const PRO_STANCES = new Set(['goat', 'king', 'machine'])
+/** 黑方立場（原因熱點「不喜歡」、地圖 anti 計數） */
+export const ANTI_STANCES = new Set(['fraud', 'stat_padder', 'mercenary'])
+
 /** 偵查授權指示燈色（戰術美金綠），與 FilterFunnel / VotePage RECON 燈一致 */
 export const RECON_AUTHORIZED_COLOR = '#00E676'
 
