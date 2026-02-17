@@ -25,13 +25,17 @@ import {
 } from "react";
 import {
   onAuthStateChanged,
-  signInWithPopup,
   signOut as firebaseSignOut,
   deleteUser,
   reauthenticateWithPopup,
 } from "firebase/auth";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { auth, googleProvider, db, isFirebaseReady } from "../lib/firebase";
+import {
+  loginWithGoogleForFirebase,
+  isNativePlatform,
+  reauthenticateWithGoogleCredential,
+} from "../services/GoogleAuthService";
 import { deleteAccountData, revokeVote } from "../services/AccountService";
 import { triggerHaptic } from "../utils/hapticUtils";
 import i18n from "../i18n/config";
@@ -225,8 +229,8 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // 使用彈窗登入；Vite 已設 COOP: same-origin-allow-popups 避免「window.closed」被擋。
-  // 若彈窗仍被 COOP 阻擋，可改為 signInWithRedirect + getRedirectResult（需處理 init.json 或部署 Hosting）。
+  // 原生 (Android/iOS)：使用 SocialLogin 取得 idToken，再以 credential 與 Firebase 驗證，避免 WebView 中 signInWithRedirect/popup 失效。
+  // Web：維持 signInWithPopup。
   const loginWithGoogle = useCallback(async () => {
     setAuthError(null);
     if (!isFirebaseReady || !auth || !googleProvider) {
@@ -237,13 +241,13 @@ export function AuthProvider({ children }) {
       return;
     }
     try {
-      await signInWithPopup(auth, googleProvider);
+      await loginWithGoogleForFirebase();
     } catch (err) {
       triggerHaptic([30, 50, 30]);
       const message = getAuthErrorMessage(err);
       setAuthError(message);
       if (import.meta.env.DEV) {
-        console.warn("[AuthContext] signInWithPopup 失敗:", err?.code ?? err?.message);
+        console.warn("[AuthContext] Google 登入失敗:", err?.code ?? err?.message);
         logAuthErrorDiagnostic(err, "Google 登入");
       }
       throw err;
@@ -301,7 +305,11 @@ export function AuthProvider({ children }) {
       const code = err?.code ?? "";
       if (code === "auth/requires-recent-login") {
         try {
-          await reauthenticateWithPopup(auth.currentUser, googleProvider);
+          if (isNativePlatform()) {
+            await reauthenticateWithGoogleCredential(auth.currentUser);
+          } else {
+            await reauthenticateWithPopup(auth.currentUser, googleProvider);
+          }
           // Firestore 已在上一 try 中清理，此處僅需執行 Auth 刪除
           await deleteUser(auth.currentUser);
           setCurrentUser(null);

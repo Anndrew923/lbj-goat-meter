@@ -1,0 +1,23 @@
+{
+  "project_info": {
+    "project_number": "YOUR_PROJECT_NUMBER",
+    "project_id": "YOUR_PROJECT_ID",
+    "storage_bucket": "YOUR_PROJECT_ID.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:XXXX:android:XXXX",
+        "android_client_info": {
+          "package_name": "com.lbjgoatmeter.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "XXXX.apps.googleusercontent.com",
+          "client_type": 1
+        }
+      ]
+    }
+  ]
+}

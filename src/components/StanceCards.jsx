@@ -2,6 +2,7 @@
  * StanceCards — 六大立場卡片網格
  * Grid 排版、等高卡片、海報感排版、STANCE_COLORS 動態主標與水印。
  * 選中態以 inline backgroundColor 確保立場色（如 tactical-emerald）穩定顯示，不受 Tailwind 動態 class 影響。
+ * 主標使用 clamp(1rem, 4vw, 1.5rem) + overflow-wrap: anywhere，確保各解析度下標題不截斷。
  */
 import { motion } from "framer-motion";
 import { getStancesForArena } from "../i18n/i18n";
@@ -116,14 +117,14 @@ export default function StanceCards({
               />
             )}
             <span
-              className="relative z-0 text-2xl sm:text-3xl lg:text-4xl font-black uppercase tracking-tighter leading-tight"
-              style={{ color: isSelected ? undefined : color }}
+              className="relative z-0 min-w-0 font-black uppercase tracking-tighter leading-tight text-[clamp(1rem,4vw,1.5rem)] [overflow-wrap:anywhere]"
+              style={isSelected ? undefined : { color }}
             >
               {primary}
             </span>
             <span
-              className="relative z-0 text-[9px] sm:text-[10px] font-normal opacity-90 mt-0.5 line-clamp-2"
-              style={{ color: isSelected ? undefined : color }}
+              className="relative z-0 min-w-0 text-[9px] sm:text-[10px] font-normal opacity-90 mt-0.5 [overflow-wrap:anywhere]"
+              style={isSelected ? undefined : { color }}
             >
               {secondary}
             </span>

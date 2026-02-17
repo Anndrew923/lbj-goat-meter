@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "871587249840",
+    "project_id": "lbj-goat-meter",
+    "storage_bucket": "lbj-goat-meter.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:871587249840:android:6c998b508adbfda10a0575",
+        "android_client_info": {
+          "package_name": "com.lbjgoatmeter.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "871587249840-qmhtp3vuon4744ea94htjjb1smpcvktr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBJ5Tnc8XMIA519FBiC6_221ZrOUs0xpto"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "871587249840-qmhtp3vuon4744ea94htjjb1smpcvktr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

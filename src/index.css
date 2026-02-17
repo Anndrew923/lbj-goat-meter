@@ -16,9 +16,11 @@
   --safe-area-inset-bottom: env(safe-area-inset-bottom, 2rem);
 }
 
+/* 全域：禁止 overscroll 彈性；touch-action 配合 viewport 禁用雙指縮放，僅允許平移 */
 html,
 body {
   overscroll-behavior-y: none;
+  touch-action: pan-x pan-y;
 }
 body {
   margin: 0;
