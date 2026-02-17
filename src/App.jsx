@@ -7,6 +7,7 @@ import SetupPage from './pages/SetupPage'
 import PrivacyPage from './pages/PrivacyPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import { triggerHaptic } from './utils/hapticUtils'
+import { initializeAdMob } from './services/AdMobService'
 
 const TOAST_DURATION_MS = 2500
 const DOUBLE_BACK_WINDOW_MS = 2000
@@ -33,6 +34,10 @@ export default function App() {
   const { t } = useTranslation('common')
   const [toastMessage, setToastMessage] = useState('')
   const lastBackPressRef = useRef(0)
+
+  useEffect(() => {
+    initializeAdMob().catch(() => {})
+  }, [])
 
   useEffect(() => {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)

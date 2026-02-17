@@ -12,6 +12,9 @@
     "android:apk": "npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
+    "@capacitor-community/admob": "^8.0.0",
+    "@capacitor-community/media": "^9.0.1",
+    "@capacitor/filesystem": "^8.1.2",
     "@capacitor/haptics": "^8.0.0",
     "@capgo/capacitor-social-login": "^8.3.2",
     "@headlessui/react": "^2.2.9",
@@ -43,6 +46,7 @@
     "eslint-plugin-react-refresh": "^0.4.14",
     "globals": "^15.12.0",
     "postcss": "^8.4.49",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.15",
     "vite": "^6.0.1"
   }

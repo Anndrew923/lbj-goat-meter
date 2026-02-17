@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { motion } from 'framer-motion'
+/** 皇冠裂變品牌主視覺（最新圖標） */
+import crownIcon from '../assets/goat-crown-icon.png'
 
 const languages = [
   { code: 'en', label: 'EN' },
@@ -109,18 +111,18 @@ export default function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="text-center max-w-md w-full"
       >
-        {/* 霸氣標題與剪影（以幾何剪影暗示，避免真人肖像） */}
+        {/* 霸氣標題與皇冠裂變品牌主視覺 */}
         <div className="mb-8 flex flex-col items-center">
           <h1 className="text-4xl md:text-5xl font-black text-king-gold tracking-tight mb-2">
             GOAT Meter: LeBron
           </h1>
           <p className="text-villain-purple/90 text-sm mb-6">{t('whoIsGoat')}</p>
-          <div
-            className="w-24 h-32 rounded-lg bg-gradient-to-b from-king-gold/30 to-villain-purple/30 border border-king-gold/50"
-            aria-hidden
-            style={{
-              clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
-            }}
+          <img
+            src={crownIcon}
+            alt="GOAT Meter 皇冠裂變圖標"
+            className="w-48 h-48 mx-auto object-contain my-6 drop-shadow-lg"
+            decoding="async"
+            fetchPriority="high"
           />
         </div>
 

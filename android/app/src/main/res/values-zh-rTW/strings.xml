@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">GOAT Meter</string>
-    <string name="title_activity_main">GOAT Meter</string>
+    <string name="app_name">GOAT 戰區</string>
+    <string name="title_activity_main">GOAT 戰區</string>
     <string name="package_name">com.lbjgoatmeter.app</string>
     <string name="custom_url_scheme">com.lbjgoatmeter.app</string>
     <string name="admob_app_id">ca-app-pub-5869708488609837~6751512380</string>

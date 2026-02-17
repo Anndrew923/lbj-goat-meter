@@ -29,3 +29,33 @@ export async function triggerHaptic(pattern = DEFAULT_DURATION_MS) {
     window.navigator.vibrate(pattern);
   }
 }
+
+/**
+ * 依序執行 pattern 震動（原生端用多段 vibrate + 延遲模擬 [震, 停, 震, ...]）
+ * @param {number[]} pattern - [震動ms, 間隔ms, 震動ms, ...]，例如 [30, 50, 30]、[20, 40, 20]
+ */
+export async function triggerHapticPattern(pattern) {
+  if (typeof window === "undefined" || !Array.isArray(pattern) || pattern.length === 0) return;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      for (let i = 0; i < pattern.length; i++) {
+        if (i % 2 === 0) {
+          const duration = pattern[i];
+          if (typeof duration === "number" && duration > 0) await Haptics.vibrate({ duration });
+        } else {
+          const pauseMs = pattern[i];
+          if (typeof pauseMs === "number" && pauseMs > 0)
+            await new Promise((r) => setTimeout(r, pauseMs));
+        }
+      }
+    } catch {
+      // 無震動硬體或權限時靜默略過
+    }
+    return;
+  }
+
+  if (window.navigator?.vibrate) {
+    window.navigator.vibrate(pattern);
+  }
+}

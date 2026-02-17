@@ -14,6 +14,15 @@ export default {
   ],
   theme: {
     extend: {
+      keyframes: {
+        'border-blink': {
+          '0%, 100%': { borderColor: 'rgb(212 175 55 / 0.95)', boxShadow: '0 0 12px rgb(212 175 55 / 0.4)' },
+          '50%': { borderColor: 'rgb(212 175 55 / 0.35)', boxShadow: '0 0 8px rgb(212 175 55 / 0.15)' },
+        },
+      },
+      animation: {
+        'border-blink': 'border-blink 1.5s ease-in-out infinite',
+      },
       colors: {
         // 暗黑競技風：粉方（金/紅）、黑方（紫/靛）；對抗版六立場視覺意圖
         'king-gold': 'rgb(212 175 55 / <alpha-value>)',

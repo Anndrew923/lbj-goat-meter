@@ -21,7 +21,7 @@ import { triggerHaptic } from "../utils/hapticUtils";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
 import LoginPromptModal from "./LoginPromptModal";
-import SimulatedAdPortal from "./SimulatedAdPortal";
+import AdMobPortal from "./AdMobPortal";
 import StanceCards from "./StanceCards";
 
 /** Fisher–Yates shuffle，不改動原陣列，用於每次選立場時隨機排序理由，確保每個理由都有機會被看到。 */
@@ -64,13 +64,16 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
   const [revoteError, setRevoteError] = useState(null);
   const revoteExitRef = useRef(false);
   const [revoteCompleteKey, setRevoteCompleteKey] = useState(0);
-  const [showSimulatedAd, setShowSimulatedAd] = useState(false);
+  const [showAdPortal, setShowAdPortal] = useState(false);
+  const [showSaveReportConfirm, setShowSaveReportConfirm] = useState(false);
+  const [saveReportPending, setSaveReportPending] = useState(false);
   const pendingOnWatchedRef = useRef(null);
+  const battleCardContainerRef = useRef(null);
 
-  /** 模擬廣告：點擊下載時開啟 SimulatedAdPortal，倒數結束後執行解鎖並觸發 handleDownload(true)。 */
+  /** 廣告解鎖：點擊下載時開啟 AdMobPortal，插頁關閉後執行解鎖並可選擇是否存檔至相簿。 */
   const onRequestRewardAd = useCallback((onWatched) => {
     pendingOnWatchedRef.current = onWatched;
-    setShowSimulatedAd(true);
+    setShowAdPortal(true);
   }, []);
 
   const hasVoted = profile?.hasVoted === true || voteSuccess;
@@ -106,6 +109,15 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
   useEffect(() => {
     if (profile?.hasVoted === true && voteSuccess) setVoteSuccess(false);
   }, [profile?.hasVoted, voteSuccess]);
+
+  useEffect(() => {
+    if (!showSaveReportConfirm || saveReportPending) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setShowSaveReportConfirm(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showSaveReportConfirm, saveReportPending]);
 
   const toggleReason = (value) => {
     setSelectedReasons((prev) => {
@@ -347,6 +359,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
         <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
           {showBattleCard && (
             <BattleCardContainer
+              ref={battleCardContainerRef}
               key="battle-card"
               open={showBattleCard}
               onClose={() => setShowBattleCard(false)}
@@ -376,15 +389,65 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
             />
           )}
         </AnimatePresence>
-        <SimulatedAdPortal
-          open={showSimulatedAd}
+        <AdMobPortal
+          open={showAdPortal}
           onWatched={() => {
             pendingOnWatchedRef.current?.();
             pendingOnWatchedRef.current = null;
-            setShowSimulatedAd(false);
+            setShowAdPortal(false);
+            setShowSaveReportConfirm(true);
           }}
-          onClose={() => setShowSimulatedAd(false)}
+          onClose={() => setShowAdPortal(false)}
         />
+        {showSaveReportConfirm && (
+          <div
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-report-confirm-title"
+            onClick={() => !saveReportPending && setShowSaveReportConfirm(false)}
+          >
+            <motion.div
+              className="rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="save-report-confirm-title" className="text-lg font-bold text-king-gold mb-4">
+                {t("common:saveReportToGalleryPrompt")}
+              </h2>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSaveReportConfirm(false)}
+                  disabled={saveReportPending}
+                  className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors disabled:opacity-50"
+                >
+                  {t("common:saveReportToGalleryLater")}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setSaveReportPending(true);
+                    try {
+                      await battleCardContainerRef.current?.saveToGallery?.();
+                      setShowSaveReportConfirm(false);
+                    } catch (err) {
+                      console.error("[VotingArena] save to gallery failed", err);
+                      setShowSaveReportConfirm(false);
+                    } finally {
+                      setSaveReportPending(false);
+                    }
+                  }}
+                  disabled={saveReportPending}
+                  className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saveReportPending ? t("common:saveReportToGallerySaving") : t("common:saveReportToGalleryConfirm")}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </>
     );
   }

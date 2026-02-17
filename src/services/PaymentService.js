@@ -41,3 +41,12 @@ export async function simulatePurchase(userId) {
     })
   })
 }
+
+/**
+ * 授予偵查權限（廣告觀看完成後由 AdMobPortal 呼叫）
+ * 會話級邏輯由呼叫端（如 useAnalystAuth）以 setState 處理；
+ * 此處可擴充：紀錄 analytics、或與後端同步等。
+ */
+export function grantReconPermission() {
+  // 預留：可寫入 analytics 或呼叫後端
+}

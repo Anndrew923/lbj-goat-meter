@@ -12,6 +12,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { STANCE_COLORS } from "../lib/constants";
 import { hexWithAlpha } from "../utils/colorUtils";
 import { getStance } from "../i18n/i18n";
+import { triggerHapticPattern } from "../utils/hapticUtils";
 
 const CARD_SIZE = 640;
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
@@ -46,9 +47,14 @@ export default function BattleCard({
   isExportReady = false,
   onExportUnlock,
   onRequestRewardAd,
+  /** 由 BattleCardContainer 傳入，用於 html-to-image 抓取與存相簿 */
+  cardRef: cardRefProp,
+  /** 解鎖後存檔至相簿（由 Container 的 handleDownload 提供） */
+  onSaveToGallery,
 }) {
   const { t } = useTranslation("common");
-  const cardRef = useRef(null);
+  const internalCardRef = useRef(null);
+  const cardRef = cardRefProp ?? internalCardRef;
   const overlayRef = useRef(null);
   const [containerSize, setContainerSize] = useState({
     width: 600,
@@ -114,10 +120,8 @@ export default function BattleCard({
       const isExplicitUnlock = forceUnlock === true;
       if (!isExportReady && !isExplicitUnlock) {
         if (onRequestRewardAd && onExportUnlock) {
-          onRequestRewardAd(() => {
-            onExportUnlock();
-            handleDownload(true);
-          });
+          // 廣告結束後僅解鎖；存檔由「偵察完成，是否存檔？」視窗或「下載高解析戰報」按鈕觸發
+          onRequestRewardAd(() => onExportUnlock());
         }
         return;
       }
@@ -201,6 +205,7 @@ export default function BattleCard({
             >
               <div
                 ref={cardRef}
+                data-ref="battle-card-ref"
                 className="absolute left-1/2 top-1/2 flex flex-col bg-black text-white rounded-2xl origin-center border-2"
                 style={{
                   width: CARD_SIZE,
@@ -424,16 +429,30 @@ export default function BattleCard({
             </div>
           </div>
 
-          {/* 按鈕組：緊貼卡片下方 (gap-y-6) */}
+          {/* 按鈕組：緊貼卡片下方 (gap-y-6)；解鎖後顯示「下載高解析戰報」存相簿 */}
           <div className="flex-shrink-0 flex flex-col items-center w-full max-w-sm gap-y-4">
-            <button
-              type="button"
-              onClick={() => handleDownload()}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-king-gold text-black font-bold"
-            >
-              <Download className="w-5 h-5 shrink-0" aria-hidden />
-              {t("downloadReport")}
-            </button>
+            {isExportReady && onSaveToGallery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHapticPattern([10, 30, 10]);
+                  onSaveToGallery();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-king-gold bg-king-gold/10 text-king-gold font-bold animate-border-blink"
+              >
+                <Download className="w-5 h-5 shrink-0" aria-hidden />
+                {t("downloadHighResReport")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleDownload()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-king-gold text-black font-bold"
+              >
+                <Download className="w-5 h-5 shrink-0" aria-hidden />
+                {t("downloadReport")}
+              </button>
+            )}
 
             <div className={`flex gap-3 w-full ${onRevote ? "" : "flex-col"}`}>
               {onRevote && (
