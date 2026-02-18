@@ -57,6 +57,9 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     exit = { opacity: 0, scale: 0.9 },
     /** 喚起激勵廣告（或模擬廣告），播放完畢後須呼叫 onWatched()；未傳則點擊下載不執行 toPng。 */
     onRequestRewardAd,
+    /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
+    onExportStart,
+    onExportEnd,
   },
   ref,
 ) {
@@ -83,6 +86,7 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
   const handleDownload = useCallback(async () => {
     const el = battleCardRef.current
     if (!el) return
+    onExportStart?.()
     const prev = {
       transform: el.style.transform,
       transformOrigin: el.style.transformOrigin,
@@ -128,8 +132,9 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
       el.style.top = prev.top
       el.style.margin = prev.margin
       el.style.padding = prev.padding
+      onExportEnd?.()
     }
-  }, [])
+  }, [onExportStart, onExportEnd])
 
   useImperativeHandle(ref, () => ({ saveToGallery: handleDownload }), [handleDownload])
 
@@ -201,6 +206,8 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
       onExportUnlock={onExportUnlock}
       onRequestRewardAd={onRequestRewardAd}
       onSaveToGallery={handleDownload}
+      onExportStart={onExportStart}
+      onExportEnd={onExportEnd}
     />
   ) : null
 

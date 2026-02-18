@@ -10,6 +10,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useRef } from 
 import { doc, onSnapshot } from "firebase/firestore";
 import { db, isFirebaseReady } from "../lib/firebase";
 import { GLOBAL_SUMMARY_DOC_ID } from "../lib/constants";
+import { isObject } from "../utils/typeUtils";
 
 const WarzoneDataContext = createContext(null);
 
@@ -56,9 +57,9 @@ export function WarzoneDataProvider({ children }) {
         }
         const data = snap.data();
         const recentVotes = Array.isArray(data.recentVotes) ? data.recentVotes : [];
-        const reasonCountsLike = typeof data.reasonCountsLike === "object" && data.reasonCountsLike !== null && !Array.isArray(data.reasonCountsLike) ? data.reasonCountsLike : {};
-        const reasonCountsDislike = typeof data.reasonCountsDislike === "object" && data.reasonCountsDislike !== null && !Array.isArray(data.reasonCountsDislike) ? data.reasonCountsDislike : {};
-        const countryCounts = typeof data.countryCounts === "object" && data.countryCounts !== null && !Array.isArray(data.countryCounts) ? data.countryCounts : {};
+        const reasonCountsLike = isObject(data.reasonCountsLike) ? data.reasonCountsLike : {};
+        const reasonCountsDislike = isObject(data.reasonCountsDislike) ? data.reasonCountsDislike : {};
+        const countryCounts = isObject(data.countryCounts) ? data.countryCounts : {};
         setSummary({
           totalVotes: typeof data.totalVotes === "number" ? data.totalVotes : 0,
           goat: typeof data.goat === "number" ? data.goat : 0,

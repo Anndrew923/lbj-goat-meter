@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { motion } from 'framer-motion'
 import { useWarzoneData } from '../context/WarzoneDataContext'
+import { isObject } from '../utils/typeUtils'
 
 /** 地圖 TopoJSON：放在 public/，開頭斜線指向根路徑 */
 const GEO_URL = '/countries-110m.json'
@@ -140,7 +141,7 @@ export default function PulseMap({ filters, onFiltersChange }) {
 
   /** 來自 global_summary.countryCounts：{ [iso2]: { pro, anti } } */
   const byCountry = useMemo(
-    () => (typeof summary.countryCounts === 'object' && summary.countryCounts !== null && !Array.isArray(summary.countryCounts) ? summary.countryCounts : {}),
+    () => (isObject(summary.countryCounts) ? summary.countryCounts : {}),
     [summary.countryCounts]
   )
   const selectedCountry = filters?.country ?? null

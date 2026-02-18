@@ -49,6 +49,7 @@ export default function VotePage() {
   const [resetProfileChecked, setResetProfileChecked] = useState(false);
   const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
   const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
+  const [tickerPausedForExport, setTickerPausedForExport] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
   const { isAnalystAuthorized, onRequestRewardAd, analystAdPortal } =
     useAnalystAuth();
@@ -129,7 +130,7 @@ export default function VotePage() {
       {/* 與固定 Header 等高的 Spacer，避免首屏內容被遮擋 */}
       <div className="header-spacer" aria-hidden />
       <WarzoneDataProvider>
-        <LiveTicker />
+        <LiveTicker forcePaused={tickerPausedForExport} />
         <motion.main
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -140,6 +141,8 @@ export default function VotePage() {
           userId={currentUser?.uid}
           currentUser={currentUser}
           onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
+          onExportStart={() => setTickerPausedForExport(true)}
+          onExportEnd={() => setTickerPausedForExport(false)}
         />
         <section className="relative">
           {analystAdPortal}

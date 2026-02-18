@@ -46,7 +46,7 @@ function TickerItem({ vote, t }) {
   )
 }
 
-export default function LiveTicker() {
+export default function LiveTicker({ forcePaused = false }) {
   const { t } = useTranslation('common')
   const { recentVotes } = useWarzoneData()
   const [pausedByClick, setPausedByClick] = useState(false)
@@ -91,8 +91,8 @@ export default function LiveTicker() {
 
   if (effectiveItems.length === 0) return null
 
-  /** 點擊暫停或懸停暫停，單一來源控制 animation-play-state（避免 inline 覆蓋 hover） */
-  const isPaused = pausedByClick || isHovering
+  /** 點擊暫停、懸停暫停、或戰報導出中：單一來源控制 animation-play-state（避免 inline 覆蓋 hover） */
+  const isPaused = pausedByClick || isHovering || forcePaused
 
   return (
     <div

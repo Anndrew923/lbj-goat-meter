@@ -33,6 +33,7 @@ import arenaData from './arena.json'
 import brandData from './brand.json'
 import { STANCES, REASONS_BY_STANCE } from '../lib/constants'
 import i18n from './config'
+import { isObject } from '../utils/typeUtils'
 
 const STANCE_ORDER = STANCES.map((s) => s.value)
 
@@ -43,7 +44,7 @@ const STANCE_ORDER = STANCES.map((s) => s.value)
 function getReasonsResource() {
   const lng = i18n.language || 'zh-TW'
   const bundle = typeof i18n.getResourceBundle === 'function' && i18n.getResourceBundle(lng, 'arena')
-  if (bundle && typeof bundle.reasons === 'object') return bundle.reasons
+  if (bundle && isObject(bundle.reasons)) return bundle.reasons
   const fallback = typeof i18n.getResourceBundle === 'function' && i18n.getResourceBundle('zh-TW', 'arena')
   if (fallback?.reasons) return fallback.reasons
   return arenaData.reasons || {}

@@ -51,6 +51,9 @@ export default function BattleCard({
   cardRef: cardRefProp,
   /** 解鎖後存檔至相簿（由 Container 的 handleDownload 提供） */
   onSaveToGallery,
+  /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
+  onExportStart,
+  onExportEnd,
 }) {
   const { t } = useTranslation("common");
   const internalCardRef = useRef(null);
@@ -127,6 +130,7 @@ export default function BattleCard({
       if (!isExportReady && !isExplicitUnlock) return;
       const el = cardRef.current;
       if (!el) return;
+      onExportStart?.();
       const prev = {
         transform: el.style.transform,
         transformOrigin: el.style.transformOrigin,
@@ -163,9 +167,10 @@ export default function BattleCard({
           el.style.top = prev.top;
           el.style.margin = prev.margin;
           el.style.padding = prev.padding;
+          onExportEnd?.();
         });
     },
-    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd],
+    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
   );
 
   if (!open) return null;

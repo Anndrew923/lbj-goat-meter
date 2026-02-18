@@ -6,19 +6,11 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  collection,
-  doc,
-  runTransaction,
-  serverTimestamp,
-  Timestamp,
-  increment,
-} from "firebase/firestore";
-import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
-import { REASONS_MAX_SELECT, GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
+import { REASONS_MAX_SELECT } from "../lib/constants";
 import { triggerHaptic } from "../utils/hapticUtils";
+import { submitVote as voteServiceSubmitVote } from "../services/VoteService";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
 import LoginPromptModal from "./LoginPromptModal";
@@ -35,8 +27,6 @@ function shuffle(arr) {
   return a;
 }
 
-const STAR_ID = "lbj";
-
 /** 原因標籤選中時是否用紫色系（反方） */
 function isAntiStance(stance) {
   return (
@@ -44,7 +34,7 @@ function isAntiStance(stance) {
   );
 }
 
-export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }) {
+export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, onExportStart, onExportEnd }) {
   const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
   /** 已登入但未完成 Profile（半登錄）：顯示投票卡，點擊時攔截並引導完成戰區登錄 */
@@ -190,113 +180,12 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
     if (!userId || !canSubmit || !profile) return;
     setSubmitting(true);
     setSubmitError(null);
-    const profileRef = doc(db, "profiles", userId);
-    const votesRef = collection(db, "votes");
     try {
-      const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
-      await runTransaction(db, async (tx) => {
-        // ========== 階段一：所有讀取（全部完成後才可寫入） ==========
-        const profileSnap = await tx.get(profileRef);
-        if (!profileSnap?.exists?.())
-          throw new Error(t("common:completeProfileFirst"));
-        const data = profileSnap?.data?.() ?? {};
-        if (data.hasVoted === true) throw new Error(t("common:alreadyVoted"));
-        const warzoneId = String(
-          data.warzoneId ?? data.voterTeam ?? ""
-        ).trim();
-        if (!warzoneId)
-          throw new Error(t("common:error_warzoneRequired"));
-        const globalSnap = await tx.get(globalSummaryRef);
-        // 無中生有：若 global_summary 尚不存在，使用共用初始結構，避免讀取不存在的欄位與 serverTimestamp 陣列限制
-        const globalData = !globalSnap?.exists?.()
-          ? getInitialGlobalSummary()
-          : (() => {
-              const d = globalSnap.data();
-              return {
-                totalVotes: typeof d.totalVotes === "number" ? d.totalVotes : 0,
-                recentVotes: Array.isArray(d.recentVotes) ? d.recentVotes : [],
-                reasonCountsLike: typeof d.reasonCountsLike === "object" && d.reasonCountsLike !== null && !Array.isArray(d.reasonCountsLike) ? d.reasonCountsLike : {},
-                reasonCountsDislike: typeof d.reasonCountsDislike === "object" && d.reasonCountsDislike !== null && !Array.isArray(d.reasonCountsDislike) ? d.reasonCountsDislike : {},
-                countryCounts: typeof d.countryCounts === "object" && d.countryCounts !== null && !Array.isArray(d.countryCounts) ? d.countryCounts : {},
-                ...Object.fromEntries(STANCE_KEYS.map((k) => [k, typeof d[k] === "number" ? d[k] : 0])),
-              };
-            })();
-        const newVoteRef = doc(votesRef);
-        const votePayload = {
-          starId: STAR_ID,
-          userId,
-          status: selectedStance,
-          reasons: selectedReasons,
-          warzoneId,
-          voterTeam: warzoneId,
-          ageGroup: data.ageGroup ?? "",
-          gender: data.gender ?? "",
-          country: data.country ?? "",
-          city: data.city ?? "",
-          hadWarzoneStats: true,
-          createdAt: serverTimestamp(),
-        };
-        // ========== 階段二：所有寫入（此前不得再呼叫 tx.get） ==========
-        tx.set(newVoteRef, votePayload);
-        const warzoneStatsRef = doc(db, "warzoneStats", warzoneId);
-        tx.set(
-          warzoneStatsRef,
-          {
-            totalVotes: increment(1),
-            [selectedStance]: increment(1),
-          },
-          { merge: true }
-        );
-        const newTotal = globalData.totalVotes + 1;
-        const stanceCounts = {};
-        STANCE_KEYS.forEach((key) => {
-          stanceCounts[key] = globalData[key] + (key === selectedStance ? 1 : 0);
-        });
-        // Firestore 不支援在陣列元素內使用 serverTimestamp()，改用客戶端時間戳
-        const newRecentEntry = {
-          status: selectedStance,
-          city: data.city ?? "",
-          country: data.country ?? "",
-          voterTeam: warzoneId,
-          createdAt: Timestamp.now(),
-        };
-        const newRecentVotes = [newRecentEntry, ...globalData.recentVotes].slice(0, 10);
-        const reasonCountsLike = { ...(globalData.reasonCountsLike ?? {}) };
-        const reasonCountsDislike = { ...(globalData.reasonCountsDislike ?? {}) };
-        (selectedReasons || []).forEach((r) => {
-          if (PRO_STANCES.has(selectedStance)) reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
-          else if (ANTI_STANCES.has(selectedStance)) reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
-        });
-        const countryCounts = { ...(globalData.countryCounts ?? {}) };
-        const cc = String(data.country ?? "").toUpperCase().slice(0, 2);
-        if (cc) {
-          const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };
-          countryCounts[cc] = {
-            pro: (prev.pro ?? 0) + (PRO_STANCES.has(selectedStance) ? 1 : 0),
-            anti: (prev.anti ?? 0) + (ANTI_STANCES.has(selectedStance) ? 1 : 0),
-          };
-        }
-        tx.set(
-          globalSummaryRef,
-          {
-            totalVotes: newTotal,
-            ...stanceCounts,
-            recentVotes: newRecentVotes,
-            reasonCountsLike,
-            reasonCountsDislike,
-            countryCounts,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        tx.update(profileRef, {
-          hasVoted: true,
-          currentStance: selectedStance,
-          currentReasons: selectedReasons,
-          currentVoteId: newVoteRef.id,
-          updatedAt: serverTimestamp(),
-        });
-      });
+      await voteServiceSubmitVote(
+        userId,
+        { selectedStance, selectedReasons },
+        (key) => t(key)
+      );
       triggerHaptic(50);
       setVoteSuccess(true);
       setShowBattleCard(true);
@@ -472,6 +361,8 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
               }
               exit={{ opacity: 0, scale: 0.8 }}
               onRequestRewardAd={onRequestRewardAd}
+              onExportStart={onExportStart}
+              onExportEnd={onExportEnd}
             />
           )}
         </AnimatePresence>
