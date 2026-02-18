@@ -102,6 +102,18 @@ export const GLOBAL_SUMMARY_DOC_ID = 'global_summary'
 /** 立場鍵列表，與 STANCES 順序一致，供 global_summary 計數欄位使用 */
 export const STANCE_KEYS = STANCES.map((s) => s.value)
 
+/** 初始 global_summary 結構（無中生有 / 預熱用），與 WarzoneDataContext.DEFAULT_SUMMARY 對齊 */
+export function getInitialGlobalSummary() {
+  return {
+    totalVotes: 0,
+    recentVotes: [],
+    reasonCountsLike: {},
+    reasonCountsDislike: {},
+    countryCounts: {},
+    ...Object.fromEntries(STANCE_KEYS.map((k) => [k, 0])),
+  };
+}
+
 /** 粉方立場（原因熱點「喜歡」、地圖 pro 計數） */
 export const PRO_STANCES = new Set(['goat', 'king', 'machine'])
 /** 黑方立場（原因熱點「不喜歡」、地圖 anti 計數） */

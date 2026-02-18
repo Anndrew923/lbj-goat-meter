@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "android:sha": "powershell -ExecutionPolicy Bypass -File ./scripts/get-debug-sha.ps1",
-    "android:apk": "npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug"
+    "android:apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 assembleDebug",
+    "android:release-apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 assembleRelease",
+    "android:aab": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 bundleRelease"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.0.0",

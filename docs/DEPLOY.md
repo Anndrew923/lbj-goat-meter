@@ -22,6 +22,22 @@ VITE_FIREBASE_APP_ID=你的 App ID
 
 ---
 
+## 1.4 預熱看板數據（warzoneStats/global_summary）
+
+投票與圖表依賴聚合文件 `warzoneStats/global_summary`。若該文件尚未存在，**程式已實作「無中生有」**（Transaction 內會建立初始結構）；若要提前避免首次寫入延遲，可在 Firebase Console 手動建立：
+
+1. 開啟 [Firebase Console](https://console.firebase.google.com) → 專案 → **Firestore Database**。
+2. 建立集合 `warzoneStats`（若尚無），在該集合下新增文件，**文件 ID 設為** `global_summary`。
+3. 為該文件新增欄位（與程式內 `getInitialGlobalSummary()` 對齊）：
+   - `totalVotes`（number）→ `0`
+   - `goat`、`fraud`、`king`、`mercenary`、`machine`、`stat_padder`（number）→ 各 `0`
+   - `recentVotes`（array）→ 空陣列 `[]`
+   - `reasonCountsLike`、`reasonCountsDislike`、`countryCounts`（map）→ 空物件
+
+完成後即為「已手動初始化看板數據」，投票與全球摘要可正常運作。
+
+---
+
 ## 1.5 網域授權檢查（Authorized domains）
 
 Google 登入與 redirect 白名單依「授權網域」判斷，未列入的網域無法完成登入。
@@ -54,6 +70,29 @@ firebase deploy --only firestore
 
 1. 建置：`npm run build`
 2. 部署：`firebase deploy --only hosting`
+
+---
+
+## 2.6 Android 建置（Debug / Release APK、AAB）— 一律使用 JDK 21
+
+建置腳本會**自動偵測並使用 JDK 21**（無須手動改 `JAVA_HOME`），避免與本機 JDK 17 衝突。
+
+| 指令 | 說明 | 輸出 |
+|------|------|------|
+| `npm run android:apk` | 先 build + cap sync，再組裝 **Debug APK** | `android\app\build\outputs\apk\debug\app-debug.apk` |
+| `npm run android:release-apk` | 先 build + cap sync，再組裝 **Release APK**（未簽署） | `android\app\build\outputs\apk\release\app-release.apk` |
+| `npm run android:aab` | 先 build + cap sync，再產出 **AAB**（未簽署） | `android\app\build\outputs\bundle\release\app-release.aab` |
+
+- **僅跑 Gradle、不重做 build/sync**：  
+  `powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 assembleRelease -SkipSync`（或 `assembleDebug` / `bundleRelease`）。
+- **清除快取後再建**（可選）：
+  ```powershell
+  Remove-Item -Recurse -Force node_modules\.cache -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force android\.gradle -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force android\app\build -ErrorAction SilentlyContinue
+  npm run android:apk
+  ```
+- **上架 Google Play**：需在 `android/app/build.gradle` 設定 `signingConfigs` 並使用自己的 keystore；未設定時產出的 Release APK / AAB 為未簽署，僅供本地測試。
 
 ---
 

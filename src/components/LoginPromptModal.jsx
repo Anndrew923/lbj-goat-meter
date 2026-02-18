@@ -1,6 +1,6 @@
 /**
  * LoginPromptModal — 投票權限阻擋提示
- * 當訪客點擊立場時彈出，引導登入後才能投票與領取戰報卡。
+ * 當匿名觀察者點擊立場時彈出，引導登入後才能投票與領取戰報卡。
  */
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'

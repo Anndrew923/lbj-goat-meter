@@ -106,7 +106,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
-  /** 訪客狀態：true 表示以「不留名參觀」進入，可瀏覽 /vote 但不可投票 */
+  /** 匿名觀察者狀態：true 表示以匿名觀察者進入，可瀏覽 /vote 但不可投票 */
   const [isGuest, setIsGuest] = useState(false);
   /** profiles/{uid} 文件：實時監聽，資料庫一出現即更新，供戰區無縫顯示投票 UI [cite: 2026-02-11] */
   const [profile, setProfile] = useState(null);
@@ -261,7 +261,7 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  /** 以訪客身份進入：僅設 isGuest 為 true，導向由呼叫端（如 LoginPage）負責 */
+  /** 以匿名觀察者身份進入：僅設 isGuest 為 true，導向由呼叫端（如 LoginPage）負責 */
   const continueAsGuest = useCallback(() => {
     setAuthError(null);
     setIsGuest(true);

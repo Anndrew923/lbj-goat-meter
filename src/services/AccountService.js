@@ -107,6 +107,7 @@ export async function revokeVote(uid, resetProfile = false) {
             );
           }
         }
+        // global_summary 不存在時略過聚合更新（投票端會無中生有建立；撤票時若缺文件則僅更新 profile/vote）
         if (globalSnap?.exists?.() && status) {
           const globalData = globalSnap.data();
           const prevTotal = typeof globalData.totalVotes === "number" ? globalData.totalVotes : 0;
@@ -186,7 +187,11 @@ export async function revokeVote(uid, resetProfile = false) {
 
 /**
  * 帳號刪除 — Firestore 全域清理（不含 Auth）。
- * 禁止在 Transaction 內使用 query()。正確做法：Transaction 外 getDocs(query) 取得 docId 列表，Transaction 內僅 tx.get(profileRef) + tx.delete。
+ * 防禦性重構：刪除帳號前必須在同一個 Transaction 內同步扣減 global_summary 與 warzoneStats，
+ * 杜絕「刪帳號未扣票」導致用戶可循環開帳號灌票。扣票失敗則整筆 Transaction 回滾，帳號不刪。
+ *
+ * 禁止在 Transaction 內使用 query()。正確做法：Transaction 外 getDocs(query) 取得 docId 列表，
+ * Transaction 內：階段一所有讀取（profile、global_summary、各 vote 文件）→ 階段二扣票寫入 → 刪 votes → 刪 profile。
  *
  * @param {string} uid - 要刪除的用戶 UID
  * @returns {Promise<{ deletedProfile: boolean, deletedVoteIds: string[] }>}
@@ -196,6 +201,7 @@ export async function deleteAccountData(uid) {
 
   const profileRef = doc(db, "profiles", uid);
   const votesRef = collection(db, "votes");
+  const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
 
   const voteQuery = query(
     votesRef,
@@ -211,28 +217,125 @@ export async function deleteAccountData(uid) {
 
   const deletedVoteIds = [];
 
-  await runTransaction(db, async (tx) => {
-    // Transaction 內僅允許：tx.get(profileRef) 與後續 tx.delete，不得再 get 其他 query。
-    const profileSnap = await tx.get(profileRef);
+  try {
+    await runTransaction(db, async (tx) => {
+      // ========== 階段一：所有讀取（禁止在後續出現任何 get） ==========
+      const profileSnap = await tx.get(profileRef);
+      const globalSnap = await tx.get(globalSummaryRef);
+      const voteDataList = [];
+      for (const id of idsToDelete) {
+        const voteRef = doc(db, "votes", id);
+        const voteSnapInner = await tx.get(voteRef);
+        if (voteSnapInner?.exists?.()) {
+          voteDataList.push({ id, data: voteSnapInner.data() });
+        }
+      }
 
-    // 最後的動作：所有刪除（先 profile 再 votes）
-    if (profileSnap?.exists?.()) tx.delete(profileRef);
-    idsToDelete.forEach((id) => {
-      deletedVoteIds.push(id);
-      tx.delete(doc(db, "votes", id));
+      // ========== 階段二：扣票（單次遍歷同時計算 warzone + global，僅處理合法 status） ==========
+      const warzoneDeltas = {};
+      const hasValidVotes = voteDataList.some((v) => v.data?.status && STANCE_KEYS.includes(v.data.status));
+      if (voteDataList.length > 0) {
+        for (const { data: voteData } of voteDataList) {
+          const status = voteData?.status;
+          if (!status || !STANCE_KEYS.includes(status)) continue;
+
+          if (voteData?.hadWarzoneStats === true) {
+            const wid = (voteData.warzoneId || voteData.voterTeam || "").trim();
+            if (wid) {
+              if (!warzoneDeltas[wid]) warzoneDeltas[wid] = { totalVotes: 0 };
+              warzoneDeltas[wid].totalVotes -= 1;
+              warzoneDeltas[wid][status] = (warzoneDeltas[wid][status] ?? 0) - 1;
+            }
+          }
+        }
+        Object.entries(warzoneDeltas).forEach(([wid, deltas]) => {
+          const payload = { totalVotes: increment(deltas.totalVotes), updatedAt: serverTimestamp() };
+          STANCE_KEYS.forEach((key) => {
+            if (typeof deltas[key] === "number" && deltas[key] !== 0) payload[key] = increment(deltas[key]);
+          });
+          tx.set(doc(db, "warzoneStats", wid), payload, { merge: true });
+        });
+
+        if (globalSnap?.exists?.() && hasValidVotes) {
+          const globalData = globalSnap.data();
+          let newTotal = typeof globalData.totalVotes === "number" ? globalData.totalVotes : 0;
+          const stanceCounts = {};
+          STANCE_KEYS.forEach((key) => {
+            stanceCounts[key] = typeof globalData[key] === "number" ? globalData[key] : 0;
+          });
+          const reasonCountsLike = { ...(typeof globalData.reasonCountsLike === "object" && globalData.reasonCountsLike !== null && !Array.isArray(globalData.reasonCountsLike) ? globalData.reasonCountsLike : {}) };
+          const reasonCountsDislike = { ...(typeof globalData.reasonCountsDislike === "object" && globalData.reasonCountsDislike !== null && !Array.isArray(globalData.reasonCountsDislike) ? globalData.reasonCountsDislike : {}) };
+          const countryCounts = { ...(typeof globalData.countryCounts === "object" && globalData.countryCounts !== null && !Array.isArray(globalData.countryCounts) ? globalData.countryCounts : {}) };
+
+          for (const { data: voteData } of voteDataList) {
+            const status = voteData?.status;
+            if (!status || !STANCE_KEYS.includes(status)) continue;
+            newTotal = Math.max(0, newTotal - 1);
+            STANCE_KEYS.forEach((key) => {
+              stanceCounts[key] = key === status ? Math.max(0, (stanceCounts[key] ?? 0) - 1) : (stanceCounts[key] ?? 0);
+            });
+            (voteData.reasons || []).forEach((r) => {
+              if (PRO_STANCES.has(status)) {
+                reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) - 1;
+                if (reasonCountsLike[r] <= 0) delete reasonCountsLike[r];
+              } else if (ANTI_STANCES.has(status)) {
+                reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) - 1;
+                if (reasonCountsDislike[r] <= 0) delete reasonCountsDislike[r];
+              }
+            });
+            const cc = String(voteData.country ?? "").toUpperCase().slice(0, 2);
+            if (cc && countryCounts[cc]) {
+              const cur = countryCounts[cc];
+              const pro = Math.max(0, (cur.pro ?? 0) - (PRO_STANCES.has(status) ? 1 : 0));
+              const anti = Math.max(0, (cur.anti ?? 0) - (ANTI_STANCES.has(status) ? 1 : 0));
+              if (pro > 0 || anti > 0) countryCounts[cc] = { pro, anti };
+              else delete countryCounts[cc];
+            }
+          }
+
+          tx.set(
+            globalSummaryRef,
+            {
+              totalVotes: newTotal,
+              ...stanceCounts,
+              reasonCountsLike,
+              reasonCountsDislike,
+              countryCounts,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      }
+
+      // ========== 階段三：刪除 votes 文件（徹底刪除，非改看板） ==========
+      idsToDelete.forEach((id) => {
+        deletedVoteIds.push(id);
+        tx.delete(doc(db, "votes", id));
+      });
+
+      // ========== 階段四：刪除 profile（扣票成功後才執行） ==========
+      if (profileSnap?.exists?.()) tx.delete(profileRef);
     });
-  });
 
-  if (import.meta.env.DEV) {
-    const list = [
-      `profiles/${uid} 已刪除`,
-      ...(deletedVoteIds ?? []).map((id) => `votes/${id}`),
-    ];
-    console.log("[AccountService] 帳號刪除 — 數據清理清單", list);
+    if (import.meta.env.DEV) {
+      const list = [
+        `profiles/${uid} 已刪除`,
+        ...deletedVoteIds.map((id) => `votes/${id}`),
+        ...(deletedVoteIds.length > 0 ? ["warzoneStats/global_summary 已同步扣票"] : []),
+      ];
+      console.log("[AccountService] 帳號刪除 — 數據清理清單", list);
+    }
+
+    return {
+      deletedProfile: true,
+      deletedVoteIds,
+    };
+  } catch (err) {
+    const errMsg = err?.message != null && typeof err.message === "string" ? err.message : String(err);
+    if (import.meta.env.DEV) {
+      console.warn("[AccountService] deleteAccountData 錯誤 — userId:", uid, errMsg);
+    }
+    throw err;
   }
-
-  return {
-    deletedProfile: true,
-    deletedVoteIds,
-  };
 }

@@ -48,6 +48,11 @@ body {
   padding-bottom: calc(env(safe-area-inset-bottom, 1rem) + 1.5rem);
 }
 
+/* FilterFunnel 底部固定區：安全區 + 觸控防錯 24px，避免與 Android 導覽列／手勢重疊 */
+.filter-funnel-bottom-safe {
+  padding-bottom: calc(1.5rem + var(--safe-area-inset-bottom));
+}
+
 /* SmartWarzoneSelector：4px 主題金捲軸、隱藏系統預設 */
 .warzone-selector-list {
   scrollbar-width: thin;

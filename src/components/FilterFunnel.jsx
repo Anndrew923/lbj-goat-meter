@@ -3,7 +3,7 @@
  * 提供 ageGroup、gender、voterTeam、city 的組合，並將選擇傳給父層以連動 useSentimentData。
  * 頂端授權狀態燈：未授權時灰燈 + 鎖定；已授權時戰術美金綠 (#00E676)。
  */
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, X } from "lucide-react";
@@ -35,6 +35,8 @@ export default function FilterFunnel({
   onFiltersChange,
   /** 未傳或 true 時可操作；false 時鎖定篩選，防繞過廣告 */
   authorized = true,
+  /** 套用後要捲動到的區塊 id（例如全球情緒地圖），不傳則僅關閉面板 */
+  scrollTargetId,
 }) {
   const { t } = useTranslation("common");
   const isControlled = controlledFilters != null && onFiltersChange != null;
@@ -63,6 +65,33 @@ export default function FilterFunnel({
     (v) => v != null && String(v).trim() !== "",
   );
 
+  const scrollTimeoutRef = useRef(null);
+
+  const handleApplyFilters = () => {
+    triggerHaptic(10);
+    onClose();
+    if (scrollTargetId) {
+      // 等抽屜關閉動畫 (duration 0.25s) 後再捲動，避免與 exit 動畫搶幀
+      const DRAWER_EXIT_MS = 280;
+      scrollTimeoutRef.current = window.setTimeout(() => {
+        scrollTimeoutRef.current = null;
+        document.getElementById(scrollTargetId)?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, DRAWER_EXIT_MS);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current != null) {
+        window.clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <>
       <AnimatePresence>
@@ -81,12 +110,12 @@ export default function FilterFunnel({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "tween", duration: 0.25 }}
-              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl"
+              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl flex flex-col"
               role="dialog"
               aria-label={t("filterDrawerAria")}
               aria-disabled={locked || undefined}
             >
-              <div className="flex items-center justify-between border-b border-villain-purple/30 px-4 py-3">
+              <div className="flex items-center justify-between border-b border-villain-purple/30 px-4 py-3 flex-shrink-0">
                 <div className="flex items-center gap-2 text-king-gold">
                   <SlidersHorizontal className="w-5 h-5" aria-hidden />
                   <h2 className="font-bold">{t("filterPanelTitle")}</h2>
@@ -101,14 +130,14 @@ export default function FilterFunnel({
                 </button>
               </div>
               {/* 篩選器頂端偵查權限指示燈 */}
-              <div className="px-4 pt-3 pb-1 border-b border-white/5">
+              <div className="px-4 pt-3 pb-1 border-b border-white/5 flex-shrink-0">
                 <ReconPermissionIndicator
                   authorized={authorized}
                   className="text-[10px]"
                 />
               </div>
               <div
-                className={`p-4 space-y-5 overflow-y-auto ${locked ? "pointer-events-none opacity-50" : ""}`}
+                className={`p-4 space-y-5 overflow-y-auto flex-1 min-h-0 ${locked ? "pointer-events-none opacity-50" : ""}`}
               >
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
@@ -207,6 +236,17 @@ export default function FilterFunnel({
                     {t("clearAll")}
                   </button>
                 )}
+              </div>
+              {/* 固定底部：套用篩選（軍事質感主按鈕）；安全區 + 觸控防錯 24px 避免與導覽列／手勢衝突 */}
+              <div className="filter-funnel-bottom-safe flex-shrink-0 pt-4 px-4 border-t border-villain-purple/30 bg-gray-950">
+                <button
+                  type="button"
+                  onClick={handleApplyFilters}
+                  className="w-full py-3 rounded-lg bg-king-gold text-black font-bold shadow-lg shadow-king-gold/20 hover:bg-king-gold/90 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-king-gold focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                  aria-label={t("applyFilters")}
+                >
+                  {t("applyFilters")}
+                </button>
               </div>
             </motion.aside>
           </>

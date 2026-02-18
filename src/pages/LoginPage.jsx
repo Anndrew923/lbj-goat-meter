@@ -156,7 +156,7 @@ export default function LoginPage() {
           {isLoggingIn ? t('loggingIn') : t('signInWithGoogle')}
         </motion.button>
 
-        {/* 按鈕 B：不留名參觀，較小樣式 */}
+        {/* 按鈕 B：匿名觀察者，較小樣式 */}
         <motion.button
           type="button"
           whileHover={{ scale: 1.02 }}

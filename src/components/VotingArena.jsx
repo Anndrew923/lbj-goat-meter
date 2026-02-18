@@ -11,12 +11,13 @@ import {
   doc,
   runTransaction,
   serverTimestamp,
+  Timestamp,
   increment,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
-import { REASONS_MAX_SELECT, GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from "../lib/constants";
+import { REASONS_MAX_SELECT, GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
 import { triggerHaptic } from "../utils/hapticUtils";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
@@ -204,7 +205,20 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
         if (!warzoneId)
           throw new Error(t("common:error_warzoneRequired"));
         const globalSnap = await tx.get(globalSummaryRef);
-        const globalData = globalSnap?.exists?.() ? globalSnap.data() : {};
+        // 無中生有：若 global_summary 尚不存在，使用共用初始結構，避免讀取不存在的欄位與 serverTimestamp 陣列限制
+        const globalData = !globalSnap?.exists?.()
+          ? getInitialGlobalSummary()
+          : (() => {
+              const d = globalSnap.data();
+              return {
+                totalVotes: typeof d.totalVotes === "number" ? d.totalVotes : 0,
+                recentVotes: Array.isArray(d.recentVotes) ? d.recentVotes : [],
+                reasonCountsLike: typeof d.reasonCountsLike === "object" && d.reasonCountsLike !== null && !Array.isArray(d.reasonCountsLike) ? d.reasonCountsLike : {},
+                reasonCountsDislike: typeof d.reasonCountsDislike === "object" && d.reasonCountsDislike !== null && !Array.isArray(d.reasonCountsDislike) ? d.reasonCountsDislike : {},
+                countryCounts: typeof d.countryCounts === "object" && d.countryCounts !== null && !Array.isArray(d.countryCounts) ? d.countryCounts : {},
+                ...Object.fromEntries(STANCE_KEYS.map((k) => [k, typeof d[k] === "number" ? d[k] : 0])),
+              };
+            })();
         const newVoteRef = doc(votesRef);
         const votePayload = {
           starId: STAR_ID,
@@ -231,28 +245,27 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
           },
           { merge: true }
         );
-        const prevTotal = typeof globalData.totalVotes === "number" ? globalData.totalVotes : 0;
-        const prevRecent = Array.isArray(globalData.recentVotes) ? globalData.recentVotes : [];
-        const newTotal = prevTotal + 1;
+        const newTotal = globalData.totalVotes + 1;
         const stanceCounts = {};
         STANCE_KEYS.forEach((key) => {
-          stanceCounts[key] = (typeof globalData[key] === "number" ? globalData[key] : 0) + (key === selectedStance ? 1 : 0);
+          stanceCounts[key] = globalData[key] + (key === selectedStance ? 1 : 0);
         });
+        // Firestore 不支援在陣列元素內使用 serverTimestamp()，改用客戶端時間戳
         const newRecentEntry = {
           status: selectedStance,
           city: data.city ?? "",
           country: data.country ?? "",
           voterTeam: warzoneId,
-          createdAt: serverTimestamp(),
+          createdAt: Timestamp.now(),
         };
-        const newRecentVotes = [newRecentEntry, ...prevRecent].slice(0, 10);
-        const reasonCountsLike = { ...(typeof globalData.reasonCountsLike === "object" && globalData.reasonCountsLike !== null && !Array.isArray(globalData.reasonCountsLike) ? globalData.reasonCountsLike : {}) };
-        const reasonCountsDislike = { ...(typeof globalData.reasonCountsDislike === "object" && globalData.reasonCountsDislike !== null && !Array.isArray(globalData.reasonCountsDislike) ? globalData.reasonCountsDislike : {}) };
+        const newRecentVotes = [newRecentEntry, ...globalData.recentVotes].slice(0, 10);
+        const reasonCountsLike = { ...(globalData.reasonCountsLike ?? {}) };
+        const reasonCountsDislike = { ...(globalData.reasonCountsDislike ?? {}) };
         (selectedReasons || []).forEach((r) => {
           if (PRO_STANCES.has(selectedStance)) reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
           else if (ANTI_STANCES.has(selectedStance)) reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
         });
-        const countryCounts = { ...(typeof globalData.countryCounts === "object" && globalData.countryCounts !== null && !Array.isArray(globalData.countryCounts) ? globalData.countryCounts : {}) };
+        const countryCounts = { ...(globalData.countryCounts ?? {}) };
         const cc = String(data.country ?? "").toUpperCase().slice(0, 2);
         if (cc) {
           const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };

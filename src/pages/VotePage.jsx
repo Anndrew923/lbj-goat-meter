@@ -143,7 +143,7 @@ export default function VotePage() {
         />
         <section className="relative">
           {analystAdPortal}
-          {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/訪客皆可直接看到 */}
+          {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/匿名觀察者皆可直接看到 */}
           <div className="mb-3">
             <h2 className="text-lg font-semibold text-king-gold">
               {t("globalStats")}
@@ -179,8 +179,9 @@ export default function VotePage() {
               filters={stableFilters}
               onFiltersChange={setFilters}
               authorized={isAnalystAuthorized}
+              scrollTargetId="pulse-map-section"
             />
-            <div className="mb-6">
+            <div id="pulse-map-section" className="mb-6">
               <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
             </div>
             <div className="mt-6">

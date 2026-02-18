@@ -1,34 +1,31 @@
 /**
  * 全球國家名單 — 基於 i18n-iso-countries，熱門置頂、其餘依語系排序。
  * 供 SmartWarzoneSelector / UserProfileSetup 使用，支援完整 ISO 國家與 i18n。
+ * zh-TW 使用自訂繁體語系包，確保無簡體殘留。
  */
 import * as countries from 'i18n-iso-countries'
 import enLocale from 'i18n-iso-countries/langs/en.json'
 import zhLocale from 'i18n-iso-countries/langs/zh.json'
+import zhTWLocale from './langs/zh-TW.json'
 
 countries.registerLocale(enLocale)
 countries.registerLocale(zhLocale)
+countries.registerLocale(zhTWLocale)
 
 /** 熱門國家置頂順序（台灣、美國、日本、韓國、香港、加拿大、澳洲、菲律賓） */
 export const POPULAR_COUNTRY_CODES = ['TW', 'US', 'JP', 'KR', 'HK', 'CA', 'AU', 'PH']
 
-/** 繁體中文熱門國家顯示名（覆寫 i18n-iso-countries 的簡體） */
-const POPULAR_NAMES_ZH_TW = {
-  TW: '台灣',
-  US: '美國',
-  JP: '日本',
-  KR: '韓國',
-  HK: '香港',
-  CA: '加拿大',
-  AU: '澳洲',
-  PH: '菲律賓',
-}
+/** i18n-iso-countries 註冊用繁體語系代碼（小寫以符合套件 lookup） */
+const LOCALE_ZH_TW = 'zh-tw'
 
 /**
- * 取得用於選單的語系代碼（i18n-iso-countries 用 en / zh，無 zh-TW）
- * @param {string} lang - 如 'zh-TW' | 'en'
+ * 取得用於選單的語系代碼。
+ * zh-TW / zh-Hant 時使用繁體語系包，其餘 zh 使用簡體，避免簡體殘留。
+ * @param {string} [lang] - 如 'zh-TW' | 'en'
+ * @returns {string} 'zh-tw' | 'zh' | 'en'
  */
 function getLocaleForCountries(lang) {
+  if (lang && (lang === 'zh-TW' || lang.toLowerCase() === LOCALE_ZH_TW || lang.startsWith('zh-Hant'))) return LOCALE_ZH_TW
   if (lang && lang.startsWith('zh')) return 'zh'
   return 'en'
 }
@@ -40,17 +37,15 @@ function normalizeName(name) {
 }
 
 /**
- * 取得單一國家顯示名稱（熱門在 zh-TW 下用繁體覆寫）
+ * 取得單一國家顯示名稱（zh-TW 使用繁體語系包）
  * @param {string} code - ISO 3166-1 alpha-2
- * @param {string} lang - 如 'zh-TW' | 'en'
+ * @param {string} [lang] - 如 'zh-TW' | 'en'
+ * @returns {string} 語系對應的國家顯示名稱，無則回傳 code
  */
 export function getCountryName(code, lang) {
   if (!code || typeof code !== 'string') return ''
   const key = code.toUpperCase().slice(0, 2)
   const locale = getLocaleForCountries(lang)
-  if (locale === 'zh' && lang && lang.startsWith('zh') && POPULAR_NAMES_ZH_TW[key]) {
-    return POPULAR_NAMES_ZH_TW[key]
-  }
   const name = countries.getName(key, locale, { select: 'alias' }) || countries.getName(key, locale)
   return normalizeName(name) || key
 }
@@ -73,7 +68,7 @@ export function getCountryOptions(lang = 'en') {
   const restCodes = withTW.filter((c) => !POPULAR_COUNTRY_CODES.includes(c))
   const rest = restCodes
     .map((value) => ({ value, label: getCountryName(value, lang) }))
-    .sort((a, b) => (a.label || '').localeCompare(b.label || '', locale === 'zh' ? 'zh-Hans' : 'en'))
+    .sort((a, b) => (a.label || '').localeCompare(b.label || '', locale === LOCALE_ZH_TW ? 'zh-Hant' : locale === 'zh' ? 'zh-Hans' : 'en'))
 
   return [...popular, ...rest]
 }
