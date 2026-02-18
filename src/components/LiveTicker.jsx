@@ -124,6 +124,7 @@ export default function LiveTicker() {
               animationPlayState: isPaused ? 'paused' : 'running',
               width: 'max-content',
             }}
+            data-live-ticker="marquee"
           >
             {duplicatedItems.map((vote, idx) => (
               <TickerItem key={`marquee-${idx}`} vote={vote} t={t} />
