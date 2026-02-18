@@ -23,6 +23,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { collection, query, where, limit, onSnapshot } from 'firebase/firestore'
 import { db, isFirebaseReady } from '../lib/firebase'
+import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from '../lib/constants'
 
 /** Firestore 訂閱逾時（毫秒），逾時後解除 loading 避免卡在「載入地圖…」 */
 const SNAPSHOT_TIMEOUT_MS = 12_000
@@ -32,6 +33,15 @@ const DEFAULT_STAR_ID = 'lbj'
 
 /** 單次查詢上限，避免一次拉取過多文件 */
 const DEFAULT_PAGE_SIZE = 200
+
+/** 是否含有有效篩選條件（任一欄位非空），供消費端決定用靜態或動態數據 */
+export function hasActiveFilters(filters) {
+  if (!filters || typeof filters !== 'object') return false
+  return Object.values(filters).some((v) => v != null && String(v).trim() !== '')
+}
+
+/** 穩定空篩選參考，避免傳入字面量 {} 導致 useEffect 依賴每輪都變、觸發 Maximum update depth */
+export const EMPTY_FILTERS = Object.freeze({})
 
 /**
  * @typedef {Object} SentimentFilters
@@ -46,13 +56,13 @@ const DEFAULT_PAGE_SIZE = 200
  * 依篩選條件實時監聽 votes 集合的情緒數據（漏斗過濾）；資料庫變動即推送，圖表即時重繪。
  *
  * @param {SentimentFilters} filters - 可選的過濾參數，僅有值的欄位會加入查詢；呼叫端建議 useMemo 以穩定依賴。
- * @param {{ starId?: string; pageSize?: number }} [options] - starId 與筆數上限
- * @returns {{ data: Array, loading: boolean, error: Error | null }}
+ * @param {{ starId?: string; pageSize?: number; enabled?: boolean }} [options] - starId、筆數上限、是否啟用查詢（無篩選時可傳 false 省 Reads）
+ * @returns {{ data: Array, loading: boolean, error: Error | null, summary: Object }}
  */
-export function useSentimentData(filters = {}, options = {}) {
-  const { starId = DEFAULT_STAR_ID, pageSize = DEFAULT_PAGE_SIZE } = options
+export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
+  const { starId = DEFAULT_STAR_ID, pageSize = DEFAULT_PAGE_SIZE, enabled = true } = options
   const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState(null)
 
   const filterEntries = useMemo(() => {
@@ -67,6 +77,12 @@ export function useSentimentData(filters = {}, options = {}) {
   }, [filters])
 
   useEffect(() => {
+    if (!enabled) {
+      setData([])
+      setLoading(false)
+      setError(null)
+      return
+    }
     if (!isFirebaseReady || !db) {
       setData([])
       setLoading(false)
@@ -121,7 +137,50 @@ export function useSentimentData(filters = {}, options = {}) {
       if (timeoutId) clearTimeout(timeoutId)
       unsubscribe()
     }
-  }, [starId, pageSize, filterEntries, filters])
+  }, [enabled, starId, pageSize, filterEntries, filters])
 
-  return { data, loading, error }
+  /** 從 votes 集合計算與 global_summary 同型的聚合：百分比與理由排名由消費端依此計算 */
+  const summary = useMemo(() => {
+    const list = data ?? []
+    const totalVotes = list.length
+    const byStance = Object.fromEntries(STANCE_KEYS.map((k) => [k, 0]))
+    const reasonCountsLike = {}
+    const reasonCountsDislike = {}
+    const countryCounts = {}
+
+    for (const vote of list) {
+      const status = vote.status ?? ''
+      if (STANCE_KEYS.includes(status)) byStance[status] = (byStance[status] ?? 0) + 1
+
+      const reasons = Array.isArray(vote.reasons) ? vote.reasons : []
+      if (PRO_STANCES.has(status)) {
+        for (const r of reasons) {
+          if (r != null && String(r).trim() !== '') reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1
+        }
+      } else if (ANTI_STANCES.has(status)) {
+        for (const r of reasons) {
+          if (r != null && String(r).trim() !== '') reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1
+        }
+      }
+
+      const cc = String(vote.country ?? '').toUpperCase().slice(0, 2)
+      if (cc) {
+        const prev = countryCounts[cc] ?? { pro: 0, anti: 0 }
+        countryCounts[cc] = {
+          pro: prev.pro + (PRO_STANCES.has(status) ? 1 : 0),
+          anti: prev.anti + (ANTI_STANCES.has(status) ? 1 : 0),
+        }
+      }
+    }
+
+    return {
+      totalVotes,
+      ...byStance,
+      reasonCountsLike,
+      reasonCountsDislike,
+      countryCounts,
+    }
+  }, [data])
+
+  return { data, loading, error, summary }
 }

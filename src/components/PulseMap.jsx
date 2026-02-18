@@ -1,12 +1,14 @@
 /**
  * PulseMap — 全球情緒熱力圖（/vote 視覺重心）
- * 數據來自 WarzoneDataContext（global_summary.countryCounts），依各國 pro/anti 著色，點擊國家可更新 filters。
+ * 無篩選時用 WarzoneDataContext（global_summary.countryCounts）；有篩選時用 SentimentDataContext 動態 countryCounts，呼吸燈隨篩選位移。
  */
 import { Component, useMemo, useState, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { motion } from 'framer-motion'
 import { useWarzoneData } from '../context/WarzoneDataContext'
+import { useSentimentDataContext } from '../context/SentimentDataContext'
+import { hasActiveFilters } from '../hooks/useSentimentData'
 import { isObject } from '../utils/typeUtils'
 
 /** 地圖 TopoJSON：放在 public/，開頭斜線指向根路徑 */
@@ -137,18 +139,23 @@ const MemoizedMapPaths = memo(function MemoizedMapPaths({
 export default function PulseMap({ filters, onFiltersChange }) {
   const { t } = useTranslation('common')
   const { summary, loading, error } = useWarzoneData()
+  const hasFilters = hasActiveFilters(filters)
+  const { summary: sentimentSummary, loading: sentimentLoading, error: sentimentError } = useSentimentDataContext()
   const [hovered, setHovered] = useState(null)
 
-  /** 來自 global_summary.countryCounts：{ [iso2]: { pro, anti } } */
-  const byCountry = useMemo(
-    () => (isObject(summary.countryCounts) ? summary.countryCounts : {}),
-    [summary.countryCounts]
-  )
+  /** 有篩選時用動態 countryCounts，否則用 global_summary.countryCounts */
+  const byCountry = useMemo(() => {
+    if (hasFilters && sentimentSummary?.countryCounts != null)
+      return isObject(sentimentSummary.countryCounts) ? sentimentSummary.countryCounts : {}
+    return isObject(summary.countryCounts) ? summary.countryCounts : {}
+  }, [hasFilters, sentimentSummary?.countryCounts, summary.countryCounts])
+
   const selectedCountry = filters?.country ?? null
   const setHoveredStable = useCallback((v) => setHovered(v), [])
+  const mapLoading = hasFilters ? sentimentLoading : loading
 
-  // 錯誤時仍用靜態網格；loading 時不卸載地圖，改為遮罩＋轉圈
-  if (error) return <MapStaticGrid messageKey="mapLoadError" />
+  // 錯誤時用靜態網格：Context 錯誤或篩選查詢錯誤皆不顯示錯誤數據
+  if (error || (hasFilters && sentimentError)) return <MapStaticGrid messageKey="mapLoadError" />
 
   return (
     <MapErrorBoundary>
@@ -183,7 +190,7 @@ export default function PulseMap({ filters, onFiltersChange }) {
               )}
             </Geographies>
           </ComposableMap>
-          {loading && (
+          {mapLoading && (
             <div
               className="absolute inset-0 flex items-center justify-center bg-gray-900/70 rounded-lg pointer-events-none"
               role="status"

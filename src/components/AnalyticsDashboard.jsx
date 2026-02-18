@@ -1,6 +1,6 @@
 /**
  * AnalyticsDashboard — 高階數據視覺化（僅置於 AnalystGate 內）
- * 數據來自 WarzoneDataContext（global_summary）：雷達圖 + 原因熱點（reasonCountsLike/Dislike）+ 地圖著色（countryCounts）。
+ * 無篩選時用 WarzoneDataContext（global_summary）；有篩選時用 SentimentDataContext 動態結果，雷達與理由熱點同步。
  */
 import { useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,8 @@ import {
   Tooltip,
 } from "recharts";
 import { useWarzoneData } from "../context/WarzoneDataContext";
+import { useSentimentDataContext } from "../context/SentimentDataContext";
+import { hasActiveFilters } from "../hooks/useSentimentData";
 import { getStancesForArena, getReasonLabelMap } from "../i18n/i18n";
 import { STANCE_COLORS } from "../lib/constants";
 
@@ -30,13 +32,20 @@ function topReasonsFromCounts(counts, labelMap, n = 3) {
     .map(([value]) => ({ value, label: labelMap[value] ?? value }));
 }
 
-export default function AnalyticsDashboard({ authorized = true }) {
+export default function AnalyticsDashboard({ authorized = true, filters = {} }) {
   const { t, i18n } = useTranslation("common");
   const { summary, loading, error } = useWarzoneData();
+  const hasFilters = hasActiveFilters(filters);
+  const { summary: sentimentSummary, loading: sentimentLoading, error: sentimentError } = useSentimentDataContext();
+
+  const displaySummary = useMemo(() => {
+    if (hasFilters && sentimentSummary) return sentimentSummary;
+    return summary;
+  }, [hasFilters, sentimentSummary, summary]);
 
   const radarData = useMemo(() => {
     const rows = getStancesForArena();
-    const total = summary.totalVotes ?? 0;
+    const total = displaySummary.totalVotes ?? 0;
     if (total === 0) {
       return rows.map((s) => ({
         stanceKey: s.value,
@@ -51,10 +60,10 @@ export default function AnalyticsDashboard({ authorized = true }) {
       title: s.primary,
       stance: s.secondary,
       value:
-        Math.round(((summary[s.value] ?? 0) / total) * 100),
+        Math.round(((displaySummary[s.value] ?? 0) / total) * 100),
       fullMark: 100,
     }));
-  }, [summary]);
+  }, [displaySummary]);
 
   /** 最高票立場的色碼，供 Radar stroke 聯動 */
   const topStanceStroke = useMemo(() => {
@@ -123,19 +132,21 @@ export default function AnalyticsDashboard({ authorized = true }) {
     [radarData],
   );
 
-  /** 原因熱點：來自 global_summary.reasonCountsLike / reasonCountsDislike */
+  /** 原因熱點：來自 displaySummary（篩選時為動態 reasonCounts） */
   const reasonLabelMap = useMemo(() => getReasonLabelMap(), [i18n.language]);
   const topReasons = useMemo(
     () => ({
-      like: topReasonsFromCounts(summary.reasonCountsLike, reasonLabelMap, 3),
-      dislike: topReasonsFromCounts(summary.reasonCountsDislike, reasonLabelMap, 3),
+      like: topReasonsFromCounts(displaySummary.reasonCountsLike, reasonLabelMap, 3),
+      dislike: topReasonsFromCounts(displaySummary.reasonCountsDislike, reasonLabelMap, 3),
     }),
-    [summary.reasonCountsLike, summary.reasonCountsDislike, reasonLabelMap]
+    [displaySummary.reasonCountsLike, displaySummary.reasonCountsDislike, reasonLabelMap]
   );
 
   const blurStyle = authorized ? undefined : { filter: "blur(12px) grayscale(0.5)" };
+  const isLoading = hasFilters ? sentimentLoading : loading;
+  const loadError = hasFilters ? sentimentError : error;
 
-  if (loading) {
+  if (loading && !hasFilters) {
     return (
       <div
         className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center transition-[filter] duration-300"
@@ -148,7 +159,7 @@ export default function AnalyticsDashboard({ authorized = true }) {
     );
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div
         className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 transition-[filter] duration-300"
@@ -163,8 +174,9 @@ export default function AnalyticsDashboard({ authorized = true }) {
 
   return (
     <div
-      className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 space-y-6 transition-[filter] duration-300"
+      className={`rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 space-y-6 transition-[filter,opacity] duration-300 ${isLoading && hasFilters ? "opacity-50 pointer-events-none" : ""}`}
       style={blurStyle}
+      aria-busy={isLoading && hasFilters}
     >
       <h3 className="text-lg font-bold text-king-gold">{t("radarTitle")}</h3>
       <div className="h-64 min-w-0">

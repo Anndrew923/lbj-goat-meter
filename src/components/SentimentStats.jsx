@@ -1,11 +1,13 @@
 /**
  * SentimentStats — 全球戰報大盤（Global Pulse）
- * 數據來自 WarzoneDataContext（warzoneStats/global_summary），嚴禁掃描 votes 集合。
+ * 無篩選時用 WarzoneDataContext（global_summary）；有篩選時用 SentimentDataContext 動態結果，與雷達／動畫一致。
  */
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { useWarzoneData } from "../context/WarzoneDataContext";
+import { useSentimentDataContext } from "../context/SentimentDataContext";
+import { hasActiveFilters } from "../hooks/useSentimentData";
 import { getStancesForArena } from "../i18n/i18n";
 import { STANCE_COLORS, RECON_AUTHORIZED_COLOR } from "../lib/constants";
 /** 未知／其他立場的進度條 fallback 色（與 gray-500 一致） */
@@ -66,22 +68,29 @@ function useAnimatedCount(target) {
   return display;
 }
 
-export default function SentimentStats() {
+export default function SentimentStats({ filters = {} }) {
   const { t } = useTranslation("common");
   const { summary, loading, error } = useWarzoneData();
+  const hasFilters = hasActiveFilters(filters);
+  const { summary: sentimentSummary, loading: sentimentLoading, error: sentimentError } = useSentimentDataContext();
+
+  const displayData = useMemo(() => {
+    if (hasFilters && sentimentSummary) return sentimentSummary;
+    return summary;
+  }, [hasFilters, sentimentSummary, summary]);
 
   const stats = useMemo(() => {
-    const total = summary.totalVotes ?? 0;
+    const total = displayData.totalVotes ?? 0;
     const byStatus = {
-      goat: summary.goat ?? 0,
-      fraud: summary.fraud ?? 0,
-      king: summary.king ?? 0,
-      mercenary: summary.mercenary ?? 0,
-      machine: summary.machine ?? 0,
-      stat_padder: summary.stat_padder ?? 0,
+      goat: displayData.goat ?? 0,
+      fraud: displayData.fraud ?? 0,
+      king: displayData.king ?? 0,
+      mercenary: displayData.mercenary ?? 0,
+      machine: displayData.machine ?? 0,
+      stat_padder: displayData.stat_padder ?? 0,
     };
     return { total, byStatus, otherCount: 0 };
-  }, [summary]);
+  }, [displayData]);
 
   const rowsWithPct = useMemo(() => {
     const orderedStanceRows = getStancesForArena();
@@ -97,8 +106,10 @@ export default function SentimentStats() {
   }, [stats, t]);
 
   const totalVotesDisplay = useAnimatedCount(stats.total);
+  const isLoading = hasFilters ? sentimentLoading : loading;
+  const loadError = hasFilters ? sentimentError : error;
 
-  if (loading) {
+  if (loading && !hasFilters) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
         <p className="text-king-gold animate-pulse" role="status">
@@ -108,7 +119,7 @@ export default function SentimentStats() {
     );
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
         <p className="text-red-400" role="alert">
@@ -147,7 +158,10 @@ export default function SentimentStats() {
   };
 
   return (
-    <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 relative">
+    <div
+      className={`rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 relative transition-opacity duration-200 ${isLoading && hasFilters ? "opacity-50 pointer-events-none" : ""}`}
+      aria-busy={isLoading && hasFilters}
+    >
       {/* 公開區標示：GLOBAL PULSE: LIVE，戰術綠 RECON_AUTHORIZED_COLOR + animate-pulse */}
       <span
         className="absolute top-3 right-3 text-[10px] font-medium tracking-widest uppercase animate-pulse"

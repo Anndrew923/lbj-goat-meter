@@ -14,6 +14,7 @@ import ReconPermissionIndicator from "../components/ReconPermissionIndicator";
 import LiveTicker from "../components/LiveTicker";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
+import { SentimentDataProvider } from "../context/SentimentDataContext";
 import { triggerHaptic } from "../utils/hapticUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -144,6 +145,7 @@ export default function VotePage() {
           onExportStart={() => setTickerPausedForExport(true)}
           onExportEnd={() => setTickerPausedForExport(false)}
         />
+        <SentimentDataProvider filters={stableFilters}>
         <section className="relative">
           {analystAdPortal}
           {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/匿名觀察者皆可直接看到 */}
@@ -152,7 +154,7 @@ export default function VotePage() {
               {t("globalStats")}
             </h2>
           </div>
-          <SentimentStats />
+          <SentimentStats filters={stableFilters} />
           {/* 以下僅此一層 AnalystGate：僅鎖定篩選器、地圖、詳細分析 */}
           <AnalystGate
             authorized={isAnalystAuthorized}
@@ -188,10 +190,11 @@ export default function VotePage() {
               <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
             </div>
             <div className="mt-6">
-              <AnalyticsDashboard authorized={isAnalystAuthorized} />
+              <AnalyticsDashboard authorized={isAnalystAuthorized} filters={stableFilters} />
             </div>
           </AnalystGate>
         </section>
+        </SentimentDataProvider>
       </motion.main>
       </WarzoneDataProvider>
 
