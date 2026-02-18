@@ -11,6 +11,9 @@ export default {
     "shadow-tactical-emerald/50",
     "border-tactical-emerald/60",
     "hover:bg-tactical-emerald/20",
+    // 跑馬燈：確保 JIT 一定會產出，避免本地未掃到而無動畫
+    "animate-marquee",
+    "motion-reduce:animate-none",
   ],
   theme: {
     extend: {
@@ -22,9 +25,15 @@ export default {
           '0%, 100%': { borderColor: 'rgb(212 175 55 / 0.95)', boxShadow: '0 0 12px rgb(212 175 55 / 0.4)' },
           '50%': { borderColor: 'rgb(212 175 55 / 0.35)', boxShadow: '0 0 8px rgb(212 175 55 / 0.15)' },
         },
+        /* 跑馬燈：僅用 translateX，GPU 加速、無縫接軌 */
+        marquee: {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
       },
       animation: {
         'border-blink': 'border-blink 1.5s ease-in-out infinite',
+        marquee: 'marquee 40s linear infinite',
       },
       colors: {
         // 暗黑競技風：粉方（金/紅）、黑方（紫/靛）；對抗版六立場視覺意圖

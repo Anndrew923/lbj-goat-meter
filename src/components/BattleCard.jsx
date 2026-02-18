@@ -391,9 +391,9 @@ export default function BattleCard({
                         {rankLabel ?? t("rankLabel")}
                       </span>
                     </div>
-                    {/* 品牌鋼印容器：靠右、不壓縮，供 toPng 導出與小屏佈局穩定 */}
+                    {/* 品牌鋼印容器：大皇冠單行版 — 靠右、底部對齊、不換行、防擠壓 */}
                     <div
-                      className="flex items-end gap-3 justify-end flex-shrink-0 pb-1"
+                      className="flex items-end gap-2 justify-end flex-shrink-0"
                       role="group"
                       aria-label="GOAT Meter"
                     >
@@ -404,10 +404,7 @@ export default function BattleCard({
                         aria-hidden
                       />
                       <span
-                        className="text-king-gold font-secondary font-bold text-xl tracking-wider uppercase"
-                        style={{
-                          textShadow: "0 0 10px rgba(255,215,0,0.5)",
-                        }}
+                        className="text-king-gold text-xs font-secondary tracking-[0.2em] uppercase whitespace-nowrap"
                       >
                         GOAT Meter
                       </span>

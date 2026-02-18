@@ -47,6 +47,8 @@ function isAntiStance(stance) {
 export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }) {
   const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
+  /** 已登入但未完成 Profile（半登錄）：顯示投票卡，點擊時攔截並引導完成戰區登錄 */
+  const isLimboUser = Boolean(userId) && !isGuest && !hasProfile;
   /** 是否已選擇戰區：profile 存在且 voterTeam 非空，投票必歸屬 16 戰區之一 */
   const hasSelectedWarzone = Boolean(
     profile?.voterTeam && String(profile.voterTeam).trim() !== ""
@@ -163,7 +165,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
   };
 
   const handleStanceSelect = (value) => {
-    if (isGuest) {
+    if (isGuest || isLimboUser) {
       setShowLoginPrompt(true);
       return;
     }
@@ -310,6 +312,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
     }
   };
 
+  // 狀態分流：A. 已登入且有 Profile → 下方正常投票／已投票 UI；B. 匿名 (isGuest) → 引導登入；C. 半登錄 (isLimboUser) → 顯示卡但點擊攔截
   if (profileLoading && userId) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
@@ -320,19 +323,43 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect }
     );
   }
 
-  if (!profile && !isGuest) {
-    if (import.meta.env.DEV) {
-      console.warn("[VotingArena] 顯示「請先登錄」", {
-        userId,
-        hasProfile,
-        profileLoading,
-        profileKeys: profile ? Object.keys(profile) : [],
-      });
-    }
+  /** C. 已登入但無 Profile (isLimboUser)：顯示投票卡，點擊時攔截並引導完成戰區登錄 */
+  if (isLimboUser) {
     return (
-      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
-        <p className="text-gray-400">{t("common:completeProfileFirst")}</p>
-      </div>
+      <>
+        <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+          <h3 className="text-lg font-bold text-king-gold mb-2">
+            {t("common:chooseStance")}
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {t("common:completeProfileFirst")}
+          </p>
+          <StanceCards
+            selectedStance={null}
+            onSelect={() => setShowLoginPrompt(true)}
+            disabled={false}
+          />
+          <motion.button
+            type="button"
+            onClick={() => {
+              setShowLoginPrompt(false);
+              onOpenWarzoneSelect?.();
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full mt-4 py-3 rounded-lg bg-king-gold text-black font-bold shadow-lg shadow-king-gold/20 hover:shadow-king-gold/30 transition-shadow"
+            aria-label={t("common:completeWarzonePromptButton")}
+          >
+            {t("common:completeWarzonePromptButton")}
+          </motion.button>
+        </div>
+        <LoginPromptModal
+          open={showLoginPrompt}
+          onClose={() => setShowLoginPrompt(false)}
+          variant="limbo"
+          onCompleteWarzone={() => onOpenWarzoneSelect?.()}
+        />
+      </>
     );
   }
 
