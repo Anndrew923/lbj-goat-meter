@@ -6,10 +6,16 @@ rules_version = '2';
 //          votes 僅已認證用戶寫入且 starId 合法，防止腳本批次灌票。
 // 防灌票要點：一人一票由 App 端 Transaction（讀 profile.hasVoted → 寫 vote + 更新 hasVoted）
 //            + 本規則禁止任意將 hasVoted 改回 false，避免同一用戶重複寫入 votes。
+// App Check：所有寫入必須帶有效 App Check 令牌，僅正版 App 可寫入，封殺自動化腳本。
 // =============================================================================
 
 function isAuthenticated() {
   return request.auth != null;
+}
+
+// 寫入請求必須通過 App Check（公信力組件）
+function hasValidAppCheck() {
+  return request.auth != null && request.appCheck != null;
 }
 
 function isOwner(userId) {
@@ -32,19 +38,20 @@ function validVoteCreate() {
 match /profiles/{userId} {
   // 僅本人可讀
   allow read: if isOwner(userId);
-  // 僅本人可建立、刪除
-  allow create, delete: if isOwner(userId);
-  // 更新：本人且 hasVoted 一旦為 true 不允許改回 false（防惡意重複投票／腳本灌票）
+  // 僅本人可建立、刪除，且須通過 App Check
+  allow create, delete: if isOwner(userId) && hasValidAppCheck();
+  // 更新：本人且 hasVoted 一旦為 true 不允許改回 false（防惡意重複投票／腳本灌票），且須通過 App Check
   allow update: if isOwner(userId)
-    && (resource.data.hasVoted != true || request.resource.data.hasVoted == true);
+    && (resource.data.hasVoted != true || request.resource.data.hasVoted == true)
+    && hasValidAppCheck();
 }
 
 match /votes/{voteId} {
   // 所有人可讀（供全球統計、地圖、Ticker）
   allow read: if true;
 
-  // 僅已認證用戶可建立；userId 須為本人；starId 須在白名單內
+  // 僅已認證用戶可建立；userId 須為本人；starId 須在白名單內；須通過 App Check
   // 一人一票邏輯由客戶端 Transaction（profile.hasVoted 檢查）保證，規則僅擋未認證與非法欄位
-  allow create: if validVoteCreate();
+  allow create: if validVoteCreate() && hasValidAppCheck();
   allow update, delete: if false;
 }

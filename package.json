@@ -21,7 +21,7 @@
     "@capgo/capacitor-social-login": "^8.3.2",
     "@headlessui/react": "^2.2.9",
     "clsx": "^2.1.1",
-    "firebase": "^11.0.2",
+    "firebase": "^12.9.0",
     "framer-motion": "^11.11.17",
     "html-to-image": "^1.11.11",
     "i18n-iso-countries": "^7.14.0",
