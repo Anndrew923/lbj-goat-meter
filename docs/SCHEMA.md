@@ -23,6 +23,7 @@
 | `id` | `string` | 文件 ID（可為自動或業務生成） |
 | `starId` | `string` | 球星識別，擴展位元，例：`"lbj"` |
 | `userId` | `string` | 投票者 UID（Firebase Auth） |
+| `deviceId` | `string` | 設備識別碼（與 `device_locks` 連動，撤票／刪帳號時一併解鎖） |
 | `status` | `string` | 情緒立場：`"goat"` \| `"king"` \| `"respect"` \| `"machine"` \| `"decider"` \| `"villain"` |
 | `reasons` | `string[]` | 理由代碼，例：`["longevity", "iq", "leGM"]` |
 | `voterTeam` | `string` | 效忠球隊代碼，例：`"LAL"`, `"GSW"`, `"BOS"` |
@@ -89,6 +90,21 @@ interface VoteDoc {
 | `votes` | `createdAt` (Desc) | LiveTicker 即時戰報（最近 10 筆） |
 
 首次執行未建索引的查詢時，Firestore 會回傳錯誤並提供「建立索引」的連結，點擊即可在 Console 建立對應複合索引。
+
+---
+
+### 2.3 `device_locks` 集合（公信力：一設備一票）
+
+用於「動態解鎖」：同一設備僅允許一筆有效投票；撤票或刪除帳號時刪除對應鎖，設備可再次投票。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `lastVoteId` | `string` | 該設備最近一次投票的文件 ID（`votes/{id}`） |
+| `active` | `boolean` | 是否為有效鎖（`true` 時該設備不可再投票，直至撤票／刪帳號） |
+| `updatedAt` | `Timestamp` | 最後更新時間（建議 `serverTimestamp()`） |
+
+- **寫入**：`submitVote` 在寫入 `votes` 的同一 Transaction 內寫入 `device_locks/{deviceId}`。
+- **刪除**：`revokeVote` 與 `deleteAccountData` 在撤票／刪除 votes 時一併刪除對應 `device_locks` 文件。
 
 ---
 

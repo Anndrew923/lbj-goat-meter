@@ -28,12 +28,24 @@ import { isObject } from "../utils/typeUtils";
 
 const STAR_ID = "lbj";
 
-export async function submitVote(userId, { selectedStance, selectedReasons }, getMessage) {
+/**
+ * 提交一票（含設備鎖：一設備一票，與 revokeVote / deleteAccountData 連動解鎖）。
+ *
+ * @param {string} userId - Firebase Auth UID
+ * @param {{ selectedStance: string, selectedReasons: string[], deviceId?: string }} payload - 立場、理由、設備識別碼（必填，用於 device_locks）
+ * @param {(key: string) => string} getMessage - i18n 鍵→文案，例：(key) => t(key)
+ * @throws 若 device_locks/${deviceId} 已存在且 active === true，拋出 error_deviceAlreadyVoted
+ */
+export async function submitVote(userId, { selectedStance, selectedReasons, deviceId }, getMessage) {
+  if (typeof getMessage !== "function") throw new Error("getMessage is required");
   if (!db || !userId) throw new Error(getMessage("common:error_missingDbOrUid"));
+  const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
+  if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
   const profileRef = doc(db, "profiles", userId);
   const votesRef = collection(db, "votes");
   const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
+  const deviceLockRef = doc(db, "device_locks", deviceIdStr);
 
   await runTransaction(db, async (tx) => {
     const profileSnap = await tx.get(profileRef);
@@ -42,6 +54,12 @@ export async function submitVote(userId, { selectedStance, selectedReasons }, ge
     if (data.hasVoted === true) throw new Error(getMessage("common:alreadyVoted"));
     const warzoneId = String(data.warzoneId ?? data.voterTeam ?? "").trim();
     if (!warzoneId) throw new Error(getMessage("common:error_warzoneRequired"));
+
+    const deviceLockSnap = await tx.get(deviceLockRef);
+    if (deviceLockSnap?.exists?.()) {
+      const lockData = deviceLockSnap.data() ?? {};
+      if (lockData.active === true) throw new Error(getMessage("common:error_deviceAlreadyVoted"));
+    }
 
     const globalSnap = await tx.get(globalSummaryRef);
     const globalData = !globalSnap?.exists?.()
@@ -62,6 +80,7 @@ export async function submitVote(userId, { selectedStance, selectedReasons }, ge
     tx.set(newVoteRef, {
       starId: STAR_ID,
       userId,
+      deviceId: deviceIdStr,
       status: selectedStance,
       reasons: selectedReasons,
       warzoneId,
@@ -72,6 +91,11 @@ export async function submitVote(userId, { selectedStance, selectedReasons }, ge
       city: data.city ?? "",
       hadWarzoneStats: true,
       createdAt: serverTimestamp(),
+    });
+    tx.set(deviceLockRef, {
+      lastVoteId: newVoteRef.id,
+      active: true,
+      updatedAt: serverTimestamp(),
     });
 
     const warzoneStatsRef = doc(db, "warzoneStats", warzoneId);
@@ -171,6 +195,10 @@ export async function revokeVote(uid, resetProfile = false) {
     tx.update(profileRef, updatePayload);
 
     if (voteDocId) {
+      const voteDeviceId = typeof voteData?.deviceId === "string" ? voteData.deviceId.trim() : "";
+      if (voteDeviceId) {
+        tx.delete(doc(db, "device_locks", voteDeviceId));
+      }
       tx.delete(doc(db, "votes", voteDocId));
       deletedVoteId = voteDocId;
       const status = voteData?.status;

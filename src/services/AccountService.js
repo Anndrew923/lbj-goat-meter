@@ -111,7 +111,15 @@ export async function deleteAccountData(uid) {
         }
       }
 
-      // ========== 階段三：刪除 votes 文件（徹底刪除，非改看板） ==========
+      // ========== 階段三：刪除 device_locks（與 vote 連動解鎖）、再刪除 votes 文件 ==========
+      const deviceIdsToUnlock = [
+        ...new Set(
+          voteDataList
+            .map((v) => (typeof v.data?.deviceId === "string" ? v.data.deviceId.trim() : ""))
+            .filter(Boolean),
+        ),
+      ];
+      deviceIdsToUnlock.forEach((deviceId) => tx.delete(doc(db, "device_locks", deviceId)));
       idsToDelete.forEach((id) => {
         deletedVoteIds.push(id);
         tx.delete(doc(db, "votes", id));

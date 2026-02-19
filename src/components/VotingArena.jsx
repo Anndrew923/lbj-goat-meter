@@ -10,6 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
 import { REASONS_MAX_SELECT } from "../lib/constants";
 import { triggerHaptic } from "../utils/hapticUtils";
+import { getDeviceId } from "../utils/deviceId";
 import { submitVote as voteServiceSubmitVote } from "../services/VoteService";
 import { Share2 } from "lucide-react";
 import BattleCardContainer from "./BattleCardContainer";
@@ -183,7 +184,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
     try {
       await voteServiceSubmitVote(
         userId,
-        { selectedStance, selectedReasons },
+        { selectedStance, selectedReasons, deviceId: getDeviceId() },
         (key) => t(key)
       );
       triggerHaptic(50);

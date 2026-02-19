@@ -174,6 +174,8 @@
   "lang_zhTW": "Chinese (Traditional)",
   "lang_en": "English",
   "error_missingDbOrUid": "Missing Firestore or user UID",
+  "error_deviceIdRequired": "Device ID is required",
+  "error_deviceAlreadyVoted": "This device has already voted",
   "error_profileNotFoundRevote": "Profile not found. Cannot reset vote.",
   "error_hasNotVoted": "You have not voted yet.",
   "ageGroup_18_24": "18–24",
