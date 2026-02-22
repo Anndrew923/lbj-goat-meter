@@ -1,10 +1,11 @@
 apply plugin: 'com.android.application'
 
+// 首發過審：應用程式識別碼中性化，避免商標侵權風險（com.thegoatmeter.warzone）
 android {
-    namespace = "com.lbjgoatmeter.app"
+    namespace = "com.thegoatmeter.warzone"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.lbjgoatmeter.app"
+        applicationId "com.thegoatmeter.warzone"
         minSdkVersion rootProject.ext.minSdkVersion
         manifestPlaceholders = [debuggable: "false"]
         targetSdkVersion rootProject.ext.targetSdkVersion

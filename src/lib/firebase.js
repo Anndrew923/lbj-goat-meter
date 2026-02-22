@@ -14,9 +14,11 @@
  * - Sign-in method：Firebase Console > Authentication > Sign-in method，確認 Google 為「已啟用」。
  * - Authorized domains：Authentication > Settings > Authorized domains，加入本地網址（如 localhost）。
  *
- * App Check 故障排查（403）：
+ * App Check 故障排查（403 / 401）：
  * - 若開發時遇到 403，請確認是否已將瀏覽器產生的 Debug Token 填入 Firebase Console 的 App Check 白名單中。
  *   （Debug Token 會在啟用 Debug 時於 Console 印出，需在 Firebase Console > App Check > 應用程式的「管理 debug token」中新增。）
+ * - 若在 localhost 出現 reCAPTCHA 的 401 Unauthorized：多因 reCAPTCHA 金鑰未允許 localhost 網域。
+ *   可於開發環境在 .env.local 設定 VITE_APP_CHECK_SKIP_IN_DEV=1，跳過 App Check 初始化以消除 401（正式環境不會讀取此變數）。
  *
  * 潛在影響：多專案（Multi-tenancy）時需改為 getApp(name) 或工廠模式；缺必要變數時不初始化，
  *           由呼叫端依 isFirebaseReady 決定是否使用 Auth/Firestore。
@@ -25,7 +27,7 @@
 import { initializeApp } from 'firebase/app'
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
-import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
+import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 
 const requiredKeys = [
   'VITE_FIREBASE_API_KEY',
@@ -59,6 +61,8 @@ let app = null
 let auth = null
 let db = null
 let googleProvider = null
+/** App Check 是否已成功啟用；用於 UI 顯示「數據經實時驗證」等公信力標籤的防禦性邏輯。 */
+let appCheckEnabled = false
 
 const config = buildConfig()
 if (import.meta.env.DEV) {
@@ -73,8 +77,13 @@ if (config) {
     app = initializeApp(config)
 
     // App Check：必須在 db 請求前完成，僅正版 App 請求可進 Firestore
+    // 開發環境可設 VITE_APP_CHECK_SKIP_IN_DEV=1 跳過初始化，避免 reCAPTCHA 在 localhost 產生 401（見下方註解）
+    const skipAppCheckInDev =
+      import.meta.env.DEV &&
+      (import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === '1' ||
+        import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === 'true')
     const recaptchaSiteKey = (import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY ?? '').trim()
-    if (typeof window !== 'undefined' && recaptchaSiteKey) {
+    if (typeof window !== 'undefined' && recaptchaSiteKey && !skipAppCheckInDev) {
       // --- Debug Token（嚴禁提交至正式環境）---
       // 以下僅供「開發環境」使用：讓本地可通過 App Check 而不依賴 reCAPTCHA 生產金鑰。
       // VITE_APP_CHECK_DEBUG_TOKEN 必須只存在於 .env.local，且 .env.local 不得提交版控；
@@ -91,6 +100,7 @@ if (config) {
           provider: new ReCaptchaV3Provider(recaptchaSiteKey),
           isTokenAutoRefreshEnabled: true, // 自動刷新，確保用戶長久在線時不會斷連
         })
+        appCheckEnabled = true
       } catch (appCheckErr) {
         if (import.meta.env.DEV) {
           console.warn(
@@ -101,21 +111,20 @@ if (config) {
         // 不拋出：auth/db 照常初始化，僅寫入時會因規則觸發 403
       }
     }
+    if (import.meta.env.DEV && skipAppCheckInDev) {
+      console.info(
+        '[Firebase] App Check 已在開發環境跳過（VITE_APP_CHECK_SKIP_IN_DEV），不會向 reCAPTCHA 發送請求；正式環境不受影響。'
+      )
+    }
 
     auth = getAuth(app)
     // 《最強肉體》長輪詢配置：自動偵測長輪詢，減少 WebChannel 在開發環境的連線報錯
+    // 緩存策略：改用 FirestoreSettings.localCache（persistentLocalCache）取代已棄用的 enableIndexedDbPersistence，優先讀取本地 IndexedDB
     db = initializeFirestore(app, {
       experimentalAutoDetectLongPolling: true,
-    })
-    // 緩存策略：優先讀取本地 IndexedDB，減少伺服器 Reads（尤其對不常變動的 profiles / warzoneStats）
-    enableIndexedDbPersistence(db).catch((err) => {
-      if (err?.code === 'failed-precondition') {
-        if (import.meta.env.DEV) console.warn('[Firebase] 持久化：另一分頁已啟用，本分頁使用記憶體緩存')
-      } else if (err?.code === 'unimplemented') {
-        if (import.meta.env.DEV) console.warn('[Firebase] 持久化：此瀏覽器不支援 IndexedDB 離線持久化')
-      } else if (import.meta.env.DEV) {
-        console.warn('[Firebase] enableIndexedDbPersistence 失敗:', err?.message ?? err)
-      }
+      ...(typeof window !== 'undefined' && {
+        localCache: persistentLocalCache({}),
+      }),
     })
     googleProvider = new GoogleAuthProvider()
   } catch (err) {
@@ -127,6 +136,11 @@ if (config) {
 
 /** 是否已成功初始化；未設定或初始化失敗時為 false，呼叫端應避免使用 auth/db */
 export const isFirebaseReady = Boolean(auth && db)
+
+/** 是否已啟用 App Check（獨立設備與正版應用驗證）；異常時 UI 可隱藏或灰化「數據經實時驗證」等標籤。 */
+export function hasValidAppCheck() {
+  return appCheckEnabled
+}
 
 if (import.meta.env.DEV && !config) {
   console.warn(

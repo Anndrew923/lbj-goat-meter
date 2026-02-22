@@ -396,11 +396,11 @@ export default function BattleCard({
                         {rankLabel ?? t("rankLabel")}
                       </span>
                     </div>
-                    {/* 品牌鋼印容器：大皇冠單行版 — 靠右、底部對齊、不換行、防擠壓 */}
+                    {/* 品牌鋼印容器：大皇冠單行版 — 靠右、底部對齊、不換行、防擠壓（首發過審：品牌中性化） */}
                     <div
                       className="flex items-end gap-2 justify-end flex-shrink-0"
                       role="group"
-                      aria-label="GOAT Meter"
+                      aria-label="The GOAT Meter"
                     >
                       <img
                         src={crownIcon}
@@ -411,7 +411,7 @@ export default function BattleCard({
                       <span
                         className="text-king-gold text-xs font-secondary tracking-[0.2em] uppercase whitespace-nowrap"
                       >
-                        GOAT Meter
+                        The GOAT Meter
                       </span>
                     </div>
                   </div>

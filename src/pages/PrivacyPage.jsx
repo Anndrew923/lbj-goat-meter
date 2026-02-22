@@ -13,9 +13,9 @@ export default function PrivacyPage() {
   const { t } = useTranslation('common')
 
   useEffect(() => {
-    document.title = `${t('privacyPageTitle')} | GOAT Meter`
+    document.title = `${t('privacyPageTitle')} | The GOAT Meter`
     return () => {
-      document.title = 'GOAT Meter: LeBron'
+      document.title = 'The GOAT Meter'
     }
   }, [t])
 
@@ -85,7 +85,17 @@ export default function PrivacyPage() {
             </p>
           </section>
 
-          {/* 4. 用戶權利 */}
+          {/* 4. 數據安全與公平性（首發過審：透明化 deviceId / App Check，符合 GDPR 與平台隱私規範） */}
+          <section className="rounded-xl border border-villain-purple/20 bg-gray-900/50 p-5 sm:p-6">
+            <h2 className="text-king-gold font-semibold text-lg mb-3">
+              {t('privacySectionSecurityTitle')}
+            </h2>
+            <p className="text-gray-300 text-sm leading-relaxed">
+              {t('privacySectionSecurityContent')}
+            </p>
+          </section>
+
+          {/* 5. 用戶權利 */}
           <section className="rounded-xl border border-king-gold/30 bg-gray-900/50 p-5 sm:p-6">
             <h2 className="text-king-gold font-semibold text-lg mb-3">
               {t('privacySectionRightsTitle')}

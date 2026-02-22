@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { useWarzoneData } from "../context/WarzoneDataContext";
 import { useSentimentDataContext } from "../context/SentimentDataContext";
 import { hasActiveFilters } from "../hooks/useSentimentData";
+import { hasValidAppCheck } from "../lib/firebase";
 import { getStancesForArena } from "../i18n/i18n";
 import { STANCE_COLORS, RECON_AUTHORIZED_COLOR } from "../lib/constants";
 /** 未知／其他立場的進度條 fallback 色（與 gray-500 一致） */
@@ -157,19 +158,31 @@ export default function SentimentStats({ filters = {} }) {
     );
   };
 
+  /** 數據權威標籤：僅在 App Check 有效時顯示綠色呼吸燈＋文案，異常時隱藏，確保數據透明度。 */
+  const showVerifiedBadge = hasValidAppCheck();
+
   return (
     <div
       className={`rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 relative transition-opacity duration-200 ${isLoading && hasFilters ? "opacity-50 pointer-events-none" : ""}`}
       aria-busy={isLoading && hasFilters}
     >
-      {/* 公開區標示：GLOBAL PULSE: LIVE，戰術綠 RECON_AUTHORIZED_COLOR + animate-pulse */}
-      <span
-        className="absolute top-3 right-3 text-[10px] font-medium tracking-widest uppercase animate-pulse"
-        style={{ color: RECON_AUTHORIZED_COLOR }}
-        aria-hidden
-      >
-        GLOBAL PULSE: LIVE
-      </span>
+      {/* 右上角公信力區：GLOBAL PULSE: LIVE ＋ 數據權威標籤（呼吸燈綠點＋全大寫）；hasValidAppCheck 異常時僅顯示 LIVE，避免誤導。 */}
+      <div className="absolute top-3 right-3 flex flex-col items-end gap-1" aria-hidden>
+        <span
+          className="text-[10px] font-medium tracking-widest uppercase animate-pulse"
+          style={{ color: RECON_AUTHORIZED_COLOR }}
+        >
+          GLOBAL PULSE: LIVE
+        </span>
+        {showVerifiedBadge && (
+          <div className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+            <span className="text-[10px] font-medium tracking-widest uppercase text-green-500/90">
+              {t("verified_data_status")}
+            </span>
+          </div>
+        )}
+      </div>
       <h3 className="text-lg font-bold text-king-gold mb-2">
         {t("globalVoteDistribution")}
       </h3>

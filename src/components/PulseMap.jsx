@@ -87,6 +87,17 @@ function getGeoKey(geo, iso2, fallbackIndex = 0) {
   return name != null ? `geo-${String(name)}` : `geo-unknown-${fallbackIndex}`
 }
 
+/** 選中國家時地圖視圖跳轉：ISO2 → [lng, lat]（用於 projectionConfig.center）；未列入者仍會高亮，僅不平移視圖 */
+const COUNTRY_CENTER = {
+  SG: [103.8, 1.35], TW: [121, 23.5], US: [-98, 38], JP: [138, 36], KR: [127.5, 36], CN: [105, 35],
+  HK: [114.2, 22.3], CA: [-106, 56], AU: [134, -25], PH: [122, 12], GB: [-2, 54], DE: [10, 51],
+  FR: [2, 46], IN: [77, 21], MY: [102, 4], TH: [100, 15], VN: [108, 16], ID: [118, -5],
+  ES: [-3.7, 40.4], IT: [12.5, 42.8], NL: [5.3, 52.1], BR: [-55, -10], MX: [-102, 23], PL: [19.4, 52], TR: [35, 39], SA: [45, 25],
+}
+const DEFAULT_MAP_CENTER = [20, 20]
+const DEFAULT_MAP_SCALE = 120
+const FOCUSED_MAP_SCALE = 180
+
 /** 記憶化地球路徑：除非 geographies / byCountry / selectedCountry / hovered 變更，否則不重算 */
 const MemoizedMapPaths = memo(function MemoizedMapPaths({
   geographies,
@@ -150,9 +161,21 @@ export default function PulseMap({ filters, onFiltersChange }) {
     return isObject(summary.countryCounts) ? summary.countryCounts : {}
   }, [hasFilters, sentimentSummary?.countryCounts, summary.countryCounts])
 
-  const selectedCountry = filters?.country ?? null
+  /** 精準對應 FilterFunnel 傳來的 filters.country（ISO2），驅動 isSelected 高亮與視圖跳轉；正規化為大寫以與 TopoJSON 一致 */
+  const selectedCountry = filters?.country
+    ? String(filters.country).toUpperCase().slice(0, 2)
+    : null
   const setHoveredStable = useCallback((v) => setHovered(v), [])
   const mapLoading = hasFilters ? sentimentLoading : loading
+
+  /** 選中國家時地圖自動跳轉：center 與 scale 依 filters.country 聯動 */
+  const projectionConfig = useMemo(() => {
+    const center = selectedCountry && COUNTRY_CENTER[selectedCountry]
+      ? COUNTRY_CENTER[selectedCountry]
+      : DEFAULT_MAP_CENTER
+    const scale = selectedCountry ? FOCUSED_MAP_SCALE : DEFAULT_MAP_SCALE
+    return { scale, center }
+  }, [selectedCountry])
 
   // 錯誤時用靜態網格：Context 錯誤或篩選查詢錯誤皆不顯示錯誤數據
   if (error || (hasFilters && sentimentError)) return <MapStaticGrid messageKey="mapLoadError" />
@@ -172,7 +195,7 @@ export default function PulseMap({ filters, onFiltersChange }) {
         <div className={`${MAP_CONTAINER_CLASS} relative`}>
           <ComposableMap
             projection="geoMercator"
-            projectionConfig={{ scale: 120, center: [20, 20] }}
+            projectionConfig={projectionConfig}
             width={800}
             height={400}
             style={{ width: '100%', height: '100%' }}

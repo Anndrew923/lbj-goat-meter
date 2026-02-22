@@ -522,6 +522,10 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
       >
         {submitting ? t("common:submitting") : t("common:submitVote")}
       </motion.button>
+      {/* 戰前信心暗示：減少用戶對於灌票的疑慮，提升單次投票的心理價值；極低調樣式避免干擾主流程。 */}
+      <p className="mt-2 text-[10px] text-gray-500/60 text-center" aria-hidden>
+        {t("common:security_verified_hint")}
+      </p>
     </div>
   );
 }

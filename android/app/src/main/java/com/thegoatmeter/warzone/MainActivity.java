@@ -1,10 +1,11 @@
-package com.lbjgoatmeter.app;
+package com.thegoatmeter.warzone;
 
 import com.getcapacitor.BridgeActivity;
 import ee.forgr.capacitor.social.login.ModifiedMainActivityForSocialLoginPlugin;
 
 /**
  * Capacitor 會自動註冊 node_modules 內含的插件（含 @capacitor-community/admob），無需手動註冊。
+ * 首發過審：與 build.gradle 的 namespace / applicationId 一致（com.thegoatmeter.warzone）。
  */
 public class MainActivity extends BridgeActivity implements ModifiedMainActivityForSocialLoginPlugin {
 

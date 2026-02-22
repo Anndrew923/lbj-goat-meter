@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:XXXX:android:XXXX",
         "android_client_info": {
-          "package_name": "com.lbjgoatmeter.app"
+          "package_name": "com.thegoatmeter.warzone"
         }
       },
       "oauth_client": [

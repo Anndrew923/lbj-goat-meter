@@ -111,15 +111,15 @@ export default function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="text-center max-w-md w-full"
       >
-        {/* 霸氣標題與皇冠裂變品牌主視覺 */}
+        {/* 霸氣標題與皇冠裂變品牌主視覺（首發過審：品牌中性化為 The GOAT Meter） */}
         <div className="mb-8 flex flex-col items-center">
           <h1 className="text-4xl md:text-5xl font-black text-king-gold tracking-tight mb-2">
-            GOAT Meter: LeBron
+            The GOAT Meter
           </h1>
           <p className="text-villain-purple/90 text-sm mb-6">{t('whoIsGoat')}</p>
           <img
             src={crownIcon}
-            alt="GOAT Meter 皇冠裂變圖標"
+            alt="The GOAT Meter 皇冠裂變圖標"
             className="w-48 h-48 mx-auto object-contain my-6 drop-shadow-lg"
             decoding="async"
             fetchpriority="high"
@@ -167,6 +167,11 @@ export default function LoginPage() {
         >
           {t('browseAsGuest')}
         </motion.button>
+
+        {/* 首發過審：強制性免責聲明，明確告知非官方身分 */}
+        <p className="mt-6 text-[10px] text-gray-500 text-center max-w-xs mx-auto leading-relaxed" role="contentinfo">
+          {t('disclaimerCommunity')}
+        </p>
       </motion.div>
     </div>
   )

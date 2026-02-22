@@ -1,7 +1,7 @@
 /**
  * FilterFunnel — 多維度篩選抽屜（精密儀器感）
- * 提供 ageGroup、gender、voterTeam、city 的組合，並將選擇傳給父層以連動 useSentimentData。
- * 頂端授權狀態燈：未授權時灰燈 + 鎖定；已授權時戰術美金綠 (#00E676)。
+ * 提供 ageGroup、gender、voterTeam、country、city 的組合，並將選擇傳給父層以連動 useSentimentData 與 PulseMap。
+ * 國家篩選使用 SmartWarzoneSelector（與 UserProfileSetup 體驗對齊）。頂端授權狀態燈：未授權時灰燈 + 鎖定；已授權時戰術美金綠 (#00E676)。
  */
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,12 +10,14 @@ import { SlidersHorizontal, X } from "lucide-react";
 import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from "../lib/constants";
 import { triggerHaptic } from "../utils/hapticUtils";
 import ReconPermissionIndicator from "./ReconPermissionIndicator";
+import SmartWarzoneSelector from "./SmartWarzoneSelector";
 
 const defaultFilters = {
   ageGroup: "",
   gender: "",
   team: "",
   city: "",
+  country: "",
 };
 
 function getOptionKey(type, value) {
@@ -214,6 +216,17 @@ export default function FilterFunnel({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {t("countryLabel")}
+                  </label>
+                  <SmartWarzoneSelector
+                    value={filters.country ?? ""}
+                    onChange={(v) => update("country", v)}
+                    disabled={locked}
+                    aria-label={t("countryLabel")}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
                     {t("cityLabel")}
                   </label>
                   <input
@@ -237,8 +250,8 @@ export default function FilterFunnel({
                   </button>
                 )}
               </div>
-              {/* 固定底部：套用篩選（軍事質感主按鈕）；安全區 + 觸控防錯 24px 避免與導覽列／手勢衝突 */}
-              <div className="filter-funnel-bottom-safe flex-shrink-0 pt-4 px-4 border-t border-villain-purple/30 bg-gray-950">
+              {/* 固定底部：套用篩選（軍事質感主按鈕）；safe-area + 1.5rem 杜絕與系統手勢列／Home Indicator 重疊誤觸；env(...,0px) 為不支援時 fallback */}
+              <div className="filter-funnel-bottom-safe flex-shrink-0 pt-4 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] border-t border-villain-purple/30 bg-gray-950">
                 <button
                   type="button"
                   onClick={handleApplyFilters}

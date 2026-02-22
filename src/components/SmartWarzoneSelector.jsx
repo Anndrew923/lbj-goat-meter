@@ -139,7 +139,8 @@ export default function SmartWarzoneSelector({
   const selectedOption = options.find((o) => o.value === value)
   const displayLabel = selectedOption ? selectedOption.label : ''
 
-  const comboboxValue = value === '' || value == null ? undefined : value
+  /** 始終傳字串給 Combobox，避免 value 在 defined/undefined 間切換導致「受控→非受控」錯誤 */
+  const comboboxValue = value === '' || value == null ? '' : String(value)
 
   return (
     <Combobox
@@ -163,23 +164,22 @@ export default function SmartWarzoneSelector({
           </span>
         </ComboboxButton>
 
-        {/* Portal：選單渲染到 body，固定置中於螢幕；外層 pointer-events-none，僅面板可點，點選單外可關閉 */}
+        {/* Portal：選單渲染到 body；鍵盤避讓：pt-[10vh] 讓搜尋框穩居螢幕上方 1/3，h-[100svh] 隨鍵盤縮放視口 */}
         <ComboboxOptions
           portal
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 pointer-events-none"
+          className="fixed inset-0 z-[100] h-[100svh] flex flex-col items-center justify-start pt-[10vh] px-4 pb-4 pointer-events-none"
         >
           {/* 遮罩僅視覺，不攔截點擊（pointer-events-none 由父層繼承） */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] pointer-events-none" aria-hidden />
           <div
-            className="relative z-10 pointer-events-auto w-full min-w-[280px] max-w-[90vw] rounded-xl border border-king-gold/30 overflow-hidden shadow-2xl"
+            className="relative z-10 pointer-events-auto w-full min-w-[280px] max-w-[90vw] rounded-xl border border-king-gold/30 overflow-hidden shadow-2xl flex flex-col max-h-[calc(100svh-10vh-2rem)]"
             style={{
-              maxHeight: '40vh',
               background: 'rgba(15, 15, 20, 0.95)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
             }}
           >
-            <div className="p-2 border-b border-gray-600/50 sticky top-0 bg-gray-900/80 backdrop-blur-sm z-10">
+            <div className="p-2 border-b border-gray-600/50 sticky top-0 bg-gray-900/80 backdrop-blur-sm z-10 shrink-0">
               <SearchInput
                 value={query}
                 onChange={setQuery}
@@ -189,8 +189,8 @@ export default function SmartWarzoneSelector({
               />
             </div>
             <div
-              className="overflow-y-auto overflow-x-hidden warzone-selector-list"
-              style={{ maxHeight: 'calc(40vh - 52px)' }}
+              className="overflow-y-auto overflow-x-hidden warzone-selector-list shrink min-h-0 pb-[max(1.5rem,env(safe-area-inset-bottom,0px),20vh)]"
+              style={{ maxHeight: 'calc(100svh - 10vh - 8rem)' }}
             >
               {filteredOptions.length === 0 ? (
                 <div className="px-3 py-4 text-center text-gray-400 text-sm" role="status">
