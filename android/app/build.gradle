@@ -1,5 +1,12 @@
 apply plugin: 'com.android.application'
 
+// 簽章金鑰從外部檔案讀取，不硬編碼（keystore.properties 已加入 .gitignore）
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.canRead()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 // 首發過審：應用程式識別碼中性化，避免商標侵權風險（com.thegoatmeter.warzone）
 android {
     namespace = "com.thegoatmeter.warzone"
@@ -18,12 +25,25 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.canRead()) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         debug {
             debuggable true
             manifestPlaceholders = [debuggable: "true"]
         }
         release {
+            if (keystorePropertiesFile.canRead()) {
+                signingConfig signingConfigs.release
+            }
             debuggable false
             manifestPlaceholders = [debuggable: "false"]
             minifyEnabled false

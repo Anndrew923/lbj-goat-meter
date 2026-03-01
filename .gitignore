@@ -27,3 +27,8 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Android 簽章金鑰（勿提交）
+android/keystore.properties
+*.jks
+*.keystore
