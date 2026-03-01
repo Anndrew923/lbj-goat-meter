@@ -1,4 +1,6 @@
 {
+  "appSlogan": "『天選之子』的公信力戰區",
+  "metaDescription": "進入全球籃球史上最神祕的公信力戰區，校準那位『天選之子』的傳奇數據。",
   "chooseStance": "選擇你的立場",
   "loginToVoteHint": "登入後即可投票並領取專屬戰報卡",
   "loadingArena": "載入戰區…",
@@ -26,6 +28,10 @@
   "preferences": "偏好設定",
   "settings": "設定",
   "close": "關閉",
+  "exitModalTitle": "離開戰區？",
+  "exitModalMessage": "再按一次返回鍵，或點擊下方按鈕將離開 The GOAT Meter。",
+  "stayInWarzone": "留在戰區",
+  "exitApp": "離開",
   "privacyPolicy": "隱私權政策",
   "backToApp": "返回戰場",
   "exitBattlefieldWarning": "再按一次返回將離開戰場",

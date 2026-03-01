@@ -1,4 +1,6 @@
 {
+  "appSlogan": "The \"Chosen One's\" Warzone of Credibility",
+  "metaDescription": "Step into the most prestigious warzone in basketball history to calibrate the credibility of the 'Chosen One'.",
   "chooseStance": "Choose your stance",
   "loginToVoteHint": "Sign in to vote and get your battle card",
   "loadingArena": "Loading arena…",
@@ -26,6 +28,10 @@
   "preferences": "Preferences",
   "settings": "Settings",
   "close": "Close",
+  "exitModalTitle": "Exit Warzone?",
+  "exitModalMessage": "Press back again or click below to exit The GOAT Meter.",
+  "stayInWarzone": "Stay",
+  "exitApp": "Exit",
   "privacyPolicy": "Privacy Policy",
   "backToApp": "Back to app",
   "exitBattlefieldWarning": "Press back again to leave the battlefield",

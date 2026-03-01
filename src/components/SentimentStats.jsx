@@ -163,29 +163,31 @@ export default function SentimentStats({ filters = {} }) {
 
   return (
     <div
-      className={`rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 relative transition-opacity duration-200 ${isLoading && hasFilters ? "opacity-50 pointer-events-none" : ""}`}
+      className={`rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 transition-opacity duration-200 ${isLoading && hasFilters ? "opacity-50 pointer-events-none" : ""}`}
       aria-busy={isLoading && hasFilters}
     >
-      {/* 右上角公信力區：GLOBAL PULSE: LIVE ＋ 數據權威標籤（呼吸燈綠點＋全大寫）；hasValidAppCheck 異常時僅顯示 LIVE，避免誤導。 */}
-      <div className="absolute top-3 right-3 flex flex-col items-end gap-1" aria-hidden>
-        <span
-          className="text-[10px] font-medium tracking-widest uppercase animate-pulse"
-          style={{ color: RECON_AUTHORIZED_COLOR }}
-        >
-          GLOBAL PULSE: LIVE
-        </span>
-        {showVerifiedBadge && (
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
-            <span className="text-[10px] font-medium tracking-widest uppercase text-green-500/90">
-              {t("verified_data_status")}
-            </span>
-          </div>
-        )}
+      {/* 標題與脈衝燈／公信力區：flex 容器自動避讓，手機上下排列、平板左右排列，避免重疊。 */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-2">
+        <h3 className="text-lg font-bold text-king-gold leading-tight max-w-[80%] min-w-0 pr-4">
+          {t("globalVoteDistribution")}
+        </h3>
+        <div className="flex flex-col items-end gap-1 shrink-0 self-start sm:self-auto" aria-hidden>
+          <span
+            className="text-[10px] font-medium tracking-widest uppercase animate-pulse"
+            style={{ color: RECON_AUTHORIZED_COLOR }}
+          >
+            GLOBAL PULSE: LIVE
+          </span>
+          {showVerifiedBadge && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+              <span className="text-[10px] font-medium tracking-widest uppercase text-green-500/90">
+                {t("verified_data_status")}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
-      <h3 className="text-lg font-bold text-king-gold mb-2">
-        {t("globalVoteDistribution")}
-      </h3>
       <p
         className="text-sm text-gray-400 mb-4"
         aria-live="polite"

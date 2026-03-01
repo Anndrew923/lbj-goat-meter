@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { Capacitor } from '@capacitor/core'
+import { App as CapApp } from '@capacitor/app'
 import LoginPage from './pages/LoginPage'
 import VotePage from './pages/VotePage'
 import SetupPage from './pages/SetupPage'
 import PrivacyPage from './pages/PrivacyPage'
 import ProtectedRoute from './components/ProtectedRoute'
+import ExitConfirmModal from './components/ExitConfirmModal'
 import { triggerHaptic } from './utils/hapticUtils'
 import { initializeAdMob } from './services/AdMobService'
 
@@ -32,12 +35,46 @@ const toastStyle = {
 
 export default function App() {
   const { t } = useTranslation('common')
+  const location = useLocation()
+  const navigate = useNavigate()
   const [toastMessage, setToastMessage] = useState('')
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false)
   const lastBackPressRef = useRef(0)
+  const pathnameRef = useRef(location.pathname)
+  const exitModalOpenRef = useRef(isExitModalOpen)
+
+  pathnameRef.current = location.pathname
+  exitModalOpenRef.current = isExitModalOpen
 
   useEffect(() => {
     initializeAdMob().catch(() => {})
   }, [])
+
+  // 原生返回鍵：僅在 Capacitor 原生平台註冊，攔截返回並依路由/Modal 狀態處理
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+
+    const handler = () => {
+      const pathname = pathnameRef.current
+      const modalOpen = exitModalOpenRef.current
+
+      if (modalOpen) {
+        CapApp.exitApp()
+        return
+      }
+      if (pathname !== '/vote') {
+        navigate('/vote', { replace: true })
+        return
+      }
+      triggerHaptic(30)
+      setIsExitModalOpen(true)
+    }
+
+    const listenerPromise = CapApp.addListener('backButton', handler)
+    return () => {
+      listenerPromise.then((l) => l.remove())
+    }
+  }, [navigate])
 
   useEffect(() => {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -92,6 +129,10 @@ export default function App() {
           {toastMessage}
         </div>
       )}
+      <ExitConfirmModal
+        open={isExitModalOpen}
+        onClose={() => setIsExitModalOpen(false)}
+      />
     </>
   )
 }

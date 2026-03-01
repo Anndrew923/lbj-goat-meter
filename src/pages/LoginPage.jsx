@@ -111,12 +111,12 @@ export default function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="text-center max-w-md w-full"
       >
-        {/* 霸氣標題與皇冠裂變品牌主視覺（首發過審：品牌中性化為 The GOAT Meter） */}
+        {/* 霸氣標題與皇冠裂變品牌主視覺（主標 + 副標層次：軍事儀表板） */}
         <div className="mb-8 flex flex-col items-center">
           <h1 className="text-4xl md:text-5xl font-black text-king-gold tracking-tight mb-2">
             The GOAT Meter
           </h1>
-          <p className="text-villain-purple/90 text-sm mb-6">{t('whoIsGoat')}</p>
+          <p className="text-gray-400 text-sm md:text-base opacity-90 mb-6">{t('appSlogan')}</p>
           <img
             src={crownIcon}
             alt="The GOAT Meter 皇冠裂變圖標"
