@@ -30,10 +30,25 @@ export default {
           '0%': { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(-50%)' },
         },
+        // AnalystGate：玻璃擬態掃描條，自上而下緩慢掃描卡片
+        'gate-scan': {
+          '0%': { transform: 'translateY(-110%)', opacity: '0' },
+          '10%': { opacity: '0.75' },
+          '90%': { opacity: '0.75' },
+          '100%': { transform: 'translateY(110%)', opacity: '0' },
+        },
+        // 情報能量 HUD：扣點時短暫放大並帶金色光暈
+        'intel-ping': {
+          '0%': { transform: 'scale(1)', boxShadow: '0 0 0 rgba(212,175,55,0.0)', borderColor: 'rgba(148,163,184,0.5)' },
+          '40%': { transform: 'scale(1.1)', boxShadow: '0 0 18px rgba(212,175,55,0.65)', borderColor: 'rgba(212,175,55,0.9)' },
+          '100%': { transform: 'scale(1)', boxShadow: '0 0 0 rgba(212,175,55,0.0)', borderColor: 'rgba(148,163,184,0.5)' },
+        },
       },
       animation: {
         'border-blink': 'border-blink 1.5s ease-in-out infinite',
         marquee: 'marquee 40s linear infinite',
+        'gate-scan': 'gate-scan 2.6s linear infinite',
+        'intel-ping': 'intel-ping 0.45s ease-out',
       },
       colors: {
         // 暗黑競技風：粉方（金/紅）、黑方（紫/靛）；對抗版六立場視覺意圖

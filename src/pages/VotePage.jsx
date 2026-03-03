@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
@@ -22,6 +22,7 @@ import {
   Settings,
   AlertTriangle,
   LogOut,
+  Info,
 } from "lucide-react";
 
 export default function VotePage() {
@@ -52,8 +53,37 @@ export default function VotePage() {
   const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
   const [tickerPausedForExport, setTickerPausedForExport] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
-  const { isAnalystAuthorized, onRequestRewardAd, analystAdPortal } =
-    useAnalystAuth();
+  const {
+    isAnalystAuthorized,
+    remainingPoints,
+    consumePoint,
+    onEnergyExhausted,
+    onRequestRewardAd,
+    analystAdPortal,
+  } = useAnalystAuth();
+
+  // 首頁 Intelligence HUD：當剩餘點數下降時觸發 intel-ping 動畫
+  const [energyPing, setEnergyPing] = useState(false);
+  const lastEnergyRef = useRef(remainingPoints);
+
+  useEffect(() => {
+    let timeoutId;
+    if (typeof remainingPoints !== "number") {
+      lastEnergyRef.current = remainingPoints;
+    } else {
+      const prev = lastEnergyRef.current;
+      if (typeof prev === "number" && remainingPoints < prev) {
+        setEnergyPing(true);
+        timeoutId = window.setTimeout(() => setEnergyPing(false), 450);
+      }
+      lastEnergyRef.current = remainingPoints;
+    }
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [remainingPoints]);
 
   // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
   useEffect(() => {
@@ -145,20 +175,42 @@ export default function VotePage() {
           onExportStart={() => setTickerPausedForExport(true)}
           onExportEnd={() => setTickerPausedForExport(false)}
         />
-        <SentimentDataProvider filters={stableFilters}>
+        <SentimentDataProvider
+          filters={stableFilters}
+          authorized={isAnalystAuthorized}
+          remainingPoints={remainingPoints}
+          consumePoint={consumePoint}
+          onEnergyExhausted={onEnergyExhausted}
+        >
         <section className="relative">
           {analystAdPortal}
           {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/匿名觀察者皆可直接看到 */}
-          <div className="mb-3">
+          <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-king-gold">
               {t("globalStats")}
             </h2>
+            {typeof remainingPoints === "number" && (
+              <div className="relative">
+                <div
+                  className={`flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-1 rounded-full text-[11px] text-machine-silver/80 ${
+                    energyPing ? "animate-intel-ping" : ""
+                  } ${remainingPoints > 0 ? "animate-[pulse_4s_ease-in-out_infinite]" : ""}`}
+                  title={t("energyExpiryHint")}
+                >
+                  <span aria-hidden="true">⚡</span>
+                  <span>{remainingPoints}</span>
+                  <Info className="w-3 h-3 text-machine-silver/60" aria-hidden="true" />
+                </div>
+              </div>
+            )}
           </div>
           <SentimentStats filters={stableFilters} />
           {/* 以下僅此一層 AnalystGate：僅鎖定篩選器、地圖、詳細分析 */}
           <AnalystGate
             authorized={isAnalystAuthorized}
             onRequestRewardAd={onRequestRewardAd}
+            userId={currentUser?.uid}
+            cooldownMinutes={10}
             gateTitle={t("intelGateTitle")}
             gateDescription={t("intelGateDesc")}
             gateButtonText={t("intelGateButton")}
@@ -190,7 +242,10 @@ export default function VotePage() {
               <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
             </div>
             <div className="mt-6">
-              <AnalyticsDashboard authorized={isAnalystAuthorized} filters={stableFilters} />
+              <AnalyticsDashboard
+                authorized={isAnalystAuthorized}
+                filters={stableFilters}
+              />
             </div>
           </AnalystGate>
         </section>

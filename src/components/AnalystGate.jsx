@@ -1,77 +1,77 @@
-/**
- * AnalystGate — 純情報閘門（僅依 authorized 驅動）
- * 無 isPremium / purchasing / simulatePurchase；僅接收 authorized 與 onRequestRewardAd，
- * 解鎖時渲染 children，未解鎖時顯示模糊誘餌 + 解鎖按鈕。
- */
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { motion } from "framer-motion";
-import { Lock } from "lucide-react";
-import { triggerHaptic } from "../utils/hapticUtils";
+
+/**
+ * AnalystGate — 進階情報閘門與冷卻控制
+ *
+ * - 視覺上：未授權時將子內容模糊 + 鎖定互動，顯示「看完激勵式廣告後解鎖」卡片。
+ * - 風控上：冷卻改由後端 Reads 優化與 Hook 節流處理，前端不再限制點擊次數。
+ * - 實作策略：
+ *   - 所有 Reads 優化交由 useSentimentData 的 debounce + Session Cache 處理。
+ *   - 本組件只負責顯示玻璃擬態閘門與觸發「觀看廣告解鎖」行為。
+ */
 
 export default function AnalystGate({
-  children,
-  /** 偵查授權狀態，僅此屬性決定是否解鎖 */
   authorized,
-  /** 解鎖按鈕觸發激勵廣告 */
   onRequestRewardAd,
-  /** 覆蓋標題（預設 intelGateTitle） */
   gateTitle,
-  /** 覆蓋描述（預設 intelGateDesc） */
   gateDescription,
-  /** 覆蓋按鈕文案（預設 intelGateButton） */
   gateButtonText,
+  children,
 }) {
   const { t } = useTranslation("common");
-  const isUnlocked = authorized === true;
 
-  const title = gateTitle ?? t("intelGateTitle");
-  const description = gateDescription ?? t("intelGateDesc");
-  const buttonLabel = gateButtonText ?? t("intelGateButton");
+  const handleRequestAccess = useCallback(() => {
+    if (!onRequestRewardAd) return;
 
-  const handleUnlockClick = () => {
-    triggerHaptic(10);
-    onRequestRewardAd?.(() => {});
-  };
+    onRequestRewardAd();
+  }, [onRequestRewardAd]);
 
-  if (isUnlocked) {
+  // 已授權：直接顯示子內容，不再顯示閘門
+  if (authorized) {
     return <>{children}</>;
   }
 
   return (
     <div className="relative">
-      <div
-        className="pointer-events-none select-none blur-sm opacity-60"
-        aria-hidden="true"
-      >
+      <div className="pointer-events-none select-none blur-md brightness-75">
         {children}
       </div>
-      <div
-        className="absolute inset-0 flex flex-col items-center justify-center rounded-xl border border-villain-purple/50 bg-black/90 p-8 text-center"
-        role="region"
-        aria-label={t("analystGateAria")}
-      >
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-sm"
-        >
-          <div className="inline-flex rounded-full bg-villain-purple/30 p-4 mb-4">
-            <Lock className="w-10 h-10 text-villain-purple" aria-hidden />
+
+      <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-2xl">
+        <div className="relative max-w-md w-full mx-4 rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 to-transparent px-6 py-7 shadow-[0_0_40px_rgba(160,32,240,0.35)]">
+          {/* 掃描條：增加「資料運算中」的科技感 */}
+          <div className="pointer-events-none absolute inset-x-6 -inset-y-4 overflow-hidden">
+            <div className="absolute inset-x-0 h-24 -top-12 bg-gradient-to-b from-transparent via-machine-silver/40 to-transparent rounded-full blur-md animate-gate-scan" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-          <p className="text-sm text-gray-400 mb-6">{description}</p>
-          <motion.button
+
+          {gateTitle && (
+            <h3 className="text-lg font-bold text-king-gold mb-2 text-center">
+              {gateTitle}
+            </h3>
+          )}
+          {gateDescription && (
+            <p className="text-sm text-gray-300 mb-4 text-center">
+              {gateDescription}
+            </p>
+          )}
+
+          <button
             type="button"
-            onClick={handleUnlockClick}
-            disabled={!onRequestRewardAd}
-            whileHover={onRequestRewardAd ? { scale: 1.03 } : undefined}
-            whileTap={onRequestRewardAd ? { scale: 0.98 } : undefined}
-            className="px-6 py-3 rounded-lg bg-king-gold text-black font-semibold flex items-center justify-center gap-2 mx-auto disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={handleRequestAccess}
+            className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-king-gold text-black font-semibold text-sm hover:bg-king-gold/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-king-gold/70"
           >
-            {buttonLabel}
-          </motion.button>
-        </motion.div>
+            {gateButtonText || t("unlock30Energy")}
+          </button>
+          <p className="mt-3 text-[11px] text-gray-400 text-center">
+            {t("analystGateAdDisclaimer")}
+          </p>
+          <p className="text-[10px] text-machine-silver/50 mt-2 text-center">
+            {t("analystGateExpiryDisclaimer")}
+          </p>
+        </div>
       </div>
     </div>
   );
 }
+

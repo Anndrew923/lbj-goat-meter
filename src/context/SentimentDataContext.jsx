@@ -16,14 +16,26 @@ const DEFAULT_VALUE = {
 };
 
 /**
- * 僅在 VotePage 使用，包住 SentimentStats / PulseMap / AnalyticsDashboard，傳入當前 filters。
+ * 僅在 VotePage 使用，包住 SentimentStats / PulseMap / AnalyticsDashboard，傳入當前 filters 與情報能量狀態。
  * 內部只呼叫一次 useSentimentData，子組件從 Context 讀取，故一次篩選只會有一筆訂閱與一條 log。
  */
-export function SentimentDataProvider({ filters = EMPTY_FILTERS, children }) {
+export function SentimentDataProvider({
+  filters = EMPTY_FILTERS,
+  authorized = true,
+  remainingPoints = null,
+  consumePoint,
+  onEnergyExhausted,
+  children,
+}) {
   const hasFilters = hasActiveFilters(filters);
   const { summary, loading, error } = useSentimentData(
     hasFilters ? filters : EMPTY_FILTERS,
-    { enabled: hasFilters }
+    {
+      enabled: hasFilters && authorized,
+      remainingPoints,
+      consumePoint,
+      onEnergyExhausted,
+    }
   );
 
   const value = useMemo(

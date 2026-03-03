@@ -16,6 +16,24 @@ service cloud.firestore {
     function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
     function hasValidAppCheck() { return request.appCheck != null; }
 
+    function isAnalyticsProReader() {
+      return isAuthenticated() && hasValidAppCheck();
+    }
+
+    // 僅允許 analytics_pro 文檔包含白名單欄位，避免臃腫 payload 造成 Reads 成本暴漲
+    function isValidAnalyticsProDoc() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+        'starId',
+        'summary',
+        'breakdown',
+        'filters',
+        'generatedAt',
+        'ownerUid'
+      ])
+      && d.starId == 'lbj';
+    }
+
     // 校驗投票內容（createdAt 支援 serverTimestamp()，規則評估時為 null）
     function isValidVote() {
       let data = request.resource.data;
@@ -58,6 +76,13 @@ service cloud.firestore {
     match /warzoneStats/{statsId} {
       allow read: if true;
       allow write: if isAuthenticated() && hasValidAppCheck(); // 僅限已認證 App 更新統計
+    }
+
+    // 5. 進階分析數據：僅登入且通過 App Check 的用戶可讀取，並限制欄位白名單
+    match /analytics_pro/{docId} {
+      allow read: if isAnalyticsProReader();
+      allow create, update: if isAnalyticsProReader() && isValidAnalyticsProDoc();
+      allow delete: if false;
     }
   }
 }

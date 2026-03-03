@@ -149,6 +149,12 @@
   "intelGateTitle": "Warzone intel is encrypted",
   "intelGateDesc": "Advanced data requires intel energy. Watch a video to get scan access for this session.",
   "intelGateButton": "Unlock intel",
+  "insightEnergyPoints": "⚡ {{count}}",
+  "unlock30Energy": "Get 30 intel energy",
+  "energyExhausted": "Your intel energy is depleted. Watch another rewarded video to recharge and keep exploring.",
+  "analystGateExpiryDisclaimer": "Tactical intel remains valid for 10 minutes of inactivity.",
+  "energyExpiryHint": "Expiring after 10m of inactivity",
+  "analystGateAdDisclaimer": "Rewarded ads only unlock charts and advanced intel. Your existing GOAT votes are not affected.",
   "reconPermissionRestricted": "Recon Permission: RESTRICTED",
   "reconPermissionAuthorized": "Recon Permission: AUTHORIZED",
   "stats": {

@@ -20,19 +20,37 @@
  * 聯動延遲：通常 < 1 秒（依 Firestore 推送與網路狀況）。
  */
 
-import { useEffect, useState, useMemo } from 'react'
-import { collection, query, where, limit, onSnapshot } from 'firebase/firestore'
+import { useMemo, useCallback } from 'react'
+import { collection, query, where, limit, getDocs } from 'firebase/firestore'
 import { db, isFirebaseReady } from '../lib/firebase'
 import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from '../lib/constants'
-
-/** Firestore 訂閱逾時（毫秒），逾時後解除 loading 避免卡在「載入地圖…」 */
-const SNAPSHOT_TIMEOUT_MS = 12_000
+import { useBarometerQuery } from './useBarometerQuery'
 
 /** 預設球星 ID，與 SCHEMA 中 starId 對應 */
 const DEFAULT_STAR_ID = 'lbj'
 
 /** 單次查詢上限，避免一次拉取過多文件 */
 const DEFAULT_PAGE_SIZE = 200
+
+/** 快取版本與 TTL：無篩選＝較短；進階篩選＝較長以節省 Reads */
+const SENTIMENT_CACHE_VERSION = 'v1'
+const BASE_CACHE_TTL_MS = 5 * 60 * 1000 // 5 分鐘：全球大盤（無篩選）
+const ADVANCED_CACHE_TTL_MS = 30 * 60 * 1000 // 30 分鐘：進階篩選，Reads 成本較高
+
+function buildCacheKey(starId, filters) {
+  const safeStarId = String(starId || '').trim() || DEFAULT_STAR_ID
+  if (!filters || typeof filters !== 'object') {
+    return `sentiment:${SENTIMENT_CACHE_VERSION}:${safeStarId}:nofilters`
+  }
+  // 依 key 排序後序列化，確保同一組 filters 產出穩定 key
+  const normalizedEntries = Object.entries(filters)
+    .filter(([, v]) => v != null && String(v).trim() !== '')
+    .sort(([a], [b]) => (a > b ? 1 : a < b ? -1 : 0))
+  const normalized = Object.fromEntries(normalizedEntries)
+  return `sentiment:${SENTIMENT_CACHE_VERSION}:${safeStarId}:${JSON.stringify(
+    normalized
+  )}`
+}
 
 /** 是否含有有效篩選條件（任一欄位非空），供消費端決定用靜態或動態數據 */
 export function hasActiveFilters(filters) {
@@ -60,10 +78,14 @@ export const EMPTY_FILTERS = Object.freeze({})
  * @returns {{ data: Array, loading: boolean, error: Error | null, summary: Object }}
  */
 export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
-  const { starId = DEFAULT_STAR_ID, pageSize = DEFAULT_PAGE_SIZE, enabled = true } = options
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(enabled)
-  const [error, setError] = useState(null)
+  const {
+    starId = DEFAULT_STAR_ID,
+    pageSize = DEFAULT_PAGE_SIZE,
+    enabled = true,
+    remainingPoints = null,
+    consumePoint,
+    onEnergyExhausted,
+  } = options
 
   const filterEntries = useMemo(() => {
     const map = {
@@ -76,22 +98,10 @@ export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
     return Object.entries(map).filter(([key]) => filters[key] != null && String(filters[key]).trim() !== '')
   }, [filters])
 
-  useEffect(() => {
-    if (!enabled) {
-      setData([])
-      setLoading(false)
-      setError(null)
-      return
-    }
-    if (!isFirebaseReady || !db) {
-      setData([])
-      setLoading(false)
-      setError(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
+  const cacheKey = buildCacheKey(starId, filters)
+  const ttlMs = hasActiveFilters(filters) ? ADVANCED_CACHE_TTL_MS : BASE_CACHE_TTL_MS
 
+  const queryFn = useCallback(async () => {
     const votesRef = collection(db, 'votes')
     const constraints = [
       where('starId', '==', starId),
@@ -100,44 +110,27 @@ export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
     ]
     const q = query(votesRef, ...constraints)
 
-    let timeoutId = null
-    const clearLoading = () => {
-      setLoading(false)
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-        timeoutId = null
-      }
-    }
+    if (import.meta.env.DEV)
+      console.log('[useSentimentData] Firestore getDocs 查詢（debounced + session cache）', {
+        starId,
+        filterEntries: filterEntries.length,
+        ttlMs,
+      })
 
-    timeoutId = setTimeout(() => {
-      setLoading(false)
-      timeoutId = null
-    }, SNAPSHOT_TIMEOUT_MS)
+    const snapshot = await getDocs(q)
+    const docs = snapshot.docs ?? []
+    return docs.map((d) => ({ id: d.id, ...d.data() }))
+  }, [starId, pageSize, filterEntries, filters, ttlMs])
 
-    if (import.meta.env.DEV) console.log("Firebase Fetching [useSentimentData] votes 查詢訂閱 (Collection query)", { starId, filterEntries: filterEntries.length })
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const docs = snapshot.docs ?? []
-        const list = docs.map((d) => ({ id: d.id, ...d.data() }))
-        setData(list)
-        clearLoading()
-      },
-      (err) => {
-        setError(err)
-        setData([])
-        clearLoading()
-        if (err?.code === 'failed-precondition' || (err?.message && err.message.includes('index'))) {
-          console.warn('[useSentimentData] 請依 Firebase 錯誤訊息中的連結建立複合索引，見 docs/SCHEMA.md')
-        }
-      }
-    )
-
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId)
-      unsubscribe()
-    }
-  }, [enabled, starId, pageSize, filterEntries, filters])
+  const { data, loading, error } = useBarometerQuery({
+    cacheKey,
+    enabled: enabled && isFirebaseReady && !!db,
+    ttlMs,
+    quota: remainingPoints,
+    consumeQuota: consumePoint,
+    onInsufficientQuota: onEnergyExhausted,
+    queryFn,
+  })
 
   /** 從 votes 集合計算與 global_summary 同型的聚合：百分比與理由排名由消費端依此計算 */
   const summary = useMemo(() => {

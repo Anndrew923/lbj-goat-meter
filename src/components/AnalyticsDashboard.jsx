@@ -32,7 +32,10 @@ function topReasonsFromCounts(counts, labelMap, n = 3) {
     .map(([value]) => ({ value, label: labelMap[value] ?? value }));
 }
 
-export default function AnalyticsDashboard({ authorized = true, filters = {} }) {
+export default function AnalyticsDashboard({
+  authorized = true,
+  filters = {},
+}) {
   const { t, i18n } = useTranslation("common");
   const { summary, loading, error } = useWarzoneData();
   const hasFilters = hasActiveFilters(filters);
