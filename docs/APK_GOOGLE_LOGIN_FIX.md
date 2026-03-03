@@ -53,20 +53,36 @@ cd android
 | SHA-1  | `95:90:4A:60:5C:5A:8B:83:C7:B1:10:10:F7:BD:6C:AD:A5:24:C0:85` |
 | SHA-256 | `12:D8:D3:78:B0:2E:03:75:A2:16:79:E7:A1:7F:F6:62:DB:99:51:A3:47:48:87:4C:68:41:6C:6D:E8:06:83:B3` |
 
-### 必須完成的配置
+### Google Play 官方簽署憑證（商店版 — 必加）
+
+**Boss 已取得 Google Play 官方簽署憑證後，必須將以下指紋加入 Firebase，否則商店版會出現 Google 登入 DEVELOPER_ERROR。**
+
+| 類型    | 指紋 |
+|---------|------|
+| SHA-1   | `87:84:88:6B:9A:B0:CB:97:90:04:36:52:7F:E3:90:99:7C:36:C4:B4` |
+| SHA-256 | `A5:DE:5C:59:7C:E5:CA:0F:15:D0:13:9E:F9:C6:D0:E6:E3:50:87:D3:9B:D4:1F:06:F4:FD:A3:37:11:AF:9D:AB` |
+
+**操作步驟：**
+
+1. 前往 [Firebase Console](https://console.firebase.google.com) → 選擇專案
+2. **專案設定** (齒輪) → **您的應用程式** → 點選 Android 應用（`com.lbjgoatmeter.app`）
+3. 在 **SHA 憑證指紋** 區塊點選 **新增指紋**，依序貼上上述 **SHA-1** 與 **SHA-256**
+4. 儲存後，商店版 APK 的 Google 登入即可正常（與 debug 指紋並存，不影響開發除錯）
+
+### 必須完成的配置（Debug + 商店版）
 
 1. **Firebase Console**
    - 前往 [Firebase Console](https://console.firebase.google.com) → 選擇專案
    - **專案設定** (齒輪) → **您的應用程式**
-   - 若已有 Android 應用（`com.lbjgoatmeter.app`），點選後新增 **指紋**，貼上 SHA-1 與 SHA-256
+   - 若已有 Android 應用（`com.lbjgoatmeter.app`），點選後新增 **指紋**，貼上 **Debug** 與 **Google Play 官方** 的 SHA-1 / SHA-256（見上表）
    - 若尚未新增 Android 應用，先新增 Android 應用，**套件名稱** 填 `com.lbjgoatmeter.app`，再新增上述指紋
 
 2. **Google Cloud Console (Credentials)**
    - 前往 [Google Cloud Console](https://console.cloud.google.com) → 同專案
    - **APIs & Services** → **Credentials**
    - 找到 **OAuth 2.0 Client IDs** 中類型為 **Android** 的用戶端（或為 Firebase 自動建立者）
-   - 確認 **套件名稱** 為 `com.lbjgoatmeter.app`，且 **SHA-1 憑證指紋** 已填入上述 SHA-1
-   - 若無 Android 類型用戶端，可新增 **Android** OAuth 用戶端，套件名稱 `com.lbjgoatmeter.app`，SHA-1 貼上指紋
+   - 確認 **套件名稱** 為 `com.lbjgoatmeter.app`，且 **SHA-1 憑證指紋** 已同時填入 **Debug** 與 **Google Play 官方** 的 SHA-1（開發版與商店版皆需）
+   - 若無 Android 類型用戶端，可新增 **Android** OAuth 用戶端，套件名稱 `com.lbjgoatmeter.app`，並新增上述兩組 SHA-1 指紋
 
 完成後 Firebase 才能為此 APK 簽章核發 **Google ID Token**。
 

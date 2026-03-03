@@ -151,6 +151,17 @@
   "intelGateButton": "Unlock intel",
   "reconPermissionRestricted": "Recon Permission: RESTRICTED",
   "reconPermissionAuthorized": "Recon Permission: AUTHORIZED",
+  "stats": {
+    "globalVoteCount": "Global Intel",
+    "verifiedDate": "Sync Log: {{date}}",
+    "globalSentiment": "Global Pulse",
+    "realTimeVerification": "Live Verify"
+  },
+  "labels": {
+    "battlefield": "WARZONE",
+    "anonymousObserver": "ANON GHOST",
+    "verifying": "DECRYPTING..."
+  },
   "saveError": "Save failed. Please try again.",
   "detectedCountry": "Detected: {{code}}",
   "profileSetupTitle": "Profile setup",

@@ -62,12 +62,14 @@ export default function App() {
         CapApp.exitApp()
         return
       }
-      if (pathname !== '/vote') {
-        navigate('/vote', { replace: true })
+      // 登入頁 '/' 或投票頁 '/vote'：按返回鍵直接喚起離開 Modal（'/' 時若先 navigate('/vote') 會被 ProtectedRoute 踢回造成死循環）
+      if (pathname === '/' || pathname === '/vote') {
+        triggerHaptic(30)
+        setIsExitModalOpen(true)
         return
       }
-      triggerHaptic(30)
-      setIsExitModalOpen(true)
+      // 其他頁（如 /setup、/privacy）：返回鍵先回投票頁
+      navigate('/vote', { replace: true })
     }
 
     const listenerPromise = CapApp.addListener('backButton', handler)

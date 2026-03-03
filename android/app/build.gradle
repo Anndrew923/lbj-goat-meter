@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Google Services / Crashlytics 須在 android 區塊前套用，buildTypes 內 firebaseCrashlytics 才有效
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.exists() && servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+        apply plugin: 'com.google.firebase.crashlytics'
+    }
+} catch (Exception e) {
+    logger.info("google-services.json not found, google-services/crashlytics plugins not applied.")
+}
+
 // 簽章金鑰從外部檔案讀取，不硬編碼（keystore.properties 已加入 .gitignore）
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
@@ -46,8 +57,13 @@ android {
             }
             debuggable false
             manifestPlaceholders = [debuggable: "false"]
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Crashlytics 自動上傳 mapping（bundleRelease 時會執行 uploadCrashlyticsMappingFileRelease）
+            firebaseCrashlytics {
+                mappingFileUploadEnabled true
+            }
         }
     }
 }
@@ -72,11 +88,3 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}

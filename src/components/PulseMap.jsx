@@ -18,6 +18,9 @@ const GEO_URL = '/countries-110m.json'
 const MAP_ASPECT = 'aspect-[2/1]'
 const MAP_CONTAINER_CLASS = `w-full ${MAP_ASPECT} rounded-lg overflow-hidden bg-gray-800/90 border border-gray-600/50 min-h-0`
 
+/** Global Sentiment Map 標題區垂直間距（統一 spacing 變數） */
+const MAP_HEADER_STACK_CLASS = 'flex flex-col items-start gap-1'
+
 /** 地理資料載入前或載入失敗時的靜態網格底圖（與正式地圖容器尺寸一致） */
 function MapStaticGrid({ messageKey = 'loadingMap' }) {
   const { t } = useTranslation('common')
@@ -97,6 +100,37 @@ const COUNTRY_CENTER = {
 const DEFAULT_MAP_CENTER = [20, 20]
 const DEFAULT_MAP_SCALE = 120
 const FOCUSED_MAP_SCALE = 180
+
+/** Global Sentiment Map 顏色圖例（垂直堆疊標題下方用） */
+function GlobalSentimentLegend({ t }) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 text-[11px] text-gray-200"
+      aria-label={t('mapLegend')}
+    >
+      <div className="flex items-center gap-1">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: '#FFD700' }}
+          aria-hidden="true"
+        />
+        <span className="whitespace-nowrap">Support</span>
+      </div>
+      <span className="text-gray-400">·</span>
+      <div className="flex items-center gap-1">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: '#A020F0' }}
+          aria-hidden="true"
+        />
+        <span className="whitespace-nowrap">Oppose</span>
+      </div>
+      <span className="text-gray-300 whitespace-nowrap">
+        (Click a country to filter)
+      </span>
+    </div>
+  )
+}
 
 /** 記憶化地球路徑：除非 geographies / byCountry / selectedCountry / hovered 變更，否則不重算 */
 const MemoizedMapPaths = memo(function MemoizedMapPaths({
@@ -187,9 +221,13 @@ export default function PulseMap({ filters, onFiltersChange }) {
       animate={{ opacity: 1 }}
       className="rounded-xl border border-villain-purple/30 bg-gray-900/80 overflow-hidden"
     >
-      <div className="px-4 py-2 border-b border-villain-purple/20 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-king-gold">{t('globalSentimentMap')}</h3>
-        <p className="text-xs text-gray-500">{t('mapLegend')}</p>
+      <div className="px-4 py-2 border-b border-villain-purple/20">
+        <div className={MAP_HEADER_STACK_CLASS}>
+          <h3 className="text-lg font-bold text-king-gold whitespace-nowrap">
+            {t('globalSentimentMap')}
+          </h3>
+          <GlobalSentimentLegend t={t} />
+        </div>
       </div>
       <div className="p-2">
         <div className={`${MAP_CONTAINER_CLASS} relative`}>

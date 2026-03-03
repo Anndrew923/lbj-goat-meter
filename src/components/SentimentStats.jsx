@@ -70,10 +70,12 @@ function useAnimatedCount(target) {
 }
 
 export default function SentimentStats({ filters = {} }) {
-  const { t } = useTranslation("common");
+  const { t, i18n } = useTranslation("common");
   const { summary, loading, error } = useWarzoneData();
   const hasFilters = hasActiveFilters(filters);
   const { summary: sentimentSummary, loading: sentimentLoading, error: sentimentError } = useSentimentDataContext();
+
+  const isEnglish = i18n.language?.startsWith("en");
 
   const displayData = useMemo(() => {
     if (hasFilters && sentimentSummary) return sentimentSummary;
@@ -166,22 +168,28 @@ export default function SentimentStats({ filters = {} }) {
       className={`rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6 transition-opacity duration-200 ${isLoading && hasFilters ? "opacity-50 pointer-events-none" : ""}`}
       aria-busy={isLoading && hasFilters}
     >
-      {/* 標題與脈衝燈／公信力區：flex 容器自動避讓，手機上下排列、平板左右排列，避免重疊。 */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-2">
-        <h3 className="text-lg font-bold text-king-gold leading-tight max-w-[80%] min-w-0 pr-4">
+      {/* 標題與脈衝燈／公信力區：flex-wrap + no-shrink，確保英文長字串在窄螢幕也不重疊。 */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-2 sm:flex-nowrap sm:items-start">
+        <h3 className="shrink-0 text-lg font-bold text-king-gold leading-tight max-w-full sm:max-w-[80%] min-w-0 pr-4 break-words">
           {t("globalVoteDistribution")}
         </h3>
         <div className="flex flex-col items-end gap-1 shrink-0 self-start sm:self-auto" aria-hidden>
           <span
-            className="text-[10px] font-medium tracking-widest uppercase animate-pulse"
+            className={`font-medium tracking-widest uppercase animate-pulse whitespace-nowrap min-w-max flex-shrink-0 ${
+              isEnglish ? "text-[10px]" : "text-[11px] sm:text-xs"
+            }`}
             style={{ color: RECON_AUTHORIZED_COLOR }}
           >
             GLOBAL PULSE: LIVE
           </span>
           {showVerifiedBadge && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
-              <span className="text-[10px] font-medium tracking-widest uppercase text-green-500/90">
+              <span
+                className={`font-medium tracking-widest uppercase text-green-500/90 whitespace-nowrap min-w-max flex-shrink-0 ${
+                  isEnglish ? "text-[10px]" : "text-[11px] sm:text-xs"
+                }`}
+              >
                 {t("verified_data_status")}
               </span>
             </div>

@@ -5,17 +5,22 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# -----------------------------------------------------------------------------
+# Crashlytics / Play 去模糊化（stack trace 還原）
+# -----------------------------------------------------------------------------
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+-keep public class * extends java.lang.Exception
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# -----------------------------------------------------------------------------
+# WebView / Capacitor：若使用 JS bridge，保留對應 interface 的 class members
+# -----------------------------------------------------------------------------
+# -keepclassmembers class fqcn.of.javascript.interface.for.webview { public *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# -----------------------------------------------------------------------------
+# 避免 R8 過度優化導致反射或 JNI 呼叫失效
+# -----------------------------------------------------------------------------
+-keepattributes Signature
+-keepattributes *Annotation*
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
