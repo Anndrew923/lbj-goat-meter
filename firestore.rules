@@ -42,7 +42,7 @@ service cloud.firestore {
             && data.createdAt <= request.time
             && data.createdAt >= request.time - duration.value(60, 's'));
       return data.starId == 'lbj' // 目前僅開放「天選之子」戰區
-        && data.status in ['goat', 'not_goat', 'washed', 'overrated'] // 立場白名單
+        && data.status in ['goat', 'fraud', 'king', 'mercenary', 'machine', 'stat_padder'] // 立場白名單（需與 STANCES / FIRESTORE_STATUS_WHITELIST 對齊）
         && data.userId == request.auth.uid
         && validCreatedAt;
     }

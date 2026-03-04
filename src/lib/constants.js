@@ -102,6 +102,9 @@ export const GLOBAL_SUMMARY_DOC_ID = 'global_summary'
 /** 立場鍵列表，與 STANCES 順序一致，供 global_summary 計數欄位使用 */
 export const STANCE_KEYS = STANCES.map((s) => s.value)
 
+/** Firestore 規則用投票狀態白名單，需與 STANCE_KEYS 保持同步（firestore.rules 的 isValidVote 需手動更新） */
+export const FIRESTORE_STATUS_WHITELIST = STANCE_KEYS
+
 /** 初始 global_summary 結構（無中生有 / 預熱用），與 WarzoneDataContext.DEFAULT_SUMMARY 對齊 */
 export function getInitialGlobalSummary() {
   return {

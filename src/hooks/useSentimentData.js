@@ -21,8 +21,17 @@
  */
 
 import { useMemo, useCallback } from 'react'
-import { collection, query, where, limit, getDocs } from 'firebase/firestore'
-import { db, isFirebaseReady } from '../lib/firebase'
+import {
+  collection,
+  query,
+  where,
+  limit,
+  getDocs,
+  doc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore'
+import { db, auth, isFirebaseReady } from '../lib/firebase'
 import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from '../lib/constants'
 import { useBarometerQuery } from './useBarometerQuery'
 
@@ -60,6 +69,81 @@ export function hasActiveFilters(filters) {
 
 /** 穩定空篩選參考，避免傳入字面量 {} 導致 useEffect 依賴每輪都變、觸發 Maximum update depth */
 export const EMPTY_FILTERS = Object.freeze({})
+
+/** 從 votes 列表計算與 global_summary 同型的聚合結果 */
+function computeSentimentSummary(list) {
+  const votes = Array.isArray(list) ? list : []
+  const totalVotes = votes.length
+  const byStance = Object.fromEntries(STANCE_KEYS.map((k) => [k, 0]))
+  const reasonCountsLike = {}
+  const reasonCountsDislike = {}
+  const countryCounts = {}
+
+  for (const vote of votes) {
+    const status = vote?.status ?? ''
+    if (STANCE_KEYS.includes(status)) {
+      byStance[status] = (byStance[status] ?? 0) + 1
+    }
+
+    const reasons = Array.isArray(vote?.reasons) ? vote.reasons : []
+    if (PRO_STANCES.has(status)) {
+      for (const r of reasons) {
+        if (r != null && String(r).trim() !== '') {
+          reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1
+        }
+      }
+    } else if (ANTI_STANCES.has(status)) {
+      for (const r of reasons) {
+        if (r != null && String(r).trim() !== '') {
+          reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1
+        }
+      }
+    }
+
+    const cc = String(vote?.country ?? '').toUpperCase().slice(0, 2)
+    if (cc) {
+      const prev = countryCounts[cc] ?? { pro: 0, anti: 0 }
+      countryCounts[cc] = {
+        pro: prev.pro + (PRO_STANCES.has(status) ? 1 : 0),
+        anti: prev.anti + (ANTI_STANCES.has(status) ? 1 : 0),
+      }
+    }
+  }
+
+  return {
+    totalVotes,
+    ...byStance,
+    reasonCountsLike,
+    reasonCountsDislike,
+    countryCounts,
+  }
+}
+
+/** 將本次查詢結果的聚合快照寫入 analytics_pro/{cacheKey}，供後續直接讀取預聚合文件 */
+async function persistAnalyticsPro(cacheKey, starId, filters, summary) {
+  if (!isFirebaseReady || !db) return
+  if (!cacheKey) return
+  try {
+    const ref = doc(db, 'analytics_pro', cacheKey)
+    const ownerUid = auth?.currentUser?.uid ?? null
+    await setDoc(
+      ref,
+      {
+        starId: String(starId || '').trim() || DEFAULT_STAR_ID,
+        summary: summary ?? {},
+        breakdown: {}, // 預留給未來更細粒度分析（例如時間序列 / 雷達圖）
+        filters: filters && typeof filters === 'object' ? filters : {},
+        generatedAt: serverTimestamp(),
+        ownerUid,
+      },
+      { merge: true },
+    )
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      console.warn('[useSentimentData] 寫入 analytics_pro 快照失敗（可忽略）：', e)
+    }
+  }
+}
 
 /**
  * @typedef {Object} SentimentFilters
@@ -119,8 +203,14 @@ export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
 
     const snapshot = await getDocs(q)
     const docs = snapshot.docs ?? []
-    return docs.map((d) => ({ id: d.id, ...d.data() }))
-  }, [starId, pageSize, filterEntries, filters, ttlMs])
+    const list = docs.map((d) => ({ id: d.id, ...d.data() }))
+
+    // 本次實際打到 Firestore 後，將聚合結果預寫入 analytics_pro，作為後續相同 cacheKey 的預算快照
+    const summary = computeSentimentSummary(list)
+    await persistAnalyticsPro(cacheKey, starId, filters, summary)
+
+    return list
+  }, [starId, pageSize, filterEntries, filters, ttlMs, cacheKey])
 
   const { data, loading, error } = useBarometerQuery({
     cacheKey,
@@ -132,47 +222,8 @@ export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
     queryFn,
   })
 
-  /** 從 votes 集合計算與 global_summary 同型的聚合：百分比與理由排名由消費端依此計算 */
   const summary = useMemo(() => {
-    const list = data ?? []
-    const totalVotes = list.length
-    const byStance = Object.fromEntries(STANCE_KEYS.map((k) => [k, 0]))
-    const reasonCountsLike = {}
-    const reasonCountsDislike = {}
-    const countryCounts = {}
-
-    for (const vote of list) {
-      const status = vote.status ?? ''
-      if (STANCE_KEYS.includes(status)) byStance[status] = (byStance[status] ?? 0) + 1
-
-      const reasons = Array.isArray(vote.reasons) ? vote.reasons : []
-      if (PRO_STANCES.has(status)) {
-        for (const r of reasons) {
-          if (r != null && String(r).trim() !== '') reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1
-        }
-      } else if (ANTI_STANCES.has(status)) {
-        for (const r of reasons) {
-          if (r != null && String(r).trim() !== '') reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1
-        }
-      }
-
-      const cc = String(vote.country ?? '').toUpperCase().slice(0, 2)
-      if (cc) {
-        const prev = countryCounts[cc] ?? { pro: 0, anti: 0 }
-        countryCounts[cc] = {
-          pro: prev.pro + (PRO_STANCES.has(status) ? 1 : 0),
-          anti: prev.anti + (ANTI_STANCES.has(status) ? 1 : 0),
-        }
-      }
-    }
-
-    return {
-      totalVotes,
-      ...byStance,
-      reasonCountsLike,
-      reasonCountsDislike,
-      countryCounts,
-    }
+    return computeSentimentSummary(data ?? [])
   }, [data])
 
   return { data, loading, error, summary }
