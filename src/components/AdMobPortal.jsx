@@ -11,6 +11,7 @@ import { motion } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
 import { triggerHapticPattern } from '../utils/hapticUtils'
 import {
+  useAdMobConfig,
   prepareInterstitial,
   showInterstitial,
   addInterstitialListener,
@@ -24,6 +25,7 @@ const HAPTIC_DISMISSED = [20, 40, 20]
 
 export default function AdMobPortal({ open = false, onClose, onWatched }) {
   const location = useLocation()
+  const adMobConfig = useAdMobConfig()
   const onWatchedRef = useRef(onWatched)
   const onCloseRef = useRef(onClose)
   const removeListenersRef = useRef(null)
@@ -94,7 +96,7 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
         Promise.all(removeFns.map((fn) => fn().catch(() => {})))
 
       if (removed) return
-      await prepareInterstitial()
+      await prepareInterstitial({ adId: adMobConfig.adId, isTesting: adMobConfig.isTesting })
       if (removed) return
       await showInterstitial()
     }
@@ -107,7 +109,7 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
       removed = true
       removeListenersRef.current?.()
     }
-  }, [open])
+  }, [open, adMobConfig.adId, adMobConfig.isTesting])
 
   if (!open) return null
   if (location.pathname === '/login') return null

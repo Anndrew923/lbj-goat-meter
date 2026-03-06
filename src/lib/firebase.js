@@ -29,6 +29,13 @@ import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 
+// 強制開啟 Debug Token：必須在 initializeAppCheck 前設定（僅 DEV 環境）。
+// - Web（npm run dev）：瀏覽器 Console 會印出「Firebase App Check debug token」UUID，貼回 Firebase Console > App Check > 管理偵錯權杖。
+// - Android 偵錯版（app-debug.apk）：同上設定後，權杖會由 Firebase SDK 噴出至 Logcat，可搜尋 "Firebase App Check" 或 "debug token" 取得 UUID。
+if (import.meta.env.DEV && typeof self !== 'undefined') {
+  self.FIREBASE_APPCHECK_DEBUG_TOKEN = true
+}
+
 const requiredKeys = [
   'VITE_FIREBASE_API_KEY',
   'VITE_FIREBASE_AUTH_DOMAIN',
@@ -84,13 +91,7 @@ if (config) {
         import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === 'true')
     const recaptchaSiteKey = (import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY ?? '').trim()
     if (typeof window !== 'undefined' && recaptchaSiteKey && !skipAppCheckInDev) {
-      // --- Debug Token（嚴禁提交至正式環境）---
-      // 以下僅供「開發環境」使用：讓本地可通過 App Check 而不依賴 reCAPTCHA 生產金鑰。
-      // VITE_APP_CHECK_DEBUG_TOKEN 必須只存在於 .env.local，且 .env.local 不得提交版控；
-      // 正式環境不得設定此變數，否則會繞過 App Check 驗證，造成安全風險。
-      if (import.meta.env.DEV) {
-        self.FIREBASE_APPCHECK_DEBUG_TOKEN = true
-      }
+      // 若 .env.local 已填入從 Console 抓取的 debug token，則覆寫為該字串以通過驗證（上方已在 DEV 時設為 true 以觸發 Console 噴出 token）
       const debugToken = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN?.trim()
       if (import.meta.env.DEV && debugToken) {
         self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken
