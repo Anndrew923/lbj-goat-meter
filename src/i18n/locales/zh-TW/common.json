@@ -19,6 +19,7 @@
   "verified_data_status": "數據經實時驗證",
   "submitting": "提交中…",
   "submitError": "提交失敗，請稍後再試",
+  "submitErrorPermissionDenied": "權限不足，無法寫入。請重新登入後再試，或聯絡管理員確認 Firestore 規則已部署。",
   "revoteError": "重置時發生錯誤，請重新整理頁面後再試",
   "reloadPage": "重新整理頁面",
   "retry": "重試",

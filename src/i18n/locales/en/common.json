@@ -19,6 +19,7 @@
   "verified_data_status": "VERIFIED DATA",
   "submitting": "Submitting…",
   "submitError": "Submit failed. Please try again.",
+  "submitErrorPermissionDenied": "Permission denied. Try signing out and back in, or ask the admin to deploy Firestore rules.",
   "revoteError": "Reset failed. Please reload the page.",
   "reloadPage": "Reload page",
   "retry": "Retry",

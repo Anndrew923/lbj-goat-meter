@@ -192,8 +192,12 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
       setShowBattleCard(true);
     } catch (err) {
       triggerHaptic([30, 50, 30]);
-      const msg =
-        err?.message != null && typeof err.message === "string"
+      const isPermissionDenied =
+        err?.code === "permission-denied" ||
+        /permission|insufficient|403/i.test(err?.message ?? "");
+      const msg = isPermissionDenied
+        ? t("common:submitErrorPermissionDenied")
+        : err?.message != null && typeof err.message === "string"
           ? err.message
           : t("common:submitError");
       setSubmitError(msg);

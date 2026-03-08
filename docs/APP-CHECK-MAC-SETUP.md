@@ -1,5 +1,33 @@
 # App Check 401 與簽名對齊 — macOS 本地開發檢查清單
 
+---
+
+## 0. 403 診斷流程（Firestore 規則攔阻時）
+
+若寫入 Firestore 出現 **403**，依下列步驟判斷是 App Check 還是業務邏輯問題。
+
+### 1. 臨時規則降級（Diagnostic Mode）
+
+在 **Firestore Rules** 中暫時將 `hasValidAppCheck()` 改為 `return true;`（專案內 `firestore.rules` 已提供註解區塊，可切換）。
+
+- **若這樣能動**：代表 App Check 的 Secret Key 沒在 Firebase 存好，或權杖尚未生效 → 執行下方「2. 儲存 Secret Key」與「3. 強制刷新權杖」。
+- **若這樣還是 403**：代表是 `isValidVote()` 或其它業務邏輯判斷有誤（例如 `starId`、`status` 白名單、`userId` 與 `request.auth.uid` 不一致）。診斷完成後請將規則還原為 `return request.appContext.appCheck != null;`。
+
+### 2. 儲存 Secret Key
+
+請確認 **Firebase Console → App Check → reCAPTCHA v3 提供者 → 密鑰** 已填入與 reCAPTCHA Console 一致的 **Secret Key**（非 Site Key）。  
+若使用下列金鑰，請於上述位置貼上並儲存（此金鑰僅存於 Firebase 後台，勿寫入前端 .env 或版控）：
+
+```
+6LfesYMsAAAAAJv10s6Lo5t8zouut-_THluBDucm
+```
+
+### 3. 強制刷新權杖
+
+客戶端已在交易邏輯前呼叫 `ensureFreshAppCheckToken()`，內部使用 `getToken(appCheckInstance, true)`（`forceRefresh: true`），確保不使用舊快取權杖。若仍 403，請確認 App Check 已成功初始化（Console 無相關錯誤）、且 Secret Key 已正確填入 Firebase。
+
+---
+
 ## 1. Android Debug 指紋（Mac 本機 keystore）
 
 環境遷移至 macOS 後，請將**本機 debug 指紋**同步至 Firebase Console，否則 Android 建置會因簽名不符被拒。
@@ -41,6 +69,14 @@ cd android && ./gradlew signingReport
 
 - `.env` 或 `.env.local` 中的 **`VITE_APP_CHECK_SITE_KEY`** 必須與 Google Cloud Console / Firebase App Check 註冊的 reCAPTCHA v3 **網站金鑰**完全一致。
 - 修改後請重啟 `npm run dev`。
+
+### 100% 嚴謹模式：Web 端密鑰對齊（Site Key + Secret Key）
+
+啟用嚴謹規則前請確保兩邊 100% 對齊，避免 App Check 驗證失敗（403）：
+
+1. **reCAPTCHA Console**：複製 **Secret Key**（非 Site Key；用於後端驗證）。
+2. **Firebase Console → App Check**：在 reCAPTCHA v3 提供者設定中，將「密鑰」欄位重填為上述 **Secret Key**，與 reCAPTCHA Console 完全一致。
+3. **Site Key** 維持在客戶端（`.env.production` / Netlify 的 `VITE_APP_CHECK_SITE_KEY`）；Secret Key 僅存於 Firebase 後端，勿寫入前端環境變數。
 
 ---
 

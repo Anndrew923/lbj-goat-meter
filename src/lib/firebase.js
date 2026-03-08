@@ -25,11 +25,11 @@
  * 備註：Production Android 環境未來需切換或並行 PlayIntegrityProvider。
  */
 import { initializeApp } from 'firebase/app'
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
+import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 
-// Debug Token：僅在 DEV 環境啟用；Production 絕不設定或使用，確保正式環境僅透過 reCAPTCHA v3 Site Key 驗證。
+// Debug Token：僅在 DEV 環境啟用；Production 絕不設定或使用，確保正式環境僅透過 reCAPTCHA v3 或 Enterprise Site Key 驗證。
 // - Web（npm run dev）：瀏覽器 Console 會印出「Firebase App Check debug token」UUID，貼回 Firebase Console > App Check > 管理偵錯權杖。
 // - Android 偵錯版（app-debug.apk）：同上設定後，權杖會由 Firebase SDK 噴出至 Logcat，可搜尋 "Firebase App Check" 或 "debug token" 取得 UUID。
 if (import.meta.env.DEV && typeof self !== 'undefined') {
@@ -70,6 +70,8 @@ let db = null
 let googleProvider = null
 /** App Check 是否已成功啟用；用於 UI 顯示「數據經實時驗證」等公信力標籤的防禦性邏輯。 */
 let appCheckEnabled = false
+/** App Check 實例：用於 Transaction 前強制刷新 Token，確保 100% 嚴謹模式通過規則。 */
+let appCheckInstance = null
 
 const config = buildConfig()
 if (import.meta.env.DEV) {
@@ -82,6 +84,10 @@ if (import.meta.env.DEV) {
 if (config) {
   try {
     app = initializeApp(config)
+    // 診斷：確認實際連線的專案與 App，避免改錯 App Check 的應用程式
+    if (typeof window !== 'undefined') {
+      console.log('[Firebase] 目前連線：projectId =', config.projectId, '| appId =', config.appId)
+    }
 
     // App Check：必須在 db 請求前完成，僅正版 App 請求可進 Firestore
     // 開發環境可設 VITE_APP_CHECK_SKIP_IN_DEV=1 跳過初始化，避免 reCAPTCHA 在 localhost 產生 401（見下方註解）
@@ -89,7 +95,16 @@ if (config) {
       import.meta.env.DEV &&
       (import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === '1' ||
         import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === 'true')
+    // 明確從 VITE_APP_CHECK_SITE_KEY 讀取，與 Netlify 環境變數名稱一致；除錯時可在 Console 執行：console.log('Site Key:', import.meta.env.VITE_APP_CHECK_SITE_KEY)
     const recaptchaSiteKey = (import.meta.env.VITE_APP_CHECK_SITE_KEY ?? '').trim()
+    if (typeof window !== 'undefined') {
+      const keyPreview = recaptchaSiteKey ? `${recaptchaSiteKey.slice(0, 12)}... (長度 ${recaptchaSiteKey.length})` : '(空)'
+      console.log('[Firebase] App Check Site Key (VITE_APP_CHECK_SITE_KEY):', keyPreview)
+      // Production 診斷：若 key 為空，build 時可能未注入環境變數（Netlify 變數名／Clear cache）
+      if (!recaptchaSiteKey) {
+        console.warn('[Firebase] App Check 未啟動：VITE_APP_CHECK_SITE_KEY 為空，請確認 Netlify 環境變數已設定並執行 Clear cache and deploy')
+      }
+    }
     if (typeof window !== 'undefined' && recaptchaSiteKey && !skipAppCheckInDev) {
       // 僅 DEV：若 .env.local 已填入從 Console 抓取的 debug token，則覆寫為該字串；Production 絕不讀取或使用 debugToken。
       if (import.meta.env.DEV) {
@@ -98,19 +113,28 @@ if (config) {
           self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken
         }
       }
+      const useEnterprise =
+        import.meta.env.VITE_APP_CHECK_USE_ENTERPRISE === '1' ||
+        import.meta.env.VITE_APP_CHECK_USE_ENTERPRISE === 'true'
       try {
-        initializeAppCheck(app, {
-          provider: new ReCaptchaV3Provider(recaptchaSiteKey),
+        const provider = useEnterprise
+          ? new ReCaptchaEnterpriseProvider(recaptchaSiteKey)
+          : new ReCaptchaV3Provider(recaptchaSiteKey)
+        appCheckInstance = initializeAppCheck(app, {
+          provider,
           isTokenAutoRefreshEnabled: true, // 自動刷新，確保用戶長久在線時不會斷連
         })
         appCheckEnabled = true
-      } catch (appCheckErr) {
-        if (import.meta.env.DEV) {
-          console.warn(
-            '[Firebase] App Check 初始化失敗，寫入將被規則拒絕（403）：',
-            appCheckErr?.message ?? appCheckErr
-          )
+        if (typeof window !== 'undefined') {
+          console.log('[Firebase] App Check 已啟用（', useEnterprise ? 'reCAPTCHA Enterprise' : 'reCAPTCHA v3', '）')
         }
+      } catch (appCheckErr) {
+        const msg = appCheckErr?.message ?? String(appCheckErr)
+        // Production 也印出，方便排查 403（否則會靜默失敗）
+        console.warn(
+          '[Firebase] App Check 初始化失敗，寫入將被規則拒絕（403）：',
+          msg
+        )
         // 不拋出：auth/db 照常初始化，僅寫入時會因規則觸發 403
       }
     }
@@ -145,10 +169,66 @@ export function hasValidAppCheck() {
   return appCheckEnabled
 }
 
+/**
+ * 在執行多表聯動 Transaction 前強制取得新鮮的 App Check Token，確保 100% 嚴謹模式規則通過。
+ * 設計意圖：嚴謹模式下 hasValidAppCheck() 要求 request.appContext.appCheck 有效，
+ * 若 Token 即將過期或剛過期，先刷新可避免 Transaction 提交時 403。
+ * 401 時會捕捉並拋出明確錯誤訊息，由呼叫端顯示，避免 App 卡死或未處理的 rejection。
+ * @returns {Promise<void>} 若 App Check 未啟用則直接 resolve；否則 await getToken(forceRefresh: true) 後 resolve
+ */
+export async function ensureFreshAppCheckToken() {
+  if (!appCheckInstance || !appCheckEnabled) {
+    // Production 診斷：若從未啟用，投票會 403；原因見上方初始化時的 console 訊息
+    if (typeof window !== 'undefined' && !import.meta.env.DEV) {
+      console.warn('[Firebase] App Check 未啟用，此請求將不會帶 App Check token，嚴謹規則下會 403')
+    }
+    return
+  }
+  try {
+    // forceRefresh: true — 確保不使用舊快取權杖，嚴謹模式規則通過
+    await getToken(appCheckInstance, true)
+  } catch (err) {
+    const msg = err?.message ?? String(err)
+    const is401 = msg.includes('401') || err?.code === 'app-check/unknown' || /unauthorized|401/i.test(msg)
+    console.error(
+      '[Firebase] App Check Token 取得失敗，請確認 reCAPTCHA 金鑰與網域設定。',
+      is401 ? '（可能為 401 Unauthorized：reCAPTCHA Console 授權網域需包含目前網址）' : '',
+      '原始錯誤:',
+      msg
+    )
+    const friendlyMessage = is401
+      ? '驗證失敗（401）：請確認 reCAPTCHA 金鑰與授權網域已包含此站，或聯絡管理員。'
+      : `驗證失敗：${msg}`
+    throw new Error(friendlyMessage)
+  }
+}
+
 if (import.meta.env.DEV && !config) {
   console.warn(
     '[Firebase] 登入故障排查：1) .env 中 VITE_FIREBASE_API_KEY / AUTH_DOMAIN / PROJECT_ID 需與 Firebase 專案設定一致；2) 修改 .env 後須重啟 npm run dev；3) Console > Authentication > Sign-in method 啟用 Google；4) Authentication > Settings > Authorized domains 加入 localhost'
   )
+}
+
+/**
+ * Debug 備案：若部署後仍 403，可在瀏覽器 Console 執行 __debugAppCheckGetToken()
+ * 會呼叫 getToken(forceRefresh: true) 並印出成功／失敗與預覽（不輸出完整 token 以免外洩）
+ */
+if (typeof window !== 'undefined') {
+  window.__debugAppCheckGetToken = async function () {
+    if (!appCheckInstance || !appCheckEnabled) {
+      console.warn('[Firebase] __debugAppCheckGetToken: App Check 未啟用，無 appCheckInstance')
+      return null
+    }
+    try {
+      const token = await getToken(appCheckInstance, true)
+      const preview = token ? `${token.slice(0, 24)}... (長度 ${token.length})` : '(空)'
+      console.log('[Firebase] getToken() 成功，預覽:', preview)
+      return token
+    } catch (err) {
+      console.error('[Firebase] getToken() 失敗:', err?.message ?? err)
+      throw err
+    }
+  }
 }
 
 export { auth, db, googleProvider }

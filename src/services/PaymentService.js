@@ -15,7 +15,7 @@
  * - 客戶端透過 AuthContext 的 refreshEntitlements() 或即時監聽 profiles 取得最新 isPremium。
  */
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
-import { db } from '../lib/firebase'
+import { db, ensureFreshAppCheckToken } from '../lib/firebase'
 
 const SIMULATE_DURATION_MS = 2000
 
@@ -30,6 +30,7 @@ export async function simulatePurchase(userId) {
   await new Promise((resolve) => setTimeout(resolve, SIMULATE_DURATION_MS))
 
   const profileRef = doc(db, 'profiles', userId)
+  await ensureFreshAppCheckToken();
   await runTransaction(db, async (tx) => {
     // 階段一：讀取
     const snap = await tx.get(profileRef)

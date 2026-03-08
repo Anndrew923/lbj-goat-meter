@@ -20,7 +20,7 @@ import {
   where,
   increment,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, ensureFreshAppCheckToken } from "../lib/firebase";
 import i18n from "../i18n/config";
 import { GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS } from "../lib/constants";
 import { revokeVote as voteServiceRevokeVote, computeGlobalDeductions, computeWarzoneDeltas } from "./VoteService";
@@ -80,6 +80,7 @@ export async function deleteAccountData(uid) {
   const deletedVoteIds = [];
 
   try {
+    await ensureFreshAppCheckToken();
     await runTransaction(db, async (tx) => {
       // ========== 階段一：所有讀取（禁止在後續出現任何 get） ==========
       const profileSnap = await tx.get(profileRef);

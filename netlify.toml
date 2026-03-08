@@ -5,6 +5,13 @@
   command = "npm run build"
   publish = "dist"
 
+# 嚴謹 App Check：讓 reCAPTCHA 能驗證請求來源，必須對跨站請求帶上 Referer
+# no-referrer-when-downgrade = 對同源與 HTTPS 跨站（如 google.com）送出來源，reCAPTCHA 依此驗證網域
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Referrer-Policy = "no-referrer-when-downgrade"
+
 # SPA：所有路徑回傳 index.html，由 React Router 處理
 [[redirects]]
   from = "/*"

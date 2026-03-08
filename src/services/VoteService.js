@@ -15,7 +15,7 @@ import {
   increment,
   deleteField,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, ensureFreshAppCheckToken } from "../lib/firebase";
 import i18n from "../i18n/config";
 import {
   GLOBAL_SUMMARY_DOC_ID,
@@ -47,109 +47,125 @@ export async function submitVote(userId, { selectedStance, selectedReasons, devi
   const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
   const deviceLockRef = doc(db, "device_locks", deviceIdStr);
 
-  await runTransaction(db, async (tx) => {
-    const profileSnap = await tx.get(profileRef);
-    if (!profileSnap?.exists?.()) throw new Error(getMessage("common:completeProfileFirst"));
-    const data = profileSnap?.data?.() ?? {};
-    if (data.hasVoted === true) throw new Error(getMessage("common:alreadyVoted"));
-    const warzoneId = String(data.warzoneId ?? data.voterTeam ?? "").trim();
-    if (!warzoneId) throw new Error(getMessage("common:error_warzoneRequired"));
+  const runVoteTransaction = async () => {
+    await ensureFreshAppCheckToken();
+    return runTransaction(db, async (tx) => {
+      const profileSnap = await tx.get(profileRef);
+      if (!profileSnap?.exists?.()) throw new Error(getMessage("common:completeProfileFirst"));
+      const data = profileSnap?.data?.() ?? {};
+      if (data.hasVoted === true) throw new Error(getMessage("common:alreadyVoted"));
+      const warzoneId = String(data.warzoneId ?? data.voterTeam ?? "").trim();
+      if (!warzoneId) throw new Error(getMessage("common:error_warzoneRequired"));
 
-    const deviceLockSnap = await tx.get(deviceLockRef);
-    if (deviceLockSnap?.exists?.()) {
-      const lockData = deviceLockSnap.data() ?? {};
-      if (lockData.active === true) throw new Error(getMessage("common:error_deviceAlreadyVoted"));
-    }
+      const deviceLockSnap = await tx.get(deviceLockRef);
+      if (deviceLockSnap?.exists?.()) {
+        const lockData = deviceLockSnap.data() ?? {};
+        if (lockData.active === true) throw new Error(getMessage("common:error_deviceAlreadyVoted"));
+      }
 
-    const globalSnap = await tx.get(globalSummaryRef);
-    const globalData = !globalSnap?.exists?.()
-      ? getInitialGlobalSummary()
-      : (() => {
-          const d = globalSnap.data();
-          return {
-            totalVotes: typeof d.totalVotes === "number" ? d.totalVotes : 0,
-            recentVotes: Array.isArray(d.recentVotes) ? d.recentVotes : [],
-            reasonCountsLike: isObject(d.reasonCountsLike) ? d.reasonCountsLike : {},
-            reasonCountsDislike: isObject(d.reasonCountsDislike) ? d.reasonCountsDislike : {},
-            countryCounts: isObject(d.countryCounts) ? d.countryCounts : {},
-            ...Object.fromEntries(STANCE_KEYS.map((k) => [k, typeof d[k] === "number" ? d[k] : 0])),
-          };
-        })();
+      const globalSnap = await tx.get(globalSummaryRef);
+      const globalData = !globalSnap?.exists?.()
+        ? getInitialGlobalSummary()
+        : (() => {
+            const d = globalSnap.data();
+            return {
+              totalVotes: typeof d.totalVotes === "number" ? d.totalVotes : 0,
+              recentVotes: Array.isArray(d.recentVotes) ? d.recentVotes : [],
+              reasonCountsLike: isObject(d.reasonCountsLike) ? d.reasonCountsLike : {},
+              reasonCountsDislike: isObject(d.reasonCountsDislike) ? d.reasonCountsDislike : {},
+              countryCounts: isObject(d.countryCounts) ? d.countryCounts : {},
+              ...Object.fromEntries(STANCE_KEYS.map((k) => [k, typeof d[k] === "number" ? d[k] : 0])),
+            };
+          })();
 
-    const newVoteRef = doc(votesRef);
-    tx.set(newVoteRef, {
-      starId: STAR_ID,
-      userId,
-      deviceId: deviceIdStr,
-      status: selectedStance,
-      reasons: selectedReasons,
-      warzoneId,
-      voterTeam: warzoneId,
-      ageGroup: data.ageGroup ?? "",
-      gender: data.gender ?? "",
-      country: data.country ?? "",
-      city: data.city ?? "",
-      hadWarzoneStats: true,
-      createdAt: serverTimestamp(),
-    });
-    tx.set(deviceLockRef, {
-      lastVoteId: newVoteRef.id,
-      active: true,
-      updatedAt: serverTimestamp(),
-    });
-
-    const warzoneStatsRef = doc(db, "warzoneStats", warzoneId);
-    tx.set(warzoneStatsRef, { totalVotes: increment(1), [selectedStance]: increment(1) }, { merge: true });
-
-    const newTotal = globalData.totalVotes + 1;
-    const stanceCounts = {};
-    STANCE_KEYS.forEach((key) => {
-      stanceCounts[key] = globalData[key] + (key === selectedStance ? 1 : 0);
-    });
-    const newRecentEntry = {
-      status: selectedStance,
-      city: data.city ?? "",
-      country: data.country ?? "",
-      voterTeam: warzoneId,
-      createdAt: Timestamp.now(),
-    };
-    const newRecentVotes = [newRecentEntry, ...globalData.recentVotes].slice(0, 10);
-    const reasonCountsLike = { ...(globalData.reasonCountsLike ?? {}) };
-    const reasonCountsDislike = { ...(globalData.reasonCountsDislike ?? {}) };
-    (selectedReasons || []).forEach((r) => {
-      if (PRO_STANCES.has(selectedStance)) reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
-      else if (ANTI_STANCES.has(selectedStance)) reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
-    });
-    const countryCounts = { ...(globalData.countryCounts ?? {}) };
-    const cc = String(data.country ?? "").toUpperCase().slice(0, 2);
-    if (cc) {
-      const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };
-      countryCounts[cc] = {
-        pro: (prev.pro ?? 0) + (PRO_STANCES.has(selectedStance) ? 1 : 0),
-        anti: (prev.anti ?? 0) + (ANTI_STANCES.has(selectedStance) ? 1 : 0),
-      };
-    }
-    tx.set(
-      globalSummaryRef,
-      {
-        totalVotes: newTotal,
-        ...stanceCounts,
-        recentVotes: newRecentVotes,
-        reasonCountsLike,
-        reasonCountsDislike,
-        countryCounts,
+      const newVoteRef = doc(votesRef);
+      tx.set(newVoteRef, {
+        starId: STAR_ID,
+        userId,
+        deviceId: deviceIdStr,
+        status: selectedStance,
+        reasons: selectedReasons,
+        warzoneId,
+        voterTeam: warzoneId,
+        ageGroup: data.ageGroup ?? "",
+        gender: data.gender ?? "",
+        country: data.country ?? "",
+        city: data.city ?? "",
+        hadWarzoneStats: true,
+        createdAt: serverTimestamp(),
+      });
+      tx.set(deviceLockRef, {
+        lastVoteId: newVoteRef.id,
+        active: true,
         updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-    tx.update(profileRef, {
-      hasVoted: true,
-      currentStance: selectedStance,
-      currentReasons: selectedReasons,
-      currentVoteId: newVoteRef.id,
-      updatedAt: serverTimestamp(),
+      });
+
+      const warzoneStatsRef = doc(db, "warzoneStats", warzoneId);
+      tx.set(warzoneStatsRef, { totalVotes: increment(1), [selectedStance]: increment(1) }, { merge: true });
+
+      const newTotal = globalData.totalVotes + 1;
+      const stanceCounts = {};
+      STANCE_KEYS.forEach((key) => {
+        stanceCounts[key] = globalData[key] + (key === selectedStance ? 1 : 0);
+      });
+      const newRecentEntry = {
+        status: selectedStance,
+        city: data.city ?? "",
+        country: data.country ?? "",
+        voterTeam: warzoneId,
+        createdAt: Timestamp.now(),
+      };
+      const newRecentVotes = [newRecentEntry, ...globalData.recentVotes].slice(0, 10);
+      const reasonCountsLike = { ...(globalData.reasonCountsLike ?? {}) };
+      const reasonCountsDislike = { ...(globalData.reasonCountsDislike ?? {}) };
+      (selectedReasons || []).forEach((r) => {
+        if (PRO_STANCES.has(selectedStance)) reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
+        else if (ANTI_STANCES.has(selectedStance)) reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
+      });
+      const countryCounts = { ...(globalData.countryCounts ?? {}) };
+      const cc = String(data.country ?? "").toUpperCase().slice(0, 2);
+      if (cc) {
+        const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };
+        countryCounts[cc] = {
+          pro: (prev.pro ?? 0) + (PRO_STANCES.has(selectedStance) ? 1 : 0),
+          anti: (prev.anti ?? 0) + (ANTI_STANCES.has(selectedStance) ? 1 : 0),
+        };
+      }
+      tx.set(
+        globalSummaryRef,
+        {
+          totalVotes: newTotal,
+          ...stanceCounts,
+          recentVotes: newRecentVotes,
+          reasonCountsLike,
+          reasonCountsDislike,
+          countryCounts,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      tx.update(profileRef, {
+        hasVoted: true,
+        currentStance: selectedStance,
+        currentReasons: selectedReasons,
+        currentVoteId: newVoteRef.id,
+        updatedAt: serverTimestamp(),
+      });
     });
-  });
+  };
+
+  try {
+    await runVoteTransaction();
+  } catch (err) {
+    const isPermissionDenied =
+      err?.code === "permission-denied" || /permission|insufficient|403/i.test(err?.message ?? "");
+    if (isPermissionDenied) {
+      await ensureFreshAppCheckToken();
+      await runVoteTransaction();
+    } else {
+      throw err;
+    }
+  }
 }
 
 export async function revokeVote(uid, resetProfile = false) {
@@ -159,6 +175,7 @@ export async function revokeVote(uid, resetProfile = false) {
   const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
   let deletedVoteId = null;
 
+  await ensureFreshAppCheckToken();
   await runTransaction(db, async (tx) => {
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap?.exists?.()) throw new Error(i18n.t("common:error_profileNotFoundRevote"));
