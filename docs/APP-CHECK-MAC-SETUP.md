@@ -39,7 +39,7 @@ cd android && ./gradlew signingReport
 
 ### 金鑰與 .env 一致
 
-- `.env` 或 `.env.local` 中的 **`VITE_RECAPTCHA_V3_SITE_KEY`** 必須與 Google Cloud Console / Firebase App Check 註冊的 reCAPTCHA v3 **網站金鑰**完全一致。
+- `.env` 或 `.env.local` 中的 **`VITE_APP_CHECK_SITE_KEY`** 必須與 Google Cloud Console / Firebase App Check 註冊的 reCAPTCHA v3 **網站金鑰**完全一致。
 - 修改後請重啟 `npm run dev`。
 
 ---
