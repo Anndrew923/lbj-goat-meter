@@ -42,7 +42,7 @@ createRoot(document.getElementById('root')).render(
         <div style="margin-top: 10px; padding: 8px; background: ${status === 'SUCCESS' ? '#050' : '#500'}; color: #fff; text-align: center; border-radius: 4px; font-weight: bold;">
           ${status === 'SUCCESS' ? '✅ 網域與金鑰匹配成功' : '❌ 驗證失敗 (401/400)'}
         </div>
-        ${error ? \`<div style="color: #ffb8b8; font-size: 11px; margin-top: 8px; white-space: pre-wrap; border-top: 1px solid #444; pt: 5px;">原因: ${error}</div>\` : ''}
+        ${error ? `<div style="color: #ffb8b8; font-size: 11px; margin-top: 8px; white-space: pre-wrap; border-top: 1px solid #444; pt: 5px;">原因: ${error}</div>` : ''}
         <div style="font-size: 10px; color: #666; margin-top: 8px; text-align: right;">v3 Standard Only</div>
       `;
     };
