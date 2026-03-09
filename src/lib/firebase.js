@@ -147,7 +147,7 @@ export function hasValidAppCheck() {
 
 /**
  * 在執行多表聯動 Transaction 前強制取得新鮮的 App Check Token，確保 100% 嚴謹模式規則通過。
- * 設計意圖：嚴謹模式下 hasValidAppCheck() 要求 request.appContext.appCheck 有效，
+ * 設計意圖：嚴謹模式下 hasValidAppCheck() 要求 request.appCheck 有效，
  * 若 Token 即將過期或剛過期，先刷新可避免 Transaction 提交時 403。
  * 401 時會捕捉並拋出明確錯誤訊息，由呼叫端顯示，避免 App 卡死或未處理的 rejection。
  * @returns {Promise<void>} 若 App Check 未啟用則直接 resolve；否則 await getToken(forceRefresh: true) 後 resolve
