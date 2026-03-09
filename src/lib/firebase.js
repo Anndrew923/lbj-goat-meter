@@ -25,16 +25,41 @@
  * 備註：Production Android 環境未來需切換或並行 PlayIntegrityProvider。
  */
 import { initializeApp } from 'firebase/app'
-import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from 'firebase/app-check'
+import { getToken, initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 
-// Debug Token：僅在 DEV 環境啟用；Production 絕不設定或使用，確保正式環境僅透過 reCAPTCHA v3 或 Enterprise Site Key 驗證。
-// - Web（npm run dev）：瀏覽器 Console 會印出「Firebase App Check debug token」UUID，貼回 Firebase Console > App Check > 管理偵錯權杖。
-// - Android 偵錯版（app-debug.apk）：同上設定後，權杖會由 Firebase SDK 噴出至 Logcat，可搜尋 "Firebase App Check" 或 "debug token" 取得 UUID。
-if (import.meta.env.DEV && typeof self !== 'undefined') {
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN = true
-}
+// Bruce: 這是 Standard v3 專用版，已徹底移除 Enterprise (Lite) 分支邏輯
+
+/**
+ * 初始化 Firebase App Check
+ * 強制使用 reCAPTCHA v3 Standard
+ */
+const initAppCheck = (app) => {
+  if (import.meta.env.DEV) {
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  }
+
+  const siteKey = import.meta.env.VITE_APP_CHECK_SITE_KEY;
+
+  if (!siteKey) {
+    console.warn('[Firebase] 找不到 App Check Site Key，略過初始化。');
+    return null;
+  }
+
+  try {
+    // 強制使用 ReCaptchaV3Provider，確保對接的是標準版金鑰
+    const appCheck = initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(siteKey),
+      isTokenAutoRefreshEnabled: true
+    });
+    console.log('[Firebase] App Check 已啟用 (reCAPTCHA v3 Standard)');
+    return appCheck;
+  } catch (error) {
+    console.error('[Firebase] App Check 初始化失敗:', error);
+    return null;
+  }
+};
 
 const requiredKeys = [
   'VITE_FIREBASE_API_KEY',
@@ -90,58 +115,9 @@ if (config) {
     }
 
     // App Check：必須在 db 請求前完成，僅正版 App 請求可進 Firestore
-    // 開發環境可設 VITE_APP_CHECK_SKIP_IN_DEV=1 跳過初始化，避免 reCAPTCHA 在 localhost 產生 401（見下方註解）
-    const skipAppCheckInDev =
-      import.meta.env.DEV &&
-      (import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === '1' ||
-        import.meta.env.VITE_APP_CHECK_SKIP_IN_DEV === 'true')
-    // 明確從 VITE_APP_CHECK_SITE_KEY 讀取，與 Netlify 環境變數名稱一致；除錯時可在 Console 執行：console.log('Site Key:', import.meta.env.VITE_APP_CHECK_SITE_KEY)
-    const recaptchaSiteKey = (import.meta.env.VITE_APP_CHECK_SITE_KEY ?? '').trim()
     if (typeof window !== 'undefined') {
-      const keyPreview = recaptchaSiteKey ? `${recaptchaSiteKey.slice(0, 12)}... (長度 ${recaptchaSiteKey.length})` : '(空)'
-      console.log('[Firebase] App Check Site Key (VITE_APP_CHECK_SITE_KEY):', keyPreview)
-      // Production 診斷：若 key 為空，build 時可能未注入環境變數（Netlify 變數名／Clear cache）
-      if (!recaptchaSiteKey) {
-        console.warn('[Firebase] App Check 未啟動：VITE_APP_CHECK_SITE_KEY 為空，請確認 Netlify 環境變數已設定並執行 Clear cache and deploy')
-      }
-    }
-    if (typeof window !== 'undefined' && recaptchaSiteKey && !skipAppCheckInDev) {
-      // 僅 DEV：若 .env.local 已填入從 Console 抓取的 debug token，則覆寫為該字串；Production 絕不讀取或使用 debugToken。
-      if (import.meta.env.DEV) {
-        const debugToken = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN?.trim()
-        if (debugToken) {
-          self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken
-        }
-      }
-      const useEnterprise =
-        import.meta.env.VITE_APP_CHECK_USE_ENTERPRISE === '1' ||
-        import.meta.env.VITE_APP_CHECK_USE_ENTERPRISE === 'true'
-      try {
-        const provider = useEnterprise
-          ? new ReCaptchaEnterpriseProvider(recaptchaSiteKey)
-          : new ReCaptchaV3Provider(recaptchaSiteKey)
-        appCheckInstance = initializeAppCheck(app, {
-          provider,
-          isTokenAutoRefreshEnabled: true, // 自動刷新，確保用戶長久在線時不會斷連
-        })
-        appCheckEnabled = true
-        if (typeof window !== 'undefined') {
-          console.log('[Firebase] App Check 已啟用（', useEnterprise ? 'reCAPTCHA Enterprise' : 'reCAPTCHA v3', '）')
-        }
-      } catch (appCheckErr) {
-        const msg = appCheckErr?.message ?? String(appCheckErr)
-        // Production 也印出，方便排查 403（否則會靜默失敗）
-        console.warn(
-          '[Firebase] App Check 初始化失敗，寫入將被規則拒絕（403）：',
-          msg
-        )
-        // 不拋出：auth/db 照常初始化，僅寫入時會因規則觸發 403
-      }
-    }
-    if (import.meta.env.DEV && skipAppCheckInDev) {
-      console.info(
-        '[Firebase] App Check 已在開發環境跳過（VITE_APP_CHECK_SKIP_IN_DEV），不會向 reCAPTCHA 發送請求；正式環境不受影響。'
-      )
+      appCheckInstance = initAppCheck(app)
+      appCheckEnabled = !!appCheckInstance
     }
 
     auth = getAuth(app)
