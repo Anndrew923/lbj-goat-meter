@@ -15,7 +15,7 @@ service cloud.firestore {
 
     // 嚴謹模式：僅允許帶有有效 App Check Token 的請求（防腳本／未授權客戶端）
     function hasValidAppCheck() {
-      return request.appContext.appCheck != null;
+      return request.appCheck != null;
     }
 
     // --- 業務邏輯校驗 ---
