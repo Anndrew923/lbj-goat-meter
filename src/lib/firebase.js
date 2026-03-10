@@ -25,15 +25,15 @@
  * 備註：Production Android 環境未來需切換或並行 PlayIntegrityProvider。
  */
 import { initializeApp } from 'firebase/app'
-import { getToken, initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
+import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 
-// Bruce: 這是 Standard v3 專用版，已徹底移除 Enterprise (Lite) 分支邏輯
+// 與 Firebase Console 一致：使用 reCAPTCHA Enterprise（GCP 管理之金鑰）
 
 /**
  * 初始化 Firebase App Check
- * 強制使用 reCAPTCHA v3 Standard
+ * 使用 ReCaptchaEnterpriseProvider，對接 Firebase Console 的 reCAPTCHA Enterprise 設定
  */
 const initAppCheck = (app) => {
   if (import.meta.env.DEV) {
@@ -48,12 +48,11 @@ const initAppCheck = (app) => {
   }
 
   try {
-    // 強制使用 ReCaptchaV3Provider，確保對接的是標準版金鑰
     const appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(siteKey),
+      provider: new ReCaptchaEnterpriseProvider(siteKey),
       isTokenAutoRefreshEnabled: true
     });
-    console.log('[Firebase] App Check 已啟用 (reCAPTCHA v3 Standard)');
+    console.log('[Firebase] App Check 已啟用 (reCAPTCHA Enterprise)');
     return appCheck;
   } catch (error) {
     console.error('[Firebase] App Check 初始化失敗:', error);

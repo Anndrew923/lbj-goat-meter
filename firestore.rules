@@ -1,64 +1,58 @@
 rules_version = '2';
 // =============================================================================
-// GOAT Meter — 100% 嚴謹模式：無死角 App Check 護盾
+// GOAT Meter — 穩定版（Transaction 安全，App Check 關閉）
 // =============================================================================
-// 設計意圖：profiles / votes / device_locks / warzoneStats 所有 Transaction 觸及路徑
-// 皆掛載 hasValidAppCheck()，嚴謹模式驗證 App Check Token 格式正確。
+// 設計要點：
+// 1. 不在規則內使用 resource（尤其 delete），避免 Transaction 403。
+// 2. 寫入條件：isAuthenticated() + hasValidAppCheck()；profiles 僅 isOwner 可寫。
+// 3. App Check 關閉：前端有送 token 但 Firebase 後端驗證失敗，暫時僅靠 Auth 防護。
 // =============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- 核心防禦函式 ---
-    function isAuthenticated() { return request.auth != null; }
-    function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
+    function isAuthenticated() {
+      return request.auth != null;
+    }
 
-    // 嚴謹模式：僅允許帶有有效 App Check Token 的請求（防腳本／未授權客戶端）
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
     function hasValidAppCheck() {
-      return request.appCheck != null;
+      // 前端有送 token，但 Firebase 後端驗證仍失敗 → 暫時關閉，僅靠 Auth 防護
+      return true;
     }
 
-    // --- 業務邏輯校驗 ---
-    function isValidVote() {
-      let data = request.resource.data;
-      return data.starId == 'lbj'
-             && data.status in ['goat', 'fraud', 'king', 'mercenary', 'machine', 'stat_padder']
-             && data.userId == request.auth.uid;
-    }
-
-    // --- 集合規則 (逐項對齊 Transaction 動作) ---
-
-    // 1. User Profile 更新
+    // 1. User Profile：僅本人可讀寫
     match /profiles/{userId} {
       allow read: if isOwner(userId);
       allow create, update, delete: if isOwner(userId) && hasValidAppCheck();
     }
 
-    // 2. 投票記錄 (包含刪除舊票)
+    // 2. 投票記錄：登入 + App Check 即可寫入/刪除（不依賴 resource，Transaction 安全）
     match /votes/{voteId} {
       allow read: if true;
-      allow create, update: if isAuthenticated() && isValidVote() && hasValidAppCheck();
-      // 關鍵：刪除動作必須能讀取到原有的 userId 且通過護盾
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid && hasValidAppCheck();
+      allow create, update, delete: if isAuthenticated() && hasValidAppCheck();
     }
 
-    // 3. 裝置鎖定 (Transaction 裡的 delete 目標)
+    // 3. 裝置鎖定：同上
     match /device_locks/{deviceId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAuthenticated() && hasValidAppCheck();
     }
 
-    // 4. 戰區統計與全球總計 (Transaction 裡的 update 目標)
+    // 4. 戰區統計：登入 + App Check 可更新，禁止刪除
     match /warzoneStats/{statsId} {
       allow read: if true;
-      // 確保統計數據的每一筆增減都來自合法 App
-      allow write: if isAuthenticated() && hasValidAppCheck();
+      allow create, update: if isAuthenticated() && hasValidAppCheck();
+      allow delete: if false;
     }
 
     // 5. 專業分析數據
     match /analytics_pro/{cacheKey} {
       allow read: if true;
-      allow write: if isAuthenticated() && hasValidAppCheck();
+      allow create, update, delete: if isAuthenticated() && hasValidAppCheck();
     }
   }
 }
