@@ -398,6 +398,8 @@ export function AuthProvider({ children }) {
           msg = i18n.t("common:voteError_deviceAlreadyVoted");
         } else if (backendCode === "ad-not-watched") {
           msg = i18n.t("common:voteError_adNotWatched");
+        } else if (backendCode === "reset-internal") {
+          msg = i18n.t("common:voteError_resetInternal");
         } else {
           msg = err?.message ?? i18n.t("common:revoteError");
         }

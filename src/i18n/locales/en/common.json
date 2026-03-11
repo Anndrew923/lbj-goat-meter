@@ -26,6 +26,7 @@
   "voteError_lowScoreRobot": "Security check failed. If you are human, please retry or refresh the page.",
   "voteError_deviceAlreadyVoted": "This device has already left its mark in this warzone. One device, one vote.",
   "voteError_adNotWatched": "Resetting stance requires a rewarded ad. Please watch the ad to completion.",
+  "voteError_resetInternal": "System busy. Please try again later.",
   "revoteError": "Reset failed. Please reload the page.",
   "reloadPage": "Reload page",
   "retry": "Retry",

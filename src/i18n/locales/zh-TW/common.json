@@ -26,6 +26,7 @@
   "voteError_lowScoreRobot": "安全驗證未通過。若您是真人，請重新嘗試或更新頁面。",
   "voteError_deviceAlreadyVoted": "此裝置已在本次戰場中留下足跡，一人限投一票。",
   "voteError_adNotWatched": "重置立場需要消耗廣告獎勵，請完整觀看廣告。",
+  "voteError_resetInternal": "系統忙碌，請稍後再試。",
   "revoteError": "重置時發生錯誤，請重新整理頁面後再試",
   "reloadPage": "重新整理頁面",
   "retry": "重試",
