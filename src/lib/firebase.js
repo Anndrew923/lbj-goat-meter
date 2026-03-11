@@ -47,6 +47,13 @@ const initAppCheck = (app) => {
     return null;
   }
 
+  // 診斷：生產環境 400 時可對照 Firebase Console 的網站金鑰前綴，確認 Netlify 建置帶入的 key 是否一致（不輸出完整 key）
+  if (typeof window !== 'undefined' && !import.meta.env.DEV) {
+    const prefix = siteKey.slice(0, 12);
+    const len = siteKey.length;
+    console.log('[Firebase] App Check Site Key 前綴:', prefix, '… 長度:', len);
+  }
+
   try {
     const appCheck = initializeAppCheck(app, {
       provider: new ReCaptchaEnterpriseProvider(siteKey),

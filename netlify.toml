@@ -7,10 +7,13 @@
 
 # 嚴謹 App Check：讓 reCAPTCHA 能驗證請求來源，必須對跨站請求帶上 Referer
 # no-referrer-when-downgrade = 對同源與 HTTPS 跨站（如 google.com）送出來源，reCAPTCHA 依此驗證網域
+# COEP/COOP = unsafe-none：避免 Netlify 預設或瀏覽器嚴格模式擋下 reCAPTCHA 從 gstatic.com 載入的 logo／資源（否則會出現 304 + ERR_BLOCKED_BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep）
 [[headers]]
   for = "/*"
   [headers.values]
     Referrer-Policy = "no-referrer-when-downgrade"
+    Cross-Origin-Opener-Policy = "unsafe-none"
+    Cross-Origin-Embedder-Policy = "unsafe-none"
 
 # SPA：所有路徑回傳 index.html，由 React Router 處理
 [[redirects]]
