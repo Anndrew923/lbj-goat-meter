@@ -55,6 +55,16 @@ function requireAuth(context) {
 export const submitVote = functions.https.onCall(async (data, context) => {
   requireAuth(context);
 
+  try {
+    return await runSubmitVote(data, context);
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    console.error("[submitVote] Unexpected error:", err?.message);
+    throw new functions.https.HttpsError("internal", "Vote failed", { code: "vote-internal" });
+  }
+});
+
+async function runSubmitVote(data, context) {
   const { voteData, recaptchaToken } = data || {};
   const uid = context.auth.uid;
 
@@ -256,7 +266,7 @@ export const submitVote = functions.https.onCall(async (data, context) => {
   });
 
   return { ok: true };
-});
+}
 
 /**
  * resetPosition — 看完廣告後重置立場。

@@ -41,6 +41,9 @@ function getVoteFunctionErrorMessage(err, getMessage) {
   if (backendCode === "ad-not-watched") {
     return getMessage("common:voteError_adNotWatched");
   }
+  if (backendCode === "vote-internal") {
+    return getMessage("common:voteError_voteInternal");
+  }
 
   const fallback =
     (err?.message && typeof err.message === "string" && err.message) ||

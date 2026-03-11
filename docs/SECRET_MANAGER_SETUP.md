@@ -106,3 +106,12 @@
 - 後端日誌中可確認 `[submitVote] metadata` 是否正確記錄 `ip` 與 `userAgent`，供後續社會風向計人工審核使用。
 
 完成上述設定後，即完成 Production 安全硬化與正式環境 Secret 綁定；部署至正式環境後請依 Staging 驗收項目執行驗收。
+
+---
+
+## 6. 投票 500 / vote-internal 排查
+
+若 **submitVote** 回傳 500 或前端顯示「投票服務忙碌」（code: `vote-internal`），代表後端發生未預期錯誤。請到 [Firebase Console → Functions → 日誌](https://console.firebase.google.com/) 查看 `[submitVote] Unexpected error:` 的詳細訊息。常見原因：
+
+- **Missing RECAPTCHA_SECRET**：Cloud Functions 環境變數未設定 `RECAPTCHA_SECRET`（投票會呼叫 reCAPTCHA 驗證）。請依本章節將 Secret 綁定到 Functions 環境。
+- 其他例外（如 Firestore 權限、網路）：依日誌內容修正後重新部署。
