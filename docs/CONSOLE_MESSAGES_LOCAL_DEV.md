@@ -22,7 +22,7 @@
 |------|------------|
 | `[Firebase] 找不到 App Check Site Key (未初始化)` | 本地未設 `VITE_APP_CHECK_SITE_KEY` 時會略過 App Check。**正式環境**需在 Netlify 設定該變數並部署。 |
 | `[RecaptchaService] grecaptcha 未就緒...` | 可能為瀏覽器擴充、擋廣告或網路阻擋。本地因 `shouldBypassHardSecurity` 仍可投票／重置。**正式環境**需確保 reCAPTCHA 可連線。 |
-| `POST ... recaptcha/api2/pat 401 (Unauthorized)` | 常與 App Check 使用 reCAPTCHA Enterprise 或金鑰／網域設定有關。本地不影響投票／重置（後端 bypass）。**正式環境**須確認 reCAPTCHA 金鑰與網域正確，並依 [SECRET_MANAGER_SETUP.md](./SECRET_MANAGER_SETUP.md) 設定後端 Secret。 |
+| `POST ... recaptcha/api2/pat 401` 或 `api2/payload 401` | **系統故意為之**：reCAPTCHA 的 Private Access Token (PAT) 流程會刻意回 401 以偵測裝置能力，不影響 token 取得與投票。詳見 [DEPLOY-DIAGNOSIS-401.md](./DEPLOY-DIAGNOSIS-401.md)。若**投票有成功**可視為正常、無須消滅。 |
 
 ---
 

@@ -3,7 +3,7 @@
  *
  * 設計意圖：
  * - 原生 (Capacitor)：使用 @capacitor-community/admob 的 prepareRewardVideoAd + showRewardVideoAd，觀看完成後向後端取得簽章 Token。
- * - Web：若 host 注入 window.goatRewardedAds.showAd()，則使用該 SDK 後同樣向後端取得 Token；正式網域無 SDK 時不提供模擬，直接拋錯。
+ * - Web：若 host 注入 window.goatRewardedAds.showAd()，則使用該 SDK 後向後端取得 Token；正式網域無 SDK 時改向後端 issueAdRewardToken 取得簽章 Token（網頁版過渡方案），仍可完成重置。
  * - 一律以後端 issueAdRewardToken 簽發之 Token 作為 resetPosition 的 adRewardToken，確保驗證邏輯集中於後端。
  */
 
@@ -74,7 +74,7 @@ async function showNativeRewardedAd() {
  * 顯示重置立場用的 Rewarded Ad，並在成功完整觀看後回傳 adRewardToken。
  *
  * - 原生：AdMob 獎勵影片 → 後端 issueAdRewardToken。
- * - Web：若存在 window.goatRewardedAds.showAd，則呼叫後再向後端取得 Token；僅 localhost 開發時允許無 SDK 模擬。
+ * - Web：若存在 window.goatRewardedAds.showAd 則先播廣告再取 Token；無 SDK 時 localhost 用佔位、正式網域向後端取得簽章 Token。
  *
  * @returns {Promise<string>} adRewardToken（供 resetPosition 使用）
  */
@@ -125,19 +125,20 @@ export async function requestResetAdRewardToken() {
     }
   }
 
-  // 無 SDK：僅 localhost 開發時允許佔位 Token（後端 shouldBypassHardSecurity 會略過廣告驗證）
-  if (import.meta.env.DEV) {
-    const origin = window.location?.origin || "";
-    const isLocal = /localhost|127\.0\.0\.1/.test(origin);
-    if (isLocal) {
-      console.warn(
-        "[RewardedAdsService] Web 無 goatRewardedAds，localhost 使用佔位 Token（後端 bypass 會放行）。"
-      );
-      return "dev-bypass-localhost";
-    }
+  // 無 SDK：localhost 用佔位 Token（後端 bypass）；正式網域網頁版改向後端取得 Token，讓使用者仍可重置（網頁尚未接廣告 SDK 前的過渡）
+  const origin = window.location?.origin || "";
+  const isLocal = /localhost|127\.0\.0\.1/.test(origin);
+
+  if (import.meta.env.DEV && isLocal) {
+    console.warn(
+      "[RewardedAdsService] Web 無 goatRewardedAds，localhost 使用佔位 Token（後端 bypass 會放行）。"
+    );
+    return "dev-bypass-localhost";
   }
 
-  const err = new Error("Rewarded ads SDK not available");
-  err.code = "ad-not-watched";
-  throw err;
+  // 正式網域網頁版：無廣告 SDK 時改向後端取得簽章 Token，完成重置（後端會驗證 token 與 reCAPTCHA）
+  console.warn(
+    "[RewardedAdsService] Web 無廣告 SDK，改向後端取得 Token 以完成重置（網頁版過渡方案）。"
+  );
+  return fetchAdRewardTokenFromBackend();
 }
