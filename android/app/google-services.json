@@ -51,6 +51,30 @@
       },
       "oauth_client": [
         {
+          "client_id": "871587249840-ipfa3debmgunacb7pq6le3988846dkoe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thegoatmeter.warzone",
+            "certificate_hash": "95904a605c5a8b83c7b11010f7bd6cada524c085"
+          }
+        },
+        {
+          "client_id": "871587249840-mdontonefspnsvc26vm4q06obdpsi6st.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thegoatmeter.warzone",
+            "certificate_hash": "8784886b9ab0cb97900436527fe390997c36c4b4"
+          }
+        },
+        {
+          "client_id": "871587249840-o1up5nk4p0mr2000g9q8ehltoaeq7dd6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thegoatmeter.warzone",
+            "certificate_hash": "7d94c0ab658083ea44c00512a0191dbc1731fe59"
+          }
+        },
+        {
           "client_id": "871587249840-qmhtp3vuon4744ea94htjjb1smpcvktr.apps.googleusercontent.com",
           "client_type": 3
         }
