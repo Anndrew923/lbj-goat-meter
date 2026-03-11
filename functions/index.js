@@ -74,12 +74,13 @@ export const submitVote = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("invalid-argument", "selectedReasons must be an array");
   }
 
+  // 投票才看分數：大量假投票會破壞數據可信度，故正式環境要求 reCAPTCHA 分數 ≥ 0.5
   if (shouldBypassHardSecurity(context)) {
     console.warn("[submitVote] Bypassing reCAPTCHA verification (localhost only).");
   } else {
-    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
     if (!recaptchaResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA verification failed", {
+      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
         code: "low-score-robot",
         recaptchaScore: recaptchaResult.score,
       });
@@ -297,17 +298,10 @@ async function runResetPosition(data, context) {
   if (bypassSecurity) {
     console.warn("[resetPosition] Bypassing reCAPTCHA and ad reward verification (localhost only).");
   } else if (isWebNoAdSdkAllowed) {
-    // 網頁版無廣告 SDK 過渡：origin 已驗證即放行，不要求 reCAPTCHA 分數（避免合法用戶因分數偏低無法重置，改善 UX）
-    console.log("[resetPosition] Web 無廣告 SDK 過渡：允許重置（origin 已驗證，略過 reCAPTCHA 分數）");
+    // 網頁版無廣告 SDK 過渡：origin 已驗證即放行
+    console.log("[resetPosition] Web 無廣告 SDK 過渡：允許重置（origin 已驗證）");
   } else {
-    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
-    if (!recaptchaResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
-        code: "low-score-robot",
-        recaptchaScore: recaptchaResult.score,
-      });
-    }
-
+    // 重置立場不看 reCAPTCHA 分數：僅以廣告／origin 為門檻；即便被繞過也只是撤一票，不影響整體數據可信度
     const adResult = await verifyAdRewardToken(adRewardToken);
     if (!adResult.success) {
       throw new functions.https.HttpsError("failed-precondition", "Ad reward not verified", {

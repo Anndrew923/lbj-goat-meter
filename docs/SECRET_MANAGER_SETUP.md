@@ -101,8 +101,8 @@
 
 ## 5. 驗證是否生效
 
-- **submitVote**：從 Netlify 網域發起投票，若 reCAPTCHA 未通過，應得到 `low-score-robot` 錯誤；localhost 仍可略過驗證。
-- **resetPosition**：從 Netlify 網域發起重置，原生/有廣告 SDK 時帶有效 `adRewardToken` 且須通過 reCAPTCHA 分數；網頁無 SDK 時前端傳 `web-no-ad-sdk`，後端依 `ALLOWED_WEB_ORIGIN` 驗證 origin 後放行（不要求 reCAPTCHA 分數，避免合法用戶因分數偏低無法重置）；localhost 可略過驗證。
+- **submitVote**：從 Netlify 網域發起投票時，須通過 reCAPTCHA 分數（minScore 0.5），未通過則得到 `low-score-robot` 錯誤；僅投票會影響數據可信度，故在此嚴格驗證。localhost 可略過驗證。
+- **resetPosition**：不檢查 reCAPTCHA 分數；僅驗證「廣告獎勵 Token」或「web-no-ad-sdk + 允許的 origin」。重置僅撤銷一票，不影響整體數據可信度。localhost 可略過驗證。
 - 後端日誌中可確認 `[submitVote] metadata` 是否正確記錄 `ip` 與 `userAgent`，供後續社會風向計人工審核使用。
 
 完成上述設定後，即完成 Production 安全硬化與正式環境 Secret 綁定；部署至正式環境後請依 Staging 驗收項目執行驗收。

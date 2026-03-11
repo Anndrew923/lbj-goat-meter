@@ -1,6 +1,6 @@
 // utils/verifyRecaptcha.js
 // 設計意圖：
-// - 將 reCAPTCHA 驗證集中於單一模組，方便 submitVote / resetPosition 等多個 Cloud Function 重複調用。
+// - 將 reCAPTCHA 驗證集中於單一模組；目前僅 submitVote 使用（minScore 0.5），resetPosition 不看分數、不呼叫本模組。
 // - 透過 Secret Manager（或等價的環境變數注入）管理後端密鑰，前端永不暴露 secret。
 
 import fetch from "node-fetch";
@@ -22,11 +22,11 @@ function getRecaptchaSecret() {
 }
 
 /**
- * 驗證 reCAPTCHA Token（支援 v2 / v3；resetPosition 會檢查 score）。
+ * 驗證 reCAPTCHA Token（支援 v2 / v3）；僅 submitVote 使用 minScore 保護投票數據，resetPosition 不看分數。
  *
  * @param {string} token - 從前端取得的 reCAPTCHA token
  * @param {object} [options]
- * @param {number} [options.minScore=0] - 最低通過分數（v3 專用；submitVote 可用 0，resetPosition 會用 0.5）
+ * @param {number} [options.minScore=0] - 最低通過分數（v3 專用；僅 submitVote 使用 0.5 保護投票數據；resetPosition 不看分數）
  * @param {string | null} [options.remoteIp=null] - 可選：用戶 IP，用於更嚴格的驗證
  * @returns {Promise<{ success: boolean, score: number | null, action?: string, raw: any }>}
  */
