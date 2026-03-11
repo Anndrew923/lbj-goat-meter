@@ -37,6 +37,13 @@ function useTestRewardedAd() {
  * @returns {Promise<string>} 供 resetPosition 使用的 adRewardToken
  */
 async function fetchAdRewardTokenFromBackend() {
+  if (!app) {
+    const err = new Error(
+      "[RewardedAdsService] Firebase app is not initialized. Cannot request ad reward token."
+    );
+    err.code = "firebase-not-ready";
+    throw err;
+  }
   const functions = getFunctions(app);
   const callable = httpsCallable(functions, "issueAdRewardToken");
   const result = await callable({ placement: PLACEMENT_RESET_POSITION });

@@ -9,7 +9,14 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "../lib/firebase";
 
-const functions = getFunctions(app);
+function getFunctionsInstance() {
+  if (!app) {
+    throw new Error(
+      "[ResetPositionService] Firebase app is not initialized. Check environment variables (.env) before calling resetPosition."
+    );
+  }
+  return getFunctions(app);
+}
 
 /**
  * 呼叫後端 resetPosition onCall。
@@ -19,6 +26,7 @@ const functions = getFunctions(app);
  */
 export async function callResetPosition(params) {
   const { adRewardToken, recaptchaToken } = params || {};
+  const functions = getFunctionsInstance();
   const callable = httpsCallable(functions, "resetPosition");
   const result = await callable({ adRewardToken, recaptchaToken });
 

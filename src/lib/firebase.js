@@ -28,6 +28,7 @@ import { initializeApp } from 'firebase/app'
 import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
+import { Capacitor } from '@capacitor/core'
 
 // 與 Firebase Console 一致：使用 reCAPTCHA Enterprise（GCP 管理之金鑰）
 
@@ -36,15 +37,24 @@ import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
  * 使用 ReCaptchaEnterpriseProvider，對接 Firebase Console 的 reCAPTCHA Enterprise 設定
  */
 const initAppCheck = (app) => {
-  if (import.meta.env.DEV) {
-    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  // 行動裝置優先策略：
+  // - 原生 Capacitor（Android / iOS）：改由 Play Integrity / DeviceCheck 等原生保護，暫不使用 reCAPTCHA Web App Check，
+  //   以避免 WebView + localhost 的 reCAPTCHA 400 噪音與潛在錯誤。
+  // - Web（瀏覽器）：維持嚴謹模式，透過 reCAPTCHA Enterprise 抵禦腳本攻擊。
+  if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    console.log('[Firebase] Skip Web reCAPTCHA App Check on native platform (Capacitor).')
+    return null
   }
 
-  const siteKey = import.meta.env.VITE_APP_CHECK_SITE_KEY;
+  if (import.meta.env.DEV) {
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true
+  }
+
+  const siteKey = import.meta.env.VITE_APP_CHECK_SITE_KEY
 
   if (!siteKey) {
-    console.warn('[Firebase] 找不到 App Check Site Key，略過初始化。');
-    return null;
+      console.warn('[Firebase] 找不到 App Check Site Key，略過初始化。')
+      return null
   }
 
   // 診斷：生產環境 400 時可對照 Firebase Console 的網站金鑰前綴，確認 Netlify 建置帶入的 key 是否一致（不輸出完整 key）
@@ -57,15 +67,15 @@ const initAppCheck = (app) => {
   try {
     const appCheck = initializeAppCheck(app, {
       provider: new ReCaptchaEnterpriseProvider(siteKey),
-      isTokenAutoRefreshEnabled: true
-    });
-    console.log('[Firebase] App Check 已啟用 (reCAPTCHA Enterprise)');
-    return appCheck;
+      isTokenAutoRefreshEnabled: true,
+    })
+    console.log('[Firebase] App Check 已啟用 (reCAPTCHA Enterprise)')
+    return appCheck
   } catch (error) {
-    console.error('[Firebase] App Check 初始化失敗:', error);
-    return null;
+    console.error('[Firebase] App Check 初始化失敗:', error)
+    return null
   }
-};
+}
 
 const requiredKeys = [
   'VITE_FIREBASE_API_KEY',

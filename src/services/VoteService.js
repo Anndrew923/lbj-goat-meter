@@ -16,7 +16,14 @@ import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from 
 import { isObject } from "../utils/typeUtils";
 import { getRecaptchaToken } from "./RecaptchaService";
 
-const functions = getFunctions(app);
+function getFunctionsInstance() {
+  if (!app) {
+    throw new Error(
+      "[VoteService] Firebase app is not initialized. Check environment variables (.env) before submitting votes."
+    );
+  }
+  return getFunctions(app);
+}
 const STAR_ID = "lbj";
 
 function getVoteFunctionErrorMessage(err, getMessage) {
@@ -65,6 +72,7 @@ export async function submitVote(userId, { selectedStance, selectedReasons, devi
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
+  const functions = getFunctionsInstance();
   const submitCallable = httpsCallable(functions, "submitVote");
   // 僅在「即將送出」時取得最新 reCAPTCHA token，確保有效期限內。
   const recaptchaToken = await getRecaptchaToken("submit_vote");

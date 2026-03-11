@@ -1,6 +1,10 @@
 package com.thegoatmeter.warzone;
 
+import android.os.Bundle;
+import android.webkit.WebView;
+
 import com.getcapacitor.BridgeActivity;
+
 import ee.forgr.capacitor.social.login.ModifiedMainActivityForSocialLoginPlugin;
 
 /**
@@ -8,6 +12,15 @@ import ee.forgr.capacitor.social.login.ModifiedMainActivityForSocialLoginPlugin;
  * 首發過審：與 build.gradle 的 namespace / applicationId 一致（com.thegoatmeter.warzone）。
  */
 public class MainActivity extends BridgeActivity implements ModifiedMainActivityForSocialLoginPlugin {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // 為實機除錯版啟用 WebView 調試。
+        // 對於正式版（manifest debuggable=false）此設定不會允許外部調試。
+        WebView.setWebContentsDebuggingEnabled(true);
+    }
 
     @Override
     public void IHaveModifiedTheMainActivityForTheUseWithSocialLoginPlugin() {
