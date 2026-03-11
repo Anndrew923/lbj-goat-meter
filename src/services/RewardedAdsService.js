@@ -2,9 +2,9 @@
  * RewardedAdsService — 獎勵廣告封裝（重置立場用）
  *
  * 設計意圖：
- * - 原生 (Capacitor)：使用 @capacitor-community/admob 的 prepareRewardVideoAd + showRewardVideoAd，觀看完成後向後端取得簽章 Token。
- * - Web：若 host 注入 window.goatRewardedAds.showAd()，則使用該 SDK 後向後端取得 Token；正式網域無 SDK 時改向後端 issueAdRewardToken 取得簽章 Token（網頁版過渡方案），仍可完成重置。
- * - 一律以後端 issueAdRewardToken 簽發之 Token 作為 resetPosition 的 adRewardToken，確保驗證邏輯集中於後端。
+ * - 原生 (Capacitor)：使用 @capacitor-community/admob，觀看完成後向後端 issueAdRewardToken 取得簽章 Token。
+ * - Web：若 host 注入 window.goatRewardedAds.showAd()，則使用該 SDK 後向後端取得 Token；正式網域無 SDK 時傳 "web-no-ad-sdk"，
+ *   後端 resetPosition 依 ALLOWED_WEB_ORIGIN 驗證 origin 後略過廣告檢查（避免呼叫 issueAdRewardToken 觸發 CORS），仍可完成重置。
  */
 
 import { Capacitor } from "@capacitor/core";
@@ -74,7 +74,7 @@ async function showNativeRewardedAd() {
  * 顯示重置立場用的 Rewarded Ad，並在成功完整觀看後回傳 adRewardToken。
  *
  * - 原生：AdMob 獎勵影片 → 後端 issueAdRewardToken。
- * - Web：若存在 window.goatRewardedAds.showAd 則先播廣告再取 Token；無 SDK 時 localhost 用佔位、正式網域向後端取得簽章 Token。
+ * - Web：若存在 window.goatRewardedAds.showAd 則先播廣告再取 Token；無 SDK 時 localhost 用佔位、正式網域傳 "web-no-ad-sdk"（後端依 origin 放行）。
  *
  * @returns {Promise<string>} adRewardToken（供 resetPosition 使用）
  */
@@ -125,7 +125,7 @@ export async function requestResetAdRewardToken() {
     }
   }
 
-  // 無 SDK：localhost 用佔位 Token（後端 bypass）；正式網域網頁版改向後端取得 Token，讓使用者仍可重置（網頁尚未接廣告 SDK 前的過渡）
+  // 無 SDK：localhost 用佔位 Token（後端 bypass）；正式網域網頁版傳 "web-no-ad-sdk"，後端依 origin 放行，不再呼叫 issueAdRewardToken（避免 CORS）
   const origin = window.location?.origin || "";
   const isLocal = /localhost|127\.0\.0\.1/.test(origin);
 
@@ -136,9 +136,9 @@ export async function requestResetAdRewardToken() {
     return "dev-bypass-localhost";
   }
 
-  // 正式網域網頁版：無廣告 SDK 時改向後端取得簽章 Token，完成重置（後端會驗證 token 與 reCAPTCHA）
+  // 正式網域網頁版：無廣告 SDK 時傳送佔位符，後端 resetPosition 在驗證 origin 後略過廣告檢查，不需呼叫 issueAdRewardToken
   console.warn(
-    "[RewardedAdsService] Web 無廣告 SDK，改向後端取得 Token 以完成重置（網頁版過渡方案）。"
+    "[RewardedAdsService] Web 無廣告 SDK，使用 web-no-ad-sdk（後端依允許的 origin 放行）。"
   );
-  return fetchAdRewardTokenFromBackend();
+  return "web-no-ad-sdk";
 }

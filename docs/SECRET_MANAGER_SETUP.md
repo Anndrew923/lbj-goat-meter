@@ -94,6 +94,7 @@
 - **RECAPTCHA_SECRET**：僅後端使用，切勿寫入前端或提交版控。
 - **AD_REWARD_SIGNING_SECRET**：僅後端使用，用於簽發/驗證「看完廣告」之 Token；外洩將導致任何人可偽造廣告完成。
 - **AD_REWARD_VERIFY_ENDPOINT**：若為 HTTPS 且無敏感參數，可視需求改為一般環境變數。
+- **ALLOWED_WEB_ORIGIN**（選用）：網頁版無廣告 SDK 時，前端傳 `web-no-ad-sdk`，後端僅接受此環境變數所列的 origin 放行重置。預設為 `https://lbj-goat-meter.netlify.app`；若有多網域可設為逗號分隔，例如 `https://app.example.com,https://lbj-goat-meter.netlify.app`。
 - 正式環境部署完成後，請在 **Netlify 正式網域** 上實際走一輪：**看廣告 → 重置立場 → 重新投票**，並確認 `global_summary` 統計正確。
 
 ---
@@ -101,7 +102,7 @@
 ## 5. 驗證是否生效
 
 - **submitVote**：從 Netlify 網域發起投票，若 reCAPTCHA 未通過，應得到 `low-score-robot` 錯誤；localhost 仍可略過驗證。
-- **resetPosition**：從 Netlify 網域發起重置，需帶有效 `adRewardToken`（由前端看完廣告後呼叫 `issueAdRewardToken` 取得）；localhost 可略過驗證。
+- **resetPosition**：從 Netlify 網域發起重置，原生/有廣告 SDK 時帶有效 `adRewardToken`；網頁無 SDK 時前端傳 `web-no-ad-sdk`，後端依 `ALLOWED_WEB_ORIGIN` 驗證 origin 後放行（不需呼叫 `issueAdRewardToken`，避免 CORS）；localhost 可略過驗證。
 - 後端日誌中可確認 `[submitVote] metadata` 是否正確記錄 `ip` 與 `userAgent`，供後續社會風向計人工審核使用。
 
 完成上述設定後，即完成 Production 安全硬化與正式環境 Secret 綁定；部署至正式環境後請依 Staging 驗收項目執行驗收。

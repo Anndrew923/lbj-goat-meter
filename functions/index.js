@@ -286,18 +286,31 @@ export const resetPosition = functions.https.onCall(async (data, context) => {
       });
     }
 
-    const adResult = await verifyAdRewardToken(adRewardToken);
-    if (!adResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "Ad reward not verified", {
-        code: "ad-not-watched",
-      });
-    }
-    // 自簽 Token 必須為當前使用者簽發，防止 Token 被轉用
-    const tokenUid = adResult.raw?.payload?.uid;
-    if (typeof tokenUid === "string" && tokenUid !== uid) {
-      throw new functions.https.HttpsError("failed-precondition", "Ad reward token user mismatch", {
-        code: "ad-not-watched",
-      });
+    // 網頁版無廣告 SDK 過渡：前端傳 "web-no-ad-sdk" 且 origin 在允許清單內時，僅依 reCAPTCHA 放行，不再呼叫 issueAdRewardToken（避免 CORS）
+    const allowedWebOrigins = (process.env.ALLOWED_WEB_ORIGIN || "https://lbj-goat-meter.netlify.app")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const origin = (context.rawRequest?.headers?.origin || "").trim();
+    const isWebNoAdSdk = adRewardToken === "web-no-ad-sdk";
+    const isAllowedWebOrigin = allowedWebOrigins.includes(origin);
+
+    if (isWebNoAdSdk && isAllowedWebOrigin) {
+      console.log("[resetPosition] Web 無廣告 SDK 過渡：允許重置（origin 已驗證）");
+    } else {
+      const adResult = await verifyAdRewardToken(adRewardToken);
+      if (!adResult.success) {
+        throw new functions.https.HttpsError("failed-precondition", "Ad reward not verified", {
+          code: "ad-not-watched",
+        });
+      }
+      // 自簽 Token 必須為當前使用者簽發，防止 Token 被轉用
+      const tokenUid = adResult.raw?.payload?.uid;
+      if (typeof tokenUid === "string" && tokenUid !== uid) {
+        throw new functions.https.HttpsError("failed-precondition", "Ad reward token user mismatch", {
+          code: "ad-not-watched",
+        });
+      }
     }
   }
 
