@@ -1,0 +1,40 @@
+/**
+ * ResetPositionService — Cloud Function resetPosition 客戶端封裝
+ *
+ * 設計意圖：
+ * - 將 resetPosition Cloud Function 呼叫集中管理，便於在 Context 或其他服務重用。
+ * - 僅負責與 Functions 溝通與 DEV 稽查 Log，不做 i18n 映射（交由上層處理）。
+ */
+
+import { getFunctions, httpsCallable } from "firebase/functions";
+import app from "../lib/firebase";
+
+const functions = getFunctions(app);
+
+/**
+ * 呼叫後端 resetPosition onCall。
+ *
+ * @param {{ adRewardToken: string, recaptchaToken: string | null }} params
+ * @returns {Promise<{ deletedVoteId: string | null }>}
+ */
+export async function callResetPosition(params) {
+  const { adRewardToken, recaptchaToken } = params || {};
+  const callable = httpsCallable(functions, "resetPosition");
+  const result = await callable({ adRewardToken, recaptchaToken });
+
+  const data = result?.data || {};
+  const deletedVoteId =
+    typeof data?.deletedVoteId === "string" && data.deletedVoteId.length > 0
+      ? data.deletedVoteId
+      : null;
+
+  if (import.meta.env.DEV) {
+    console.log(
+      "[ResetPositionService] resetPosition 成功 — deletedVoteId:",
+      deletedVoteId
+    );
+  }
+
+  return { deletedVoteId };
+}
+

@@ -47,6 +47,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   const [selectedStance, setSelectedStance] = useState(null);
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [voteSuccess, setVoteSuccess] = useState(false);
   const [showBattleCard, setShowBattleCard] = useState(false);
@@ -63,6 +64,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   const [saveReportPending, setSaveReportPending] = useState(false);
   const pendingOnWatchedRef = useRef(null);
   const battleCardContainerRef = useRef(null);
+  const lastSubmitAtRef = useRef(0);
 
   /** 廣告解鎖：點擊下載時開啟 AdMobPortal，插頁關閉後執行解鎖並可選擇是否存檔至相簿。 */
   const onRequestRewardAd = useCallback((onWatched) => {
@@ -114,6 +116,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   }, [showSaveReportConfirm, saveReportPending]);
 
   const toggleReason = (value) => {
+    if (isProcessing) return;
     setSelectedReasons((prev) => {
       if (prev.includes(value)) return prev.filter((r) => r !== value);
       if (prev.length >= REASONS_MAX_SELECT) return prev;
@@ -156,6 +159,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   };
 
   const handleStanceSelect = (value) => {
+    if (isProcessing) return;
     if (isGuest || isLimboUser) {
       setShowLoginPrompt(true);
       return;
@@ -178,8 +182,17 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   };
 
   const handleSubmit = async () => {
-    if (!userId || !canSubmit || !profile) return;
+    if (!userId || !canSubmit || !profile || isProcessing) return;
+
+    const now = Date.now();
+    if (now - lastSubmitAtRef.current < 1500) {
+      // 防抖：1.5 秒內多次點擊僅接受第一次，避免重複觸發 Cloud Function。
+      return;
+    }
+    lastSubmitAtRef.current = now;
+
     setSubmitting(true);
+    setIsProcessing(true);
     setSubmitError(null);
     try {
       await voteServiceSubmitVote(
@@ -192,17 +205,14 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
       setShowBattleCard(true);
     } catch (err) {
       triggerHaptic([30, 50, 30]);
-      const isPermissionDenied =
-        err?.code === "permission-denied" ||
-        /permission|insufficient|403/i.test(err?.message ?? "");
-      const msg = isPermissionDenied
-        ? t("common:submitErrorPermissionDenied")
-        : err?.message != null && typeof err.message === "string"
+      const message =
+        err && typeof err.message === "string"
           ? err.message
           : t("common:submitError");
-      setSubmitError(msg);
+      setSubmitError(message);
     } finally {
       setSubmitting(false);
+      setIsProcessing(false);
     }
   };
 
@@ -454,6 +464,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
           onSelect={handleStanceSelect}
           goatFlash={goatFlash}
           fraudShatter={fraudShatter}
+          disabled={isProcessing}
         />
       </motion.div>
 
@@ -486,7 +497,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
                     key={value}
                     type="button"
                     onClick={() => toggleReason(value)}
-                    disabled={disabled}
+                    disabled={disabled || isProcessing}
                     aria-pressed={isSelected}
                     aria-label={secondary}
                     whileHover={!disabled ? { scale: 1.05 } : {}}
@@ -519,16 +530,20 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
       <motion.button
         type="button"
         onClick={handleSubmit}
-        disabled={!canSubmit || submitting}
-        whileHover={canSubmit ? { scale: 1.02 } : {}}
-        whileTap={canSubmit ? { scale: 0.98 } : {}}
+        disabled={!canSubmit || submitting || isProcessing}
+        whileHover={canSubmit && !isProcessing ? { scale: 1.02 } : {}}
+        whileTap={canSubmit && !isProcessing ? { scale: 0.98 } : {}}
         className="w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {submitting ? t("common:submitting") : t("common:submitVote")}
+        {submitting || isProcessing
+          ? t("common:submittingWithAudit")
+          : t("common:submitVote")}
       </motion.button>
       {/* 戰前信心暗示：減少用戶對於灌票的疑慮，提升單次投票的心理價值；極低調樣式避免干擾主流程。 */}
       <p className="mt-2 text-[10px] text-gray-500/60 text-center" aria-hidden>
-        {t("common:security_verified_hint")}
+        {isProcessing
+          ? t("common:security_verified_hint_audit")
+          : t("common:security_verified_hint")}
       </p>
     </div>
   );

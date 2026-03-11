@@ -1,0 +1,94 @@
+/**
+ * RecaptchaService — 前端 reCAPTCHA Token 取得層
+ *
+ * 設計意圖：
+ * - 使用「標準版」 reCAPTCHA v3（非 Enterprise），對應你在 Google reCAPTCHA 後台建立的 v3 金鑰。
+ * - 將 reCAPTCHA token 取得集中管理，避免各處直接操作 window.grecaptcha。
+ * - 僅在「即將呼叫 Cloud Functions」前才執行，確保 token 時效最新。
+ * - 若 SDK 尚未載入，會動態注入官方 v3 script（api.js），載入完成後再 execute。
+ */
+
+let recaptchaScriptPromise = null;
+
+function ensureRecaptchaScript(siteKey) {
+  if (typeof window === "undefined") return Promise.resolve();
+
+  if (window.grecaptcha?.execute) {
+    return Promise.resolve();
+  }
+
+  if (recaptchaScriptPromise) {
+    return recaptchaScriptPromise;
+  }
+
+  recaptchaScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(
+      'script[src^="https://www.google.com/recaptcha/api.js"]'
+    );
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", (e) => reject(e));
+      return;
+    }
+
+    const script = document.createElement("script");
+    // 標準 reCAPTCHA v3 script
+    script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(
+      siteKey
+    )}`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = (e) => reject(e);
+    document.head.appendChild(script);
+  });
+
+  return recaptchaScriptPromise;
+}
+
+/**
+ * 取得 reCAPTCHA token（若 SDK 未載入則回傳 null，由呼叫端決定是否繼續或提示）。
+ *
+ * @param {string} action - 例如 'submit_vote' / 'reset_position'
+ * @returns {Promise<string | null>}
+ */
+export async function getRecaptchaToken(action = "submit_vote") {
+  try {
+    const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+    if (!siteKey) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          "[RecaptchaService] 缺少 VITE_RECAPTCHA_SITE_KEY，將以無 token 呼叫後端。"
+        );
+      }
+      return null;
+    }
+
+    await ensureRecaptchaScript(siteKey);
+
+    const g = window.grecaptcha;
+    if (!g?.execute) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          "[RecaptchaService] grecaptcha 未就緒，即使載入 script 仍無 execute，可檢查瀏覽器外掛或網路攔截。"
+        );
+      }
+      return null;
+    }
+
+    const token = await g.execute(siteKey, { action });
+    if (typeof token !== "string" || !token.trim()) {
+      return null;
+    }
+    return token.trim();
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        "[RecaptchaService] 取得 reCAPTCHA token 失敗：",
+        err?.message ?? err
+      );
+    }
+    return null;
+  }
+}
+

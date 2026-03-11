@@ -2,31 +2,51 @@
  * VoteService — 投票／撤票／聚合核心引擎
  *
  * 設計意圖：
- * - 所有投票與撤票的 Firestore Transaction 集中於此，保證單一 runTransaction 與減法公式一致。
- * - submitVote / revokeVote 封裝原子寫入；computeGlobalDeductions / computeWarzoneDeltas 供 deleteAccountData 複用減法邏輯。
+ * - 早期版本：所有投票與撤票的 Firestore Transaction 集中於此，直接由前端呼叫 runTransaction。
+ * - 現行版本：改由 Cloud Functions 作為唯一寫入入口（Admin SDK Transaction），
+ *   前端僅負責呼叫 httpsCallable 並處理 reCAPTCHA 與錯誤映射，維持原有純函數聚合接口不變。
+ * - computeGlobalDeductions / computeWarzoneDeltas 仍供 deleteAccountData 等流程複用減法邏輯。
  */
 
-import {
-  collection,
-  doc,
-  runTransaction,
-  serverTimestamp,
-  Timestamp,
-  increment,
-  deleteField,
-} from "firebase/firestore";
-import { db, ensureFreshAppCheckToken } from "../lib/firebase";
+import { Timestamp } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import app from "../lib/firebase";
 import i18n from "../i18n/config";
-import {
-  GLOBAL_SUMMARY_DOC_ID,
-  STANCE_KEYS,
-  PRO_STANCES,
-  ANTI_STANCES,
-  getInitialGlobalSummary,
-} from "../lib/constants";
+import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
 import { isObject } from "../utils/typeUtils";
+import { getRecaptchaToken } from "./RecaptchaService";
 
+const functions = getFunctions(app);
 const STAR_ID = "lbj";
+
+function getVoteFunctionErrorMessage(err, getMessage) {
+  const backendCode = err?.details?.code || err?.code;
+
+  if (backendCode === "auth-required") {
+    return getMessage("common:voteError_authRequired");
+  }
+  if (backendCode === "low-score-robot") {
+    if (import.meta.env.DEV && typeof err?.details?.recaptchaScore === "number") {
+      // 開發模式：輸出 reCAPTCHA 分數，方便調整門檻與稽查。
+      console.log(
+        "[VoteService] reCAPTCHA score (backend):",
+        err.details.recaptchaScore
+      );
+    }
+    return getMessage("common:voteError_lowScoreRobot");
+  }
+  if (backendCode === "device-already-voted") {
+    return getMessage("common:voteError_deviceAlreadyVoted");
+  }
+  if (backendCode === "ad-not-watched") {
+    return getMessage("common:voteError_adNotWatched");
+  }
+
+  const fallback =
+    (err?.message && typeof err.message === "string" && err.message) ||
+    getMessage("common:submitError");
+  return fallback;
+}
 
 /**
  * 提交一票（含設備鎖：一設備一票，與 revokeVote / deleteAccountData 連動解鎖）。
@@ -38,212 +58,29 @@ const STAR_ID = "lbj";
  */
 export async function submitVote(userId, { selectedStance, selectedReasons, deviceId }, getMessage) {
   if (typeof getMessage !== "function") throw new Error("getMessage is required");
-  if (!db || !userId) throw new Error(getMessage("common:error_missingDbOrUid"));
+  if (!userId) throw new Error(getMessage("common:error_missingDbOrUid"));
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
-  const profileRef = doc(db, "profiles", userId);
-  const votesRef = collection(db, "votes");
-  const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
-  const deviceLockRef = doc(db, "device_locks", deviceIdStr);
-
-  const runVoteTransaction = async () => {
-    await ensureFreshAppCheckToken();
-    return runTransaction(db, async (tx) => {
-      const profileSnap = await tx.get(profileRef);
-      if (!profileSnap?.exists?.()) throw new Error(getMessage("common:completeProfileFirst"));
-      const data = profileSnap?.data?.() ?? {};
-      if (data.hasVoted === true) throw new Error(getMessage("common:alreadyVoted"));
-      const warzoneId = String(data.warzoneId ?? data.voterTeam ?? "").trim();
-      if (!warzoneId) throw new Error(getMessage("common:error_warzoneRequired"));
-
-      const deviceLockSnap = await tx.get(deviceLockRef);
-      if (deviceLockSnap?.exists?.()) {
-        const lockData = deviceLockSnap.data() ?? {};
-        if (lockData.active === true) throw new Error(getMessage("common:error_deviceAlreadyVoted"));
-      }
-
-      const globalSnap = await tx.get(globalSummaryRef);
-      const globalData = !globalSnap?.exists?.()
-        ? getInitialGlobalSummary()
-        : (() => {
-            const d = globalSnap.data();
-            return {
-              totalVotes: typeof d.totalVotes === "number" ? d.totalVotes : 0,
-              recentVotes: Array.isArray(d.recentVotes) ? d.recentVotes : [],
-              reasonCountsLike: isObject(d.reasonCountsLike) ? d.reasonCountsLike : {},
-              reasonCountsDislike: isObject(d.reasonCountsDislike) ? d.reasonCountsDislike : {},
-              countryCounts: isObject(d.countryCounts) ? d.countryCounts : {},
-              ...Object.fromEntries(STANCE_KEYS.map((k) => [k, typeof d[k] === "number" ? d[k] : 0])),
-            };
-          })();
-
-      const newVoteRef = doc(votesRef);
-      tx.set(newVoteRef, {
-        starId: STAR_ID,
-        userId,
-        deviceId: deviceIdStr,
-        status: selectedStance,
-        reasons: selectedReasons,
-        warzoneId,
-        voterTeam: warzoneId,
-        ageGroup: data.ageGroup ?? "",
-        gender: data.gender ?? "",
-        country: data.country ?? "",
-        city: data.city ?? "",
-        hadWarzoneStats: true,
-        createdAt: serverTimestamp(),
-      });
-      tx.set(deviceLockRef, {
-        lastVoteId: newVoteRef.id,
-        active: true,
-        updatedAt: serverTimestamp(),
-      });
-
-      const warzoneStatsRef = doc(db, "warzoneStats", warzoneId);
-      tx.set(warzoneStatsRef, { totalVotes: increment(1), [selectedStance]: increment(1) }, { merge: true });
-
-      const newTotal = globalData.totalVotes + 1;
-      const stanceCounts = {};
-      STANCE_KEYS.forEach((key) => {
-        stanceCounts[key] = globalData[key] + (key === selectedStance ? 1 : 0);
-      });
-      const newRecentEntry = {
-        status: selectedStance,
-        city: data.city ?? "",
-        country: data.country ?? "",
-        voterTeam: warzoneId,
-        createdAt: Timestamp.now(),
-      };
-      const newRecentVotes = [newRecentEntry, ...globalData.recentVotes].slice(0, 10);
-      const reasonCountsLike = { ...(globalData.reasonCountsLike ?? {}) };
-      const reasonCountsDislike = { ...(globalData.reasonCountsDislike ?? {}) };
-      (selectedReasons || []).forEach((r) => {
-        if (PRO_STANCES.has(selectedStance)) reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
-        else if (ANTI_STANCES.has(selectedStance)) reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
-      });
-      const countryCounts = { ...(globalData.countryCounts ?? {}) };
-      const cc = String(data.country ?? "").toUpperCase().slice(0, 2);
-      if (cc) {
-        const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };
-        countryCounts[cc] = {
-          pro: (prev.pro ?? 0) + (PRO_STANCES.has(selectedStance) ? 1 : 0),
-          anti: (prev.anti ?? 0) + (ANTI_STANCES.has(selectedStance) ? 1 : 0),
-        };
-      }
-      tx.set(
-        globalSummaryRef,
-        {
-          totalVotes: newTotal,
-          ...stanceCounts,
-          recentVotes: newRecentVotes,
-          reasonCountsLike,
-          reasonCountsDislike,
-          countryCounts,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-      tx.update(profileRef, {
-        hasVoted: true,
-        currentStance: selectedStance,
-        currentReasons: selectedReasons,
-        currentVoteId: newVoteRef.id,
-        updatedAt: serverTimestamp(),
-      });
-    });
-  };
+  const submitCallable = httpsCallable(functions, "submitVote");
+  // 僅在「即將送出」時取得最新 reCAPTCHA token，確保有效期限內。
+  const recaptchaToken = await getRecaptchaToken("submit_vote");
 
   try {
-    await runVoteTransaction();
+    const result = await submitCallable({
+      voteData: { selectedStance, selectedReasons, deviceId: deviceIdStr },
+      recaptchaToken,
+    });
+    if (import.meta.env.DEV && result?.data?.recaptchaScore != null) {
+      console.log(
+        "[VoteService] submitVote reCAPTCHA score (backend):",
+        result.data.recaptchaScore
+      );
+    }
   } catch (err) {
-    const isPermissionDenied =
-      err?.code === "permission-denied" || /permission|insufficient|403/i.test(err?.message ?? "");
-    if (isPermissionDenied) {
-      await ensureFreshAppCheckToken();
-      await runVoteTransaction();
-    } else {
-      throw err;
-    }
+    const message = getVoteFunctionErrorMessage(err, getMessage);
+    throw new Error(message);
   }
-}
-
-export async function revokeVote(uid, resetProfile = false) {
-  if (!db || !uid) throw new Error(i18n.t("common:error_missingDbOrUid"));
-
-  const profileRef = doc(db, "profiles", uid);
-  const globalSummaryRef = doc(db, "warzoneStats", GLOBAL_SUMMARY_DOC_ID);
-  let deletedVoteId = null;
-
-  await ensureFreshAppCheckToken();
-  await runTransaction(db, async (tx) => {
-    const profileSnap = await tx.get(profileRef);
-    if (!profileSnap?.exists?.()) throw new Error(i18n.t("common:error_profileNotFoundRevote"));
-    const profileData = profileSnap.data?.() ?? {};
-    if (profileData.hasVoted !== true) throw new Error(i18n.t("common:error_hasNotVoted"));
-
-    const raw = profileData?.currentVoteId;
-    const voteDocId = typeof raw === "string" && raw.length > 0 ? raw : null;
-    let voteData = null;
-    let globalSnap = null;
-
-    if (voteDocId) {
-      const voteRef = doc(db, "votes", voteDocId);
-      const voteSnap = await tx.get(voteRef);
-      voteData = voteSnap?.exists?.() ? voteSnap.data() : null;
-      globalSnap = await tx.get(globalSummaryRef);
-    }
-
-    const updatePayload = {
-      hasVoted: false,
-      currentStance: deleteField(),
-      currentReasons: deleteField(),
-      currentVoteId: deleteField(),
-      updatedAt: serverTimestamp(),
-    };
-    if (resetProfile) {
-      updatePayload.ageGroup = deleteField();
-      updatePayload.gender = deleteField();
-      updatePayload.voterTeam = deleteField();
-      updatePayload.country = deleteField();
-      updatePayload.city = deleteField();
-      updatePayload.hasProfile = false;
-    }
-    tx.update(profileRef, updatePayload);
-
-    if (voteDocId) {
-      const voteDeviceId = typeof voteData?.deviceId === "string" ? voteData.deviceId.trim() : "";
-      if (voteDeviceId) {
-        tx.delete(doc(db, "device_locks", voteDeviceId));
-      }
-      tx.delete(doc(db, "votes", voteDocId));
-      deletedVoteId = voteDocId;
-      const status = voteData?.status;
-      if (voteData?.hadWarzoneStats === true) {
-        const wid = (voteData.warzoneId || voteData.voterTeam || "").trim();
-        if (wid && status) {
-          tx.set(
-            doc(db, "warzoneStats", wid),
-            { totalVotes: increment(-1), [status]: increment(-1) },
-            { merge: true }
-          );
-        }
-      }
-      if (globalSnap?.exists?.() && status) {
-        const globalData = globalSnap.data();
-        const deduction = computeGlobalDeductions(globalData, [{ id: voteDocId, data: voteData }]);
-        tx.set(globalSummaryRef, { ...deduction, updatedAt: serverTimestamp() }, { merge: true });
-      }
-    } else if (import.meta.env.DEV) {
-      console.warn("[VoteService] 無 currentVoteId，僅重置 Profile");
-    }
-  });
-
-  if (import.meta.env.DEV) {
-    console.log("[VoteService] 重新投票 — deletedVoteId:", deletedVoteId);
-  }
-
-  return { deletedVoteId };
 }
 
 /**

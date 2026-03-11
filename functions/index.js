@@ -1,0 +1,365 @@
+/**
+ * GOAT Meter: LeBron — Cloud Functions 後端寫入入口
+ *
+ * 設計意圖：
+ * - 棄用 client-side App Check 寫入，所有對 votes / device_locks / warzoneStats 的修改一律透過 Admin SDK Transaction。
+ * - 在最外層統一處理 reCAPTCHA 與廣告獎勵驗證，將 Firestore Security Rules 收緊為 read-only。
+ */
+
+import * as functions from "firebase-functions";
+import admin from "firebase-admin";
+
+import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
+import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
+import { computeGlobalDeductions } from "./utils/voteAggregation.js";
+
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+const db = admin.firestore();
+const FieldValue = admin.firestore.FieldValue;
+const Timestamp = admin.firestore.Timestamp;
+
+const STAR_ID = "lbj";
+const GLOBAL_SUMMARY_DOC_ID = "global_summary";
+
+// 本地開發／尚未設定 RECAPTCHA_SECRET 時，允許後端略過 reCAPTCHA 驗證與廣告驗證，避免阻塞開發流程。
+function shouldBypassHardSecurity(context) {
+  const origin = context.rawRequest?.headers?.origin || "";
+  const isLocalOrigin = /localhost|127\.0\.0\.1/.test(origin);
+  const hasRecaptchaSecret = Boolean(process.env.RECAPTCHA_SECRET);
+  return isLocalOrigin || !hasRecaptchaSecret;
+}
+
+function requireAuth(context) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Authentication required", {
+      code: "auth-required",
+    });
+  }
+}
+
+/**
+ * submitVote — 後端唯一入口：提交一票。
+ *
+ * 資料一致性與避免 Race Condition 的設計說明：
+ * - 使用 Firestore Transaction，同時讀取 profile / device_locks / warzoneStats / global_summary 並一次性寫入。
+ * - 先檢查 profiles.{uid}.hasVoted 與 device_locks.{deviceId}.active，避免同一帳號或同一設備重複投票。
+ * - device_locks 採「一設備一票」策略：若鎖存在且 active=true，整個 Transaction 立即失敗。
+ * - warzoneStats 與 global_summary 的加總全部落在同一個 Transaction 內完成，保證「統計 + 鎖定狀態」要嘛一起成功、要嘛一起回滾。
+ */
+export const submitVote = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+
+  const { voteData, recaptchaToken } = data || {};
+  const uid = context.auth.uid;
+
+  if (!voteData || typeof voteData !== "object") {
+    throw new functions.https.HttpsError("invalid-argument", "voteData is required");
+  }
+  const { selectedStance, selectedReasons, deviceId } = voteData;
+  const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
+
+  if (!deviceIdStr) {
+    throw new functions.https.HttpsError("invalid-argument", "deviceId is required");
+  }
+  if (typeof selectedStance !== "string" || !selectedStance) {
+    throw new functions.https.HttpsError("invalid-argument", "selectedStance is required");
+  }
+  if (!Array.isArray(selectedReasons)) {
+    throw new functions.https.HttpsError("invalid-argument", "selectedReasons must be an array");
+  }
+
+  if (shouldBypassHardSecurity(context)) {
+    console.warn("[submitVote] Bypassing reCAPTCHA verification (local dev or missing RECAPTCHA_SECRET).");
+  } else {
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
+    if (!recaptchaResult.success) {
+      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA verification failed", {
+        code: "low-score-robot",
+        recaptchaScore: recaptchaResult.score,
+      });
+    }
+  }
+
+  const profileRef = db.doc(`profiles/${uid}`);
+  const votesRef = db.collection("votes");
+  const globalSummaryRef = db.doc(`warzoneStats/${GLOBAL_SUMMARY_DOC_ID}`);
+  const deviceLockRef = db.doc(`device_locks/${deviceIdStr}`);
+
+  await db.runTransaction(async (tx) => {
+    const profileSnap = await tx.get(profileRef);
+    if (!profileSnap.exists) {
+      throw new functions.https.HttpsError("failed-precondition", "Profile not found");
+    }
+    const profile = profileSnap.data() || {};
+    if (profile.hasVoted === true) {
+      throw new functions.https.HttpsError("failed-precondition", "Already voted");
+    }
+
+    const warzoneId = String(profile.warzoneId ?? profile.voterTeam ?? "").trim();
+    if (!warzoneId) {
+      throw new functions.https.HttpsError("failed-precondition", "warzone required");
+    }
+
+    const deviceLockSnap = await tx.get(deviceLockRef);
+    if (deviceLockSnap.exists) {
+      const lockData = deviceLockSnap.data() || {};
+      if (lockData.active === true) {
+        throw new functions.https.HttpsError("failed-precondition", "Device already voted", {
+          code: "device-already-voted",
+        });
+      }
+    }
+
+    const globalSnap = await tx.get(globalSummaryRef);
+    const globalData = (() => {
+      if (!globalSnap.exists) {
+        return {
+          totalVotes: 0,
+          recentVotes: [],
+          reasonCountsLike: {},
+          reasonCountsDislike: {},
+          countryCounts: {},
+          goat: 0,
+          fraud: 0,
+          king: 0,
+          mercenary: 0,
+          machine: 0,
+          stat_padder: 0,
+        };
+      }
+      const d = globalSnap.data() || {};
+      return {
+        totalVotes: typeof d.totalVotes === "number" ? d.totalVotes : 0,
+        recentVotes: Array.isArray(d.recentVotes) ? d.recentVotes : [],
+        reasonCountsLike: typeof d.reasonCountsLike === "object" && d.reasonCountsLike ? d.reasonCountsLike : {},
+        reasonCountsDislike:
+          typeof d.reasonCountsDislike === "object" && d.reasonCountsDislike ? d.reasonCountsDislike : {},
+        countryCounts: typeof d.countryCounts === "object" && d.countryCounts ? d.countryCounts : {},
+        goat: typeof d.goat === "number" ? d.goat : 0,
+        fraud: typeof d.fraud === "number" ? d.fraud : 0,
+        king: typeof d.king === "number" ? d.king : 0,
+        mercenary: typeof d.mercenary === "number" ? d.mercenary : 0,
+        machine: typeof d.machine === "number" ? d.machine : 0,
+        stat_padder: typeof d.stat_padder === "number" ? d.stat_padder : 0,
+      };
+    })();
+
+    const newVoteRef = votesRef.doc();
+    tx.set(newVoteRef, {
+      starId: STAR_ID,
+      userId: uid,
+      deviceId: deviceIdStr,
+      status: selectedStance,
+      reasons: selectedReasons,
+      warzoneId,
+      voterTeam: warzoneId,
+      ageGroup: profile.ageGroup ?? "",
+      gender: profile.gender ?? "",
+      country: profile.country ?? "",
+      city: profile.city ?? "",
+      hadWarzoneStats: true,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    tx.set(deviceLockRef, {
+      lastVoteId: newVoteRef.id,
+      active: true,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const warzoneStatsRef = db.doc(`warzoneStats/${warzoneId}`);
+    tx.set(
+      warzoneStatsRef,
+      {
+        totalVotes: FieldValue.increment(1),
+        [selectedStance]: FieldValue.increment(1),
+      },
+      { merge: true }
+    );
+
+    const newTotal = globalData.totalVotes + 1;
+    const stanceKeys = ["goat", "fraud", "king", "mercenary", "machine", "stat_padder"];
+    const stanceCounts = {};
+    stanceKeys.forEach((key) => {
+      stanceCounts[key] = globalData[key] + (key === selectedStance ? 1 : 0);
+    });
+
+    const newRecentEntry = {
+      status: selectedStance,
+      city: profile.city ?? "",
+      country: profile.country ?? "",
+      voterTeam: warzoneId,
+      createdAt: Timestamp.now(),
+    };
+    const newRecentVotes = [newRecentEntry, ...(globalData.recentVotes || [])].slice(0, 10);
+
+    const reasonCountsLike = { ...(globalData.reasonCountsLike || {}) };
+    const reasonCountsDislike = { ...(globalData.reasonCountsDislike || {}) };
+    (selectedReasons || []).forEach((r) => {
+      if (["goat", "king", "machine"].includes(selectedStance)) {
+        reasonCountsLike[r] = (reasonCountsLike[r] ?? 0) + 1;
+      } else if (["fraud", "stat_padder", "mercenary"].includes(selectedStance)) {
+        reasonCountsDislike[r] = (reasonCountsDislike[r] ?? 0) + 1;
+      }
+    });
+
+    const countryCounts = { ...(globalData.countryCounts || {}) };
+    const cc = String(profile.country ?? "").toUpperCase().slice(0, 2);
+    if (cc) {
+      const prev = countryCounts[cc] ?? { pro: 0, anti: 0 };
+      countryCounts[cc] = {
+        pro:
+          (prev.pro ?? 0) +
+          (["goat", "king", "machine"].includes(selectedStance) ? 1 : 0),
+        anti:
+          (prev.anti ?? 0) +
+          (["fraud", "stat_padder", "mercenary"].includes(selectedStance) ? 1 : 0),
+      };
+    }
+
+    tx.set(
+      globalSummaryRef,
+      {
+        totalVotes: newTotal,
+        ...stanceCounts,
+        recentVotes: newRecentVotes,
+        reasonCountsLike,
+        reasonCountsDislike,
+        countryCounts,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    tx.update(profileRef, {
+      hasVoted: true,
+      currentStance: selectedStance,
+      currentReasons: selectedReasons,
+      currentVoteId: newVoteRef.id,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { ok: true };
+});
+
+/**
+ * resetPosition — 看完廣告後重置立場。
+ *
+ * 資料一致性與避免 Race Condition 的設計說明：
+ * - 同樣使用單一 Transaction，同步處理：
+ *   - profile.hasVoted 與 currentVoteId 等欄位清除。
+ *   - 對應 votes 文件刪除。
+ *   - 對應 device_locks 解鎖（刪除）。
+ *   - warzoneStats 與 global_summary 依現有投票資料做「減法」，確保統計與實際票數對齊。
+ * - 所有操作要嘛一起成功，要嘛全部回滾，不會出現「設備已解鎖但統計未扣回」的中間狀態。
+ */
+export const resetPosition = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+
+  const { adRewardToken, recaptchaToken } = data || {};
+  const uid = context.auth.uid;
+
+  const bypassSecurity = shouldBypassHardSecurity(context);
+  if (bypassSecurity) {
+    console.warn(
+      "[resetPosition] Bypassing reCAPTCHA and ad reward verification (local dev or missing RECAPTCHA_SECRET)."
+    );
+  } else {
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
+    if (!recaptchaResult.success) {
+      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
+        code: "low-score-robot",
+        recaptchaScore: recaptchaResult.score,
+      });
+    }
+
+    const adResult = await verifyAdRewardToken(adRewardToken);
+    if (!adResult.success) {
+      throw new functions.https.HttpsError("failed-precondition", "Ad reward not verified", {
+        code: "ad-not-watched",
+      });
+    }
+  }
+
+  const profileRef = db.doc(`profiles/${uid}`);
+  const globalSummaryRef = db.doc(`warzoneStats/${GLOBAL_SUMMARY_DOC_ID}`);
+
+  let deletedVoteId = null;
+
+  await db.runTransaction(async (tx) => {
+    const profileSnap = await tx.get(profileRef);
+    if (!profileSnap.exists) {
+      throw new functions.https.HttpsError("failed-precondition", "Profile not found");
+    }
+    const profileData = profileSnap.data() || {};
+    if (profileData.hasVoted !== true) {
+      // 無票可扣，視為邏輯錯誤但不算嚴重，直接返回。
+      return;
+    }
+
+    const raw = profileData.currentVoteId;
+    const voteDocId = typeof raw === "string" && raw.length > 0 ? raw : null;
+    let voteData = null;
+    let globalSnap = null;
+
+    if (voteDocId) {
+      const voteRef = db.doc(`votes/${voteDocId}`);
+      const voteSnap = await tx.get(voteRef);
+      voteData = voteSnap.exists ? voteSnap.data() : null;
+      globalSnap = await tx.get(globalSummaryRef);
+    }
+
+    const updatePayload = {
+      hasVoted: false,
+      currentStance: FieldValue.delete(),
+      currentReasons: FieldValue.delete(),
+      currentVoteId: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    tx.update(profileRef, updatePayload);
+
+    if (voteDocId && voteData) {
+      const voteDeviceId = typeof voteData.deviceId === "string" ? voteData.deviceId.trim() : "";
+      if (voteDeviceId) {
+        tx.delete(db.doc(`device_locks/${voteDeviceId}`));
+      }
+      tx.delete(db.doc(`votes/${voteDocId}`));
+      deletedVoteId = voteDocId;
+
+      const status = voteData.status;
+      if (voteData.hadWarzoneStats === true) {
+        const wid = (voteData.warzoneId || voteData.voterTeam || "").trim();
+        if (wid && status) {
+          tx.set(
+            db.doc(`warzoneStats/${wid}`),
+            {
+              totalVotes: FieldValue.increment(-1),
+              [status]: FieldValue.increment(-1),
+            },
+            { merge: true }
+          );
+        }
+      }
+
+      if (globalSnap?.exists && status) {
+        const globalData = globalSnap.data() || {};
+        const deduction = computeGlobalDeductions(globalData, [{ id: voteDocId, data: voteData }]);
+        tx.set(
+          globalSummaryRef,
+          {
+            ...deduction,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    }
+  });
+
+  return { ok: true, deletedVoteId };
+});
+

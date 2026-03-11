@@ -1,11 +1,11 @@
 rules_version = '2';
 // =============================================================================
-// GOAT Meter — 穩定版（Transaction 安全，App Check 關閉）
+// GOAT Meter — 穩定版（Transaction 安全，App Check 不強制）
 // =============================================================================
 // 設計要點：
 // 1. 不在規則內使用 resource（尤其 delete），避免 Transaction 403。
 // 2. 寫入條件：isAuthenticated() + hasValidAppCheck()；profiles 僅 isOwner 可寫。
-// 3. App Check 關閉：前端有送 token 但 Firebase 後端驗證失敗，暫時僅靠 Auth 防護。
+// 3. App Check 不強制：先要求「登入 + 帳號/設備綁定」，未通過 App Check 也可寫入。
 // =============================================================================
 
 service cloud.firestore {
@@ -20,7 +20,7 @@ service cloud.firestore {
     }
 
     function hasValidAppCheck() {
-      // 前端有送 token，但 Firebase 後端驗證仍失敗 → 暫時關閉，僅靠 Auth 防護
+      // 若日後 Firebase 後端對 App Check 驗證穩定，再改回 `request.appCheck != null`
       return true;
     }
 
@@ -30,23 +30,22 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(userId) && hasValidAppCheck();
     }
 
-    // 2. 投票記錄：登入 + App Check 即可寫入/刪除（不依賴 resource，Transaction 安全）
+    // 2. 投票記錄：改由 Cloud Functions Admin SDK 寫入，前端一律 read-only
     match /votes/{voteId} {
       allow read: if true;
-      allow create, update, delete: if isAuthenticated() && hasValidAppCheck();
+      allow create, update, delete: if false;
     }
 
-    // 3. 裝置鎖定：同上
+    // 3. 裝置鎖定：同上，一律由後端控制
     match /device_locks/{deviceId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAuthenticated() && hasValidAppCheck();
+      allow create, update, delete: if false;
     }
 
-    // 4. 戰區統計：登入 + App Check 可更新，禁止刪除
+    // 4. 戰區統計：改由後端 Transaction 管理統計一致性，前端 read-only
     match /warzoneStats/{statsId} {
       allow read: if true;
-      allow create, update: if isAuthenticated() && hasValidAppCheck();
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     // 5. 專業分析數據

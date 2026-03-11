@@ -23,29 +23,9 @@ import {
 import { db, ensureFreshAppCheckToken } from "../lib/firebase";
 import i18n from "../i18n/config";
 import { GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS } from "../lib/constants";
-import { revokeVote as voteServiceRevokeVote, computeGlobalDeductions, computeWarzoneDeltas } from "./VoteService";
+import { computeGlobalDeductions, computeWarzoneDeltas } from "./VoteService";
 
 const STAR_ID = "lbj";
-
-/**
- * 重新投票（Revote）：委派 VoteService.revokeVote，保證與投票端減法邏輯一致。
- *
- * @param {string} uid - 當前用戶 UID
- * @param {boolean} [resetProfile=false] - 若為 true，一併清除年齡／性別／球隊／國家／城市並設 hasProfile 為 false
- * @returns {Promise<{ deletedVoteId: string | null }>}
- */
-export async function revokeVote(uid, resetProfile = false) {
-  try {
-    return await voteServiceRevokeVote(uid, resetProfile);
-  } catch (err) {
-    const errMsg =
-      err?.message != null && typeof err.message === "string" ? err.message : String(err);
-    if (import.meta.env.DEV) {
-      console.warn("[AccountService] revokeVote 錯誤 — userId:", uid, errMsg);
-    }
-    throw err;
-  }
-}
 
 /**
  * 帳號刪除 — Firestore 全域清理（不含 Auth）。

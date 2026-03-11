@@ -1,0 +1,74 @@
+// utils/verifyRecaptcha.js
+// 設計意圖：
+// - 將 reCAPTCHA 驗證集中於單一模組，方便 submitVote / resetPosition 等多個 Cloud Function 重複調用。
+// - 透過 Secret Manager（或等價的環境變數注入）管理後端密鑰，前端永不暴露 secret。
+
+import fetch from "node-fetch";
+
+const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
+
+/**
+ * 從環境變數讀取 reCAPTCHA secret。
+ * 推薦做法：在 GCP / Firebase 中將 Secret Manager 綁定到 RECAPTCHA_SECRET 環境變數。
+ */
+function getRecaptchaSecret() {
+  const secret = process.env.RECAPTCHA_SECRET;
+  if (!secret) {
+    throw new Error(
+      "[verifyRecaptcha] Missing RECAPTCHA_SECRET. Please bind Secret Manager secret to RECAPTCHA_SECRET env."
+    );
+  }
+  return secret;
+}
+
+/**
+ * 驗證 reCAPTCHA Token（支援 v2 / v3；resetPosition 會檢查 score）。
+ *
+ * @param {string} token - 從前端取得的 reCAPTCHA token
+ * @param {object} [options]
+ * @param {number} [options.minScore=0] - 最低通過分數（v3 專用；submitVote 可用 0，resetPosition 會用 0.5）
+ * @param {string | null} [options.remoteIp=null] - 可選：用戶 IP，用於更嚴格的驗證
+ * @returns {Promise<{ success: boolean, score: number | null, action?: string, raw: any }>}
+ */
+export async function verifyRecaptcha(token, { minScore = 0, remoteIp = null } = {}) {
+  if (typeof token !== "string" || !token.trim()) {
+    return { success: false, score: null, raw: { error: "empty-token" } };
+  }
+
+  const secret = getRecaptchaSecret();
+
+  const params = new URLSearchParams();
+  params.append("secret", secret);
+  params.append("response", token.trim());
+  if (remoteIp) params.append("remoteip", remoteIp);
+
+  let json;
+  try {
+    const res = await fetch(RECAPTCHA_VERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    json = await res.json();
+  } catch (err) {
+    return {
+      success: false,
+      score: null,
+      raw: { error: "network-error", message: err?.message },
+    };
+  }
+
+  const success = json?.success === true;
+  const score = typeof json?.score === "number" ? json.score : null;
+
+  if (!success) {
+    return { success: false, score, action: json?.action, raw: json };
+  }
+
+  if (score != null && score < minScore) {
+    return { success: false, score, action: json?.action, raw: json };
+  }
+
+  return { success: true, score, action: json?.action, raw: json };
+}
+

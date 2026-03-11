@@ -36,7 +36,10 @@ import {
   isNativePlatform,
   reauthenticateWithGoogleCredential,
 } from "../services/GoogleAuthService";
-import { deleteAccountData, revokeVote } from "../services/AccountService";
+import { deleteAccountData } from "../services/AccountService";
+import { requestResetAdRewardToken } from "../services/RewardedAdsService";
+import { callResetPosition } from "../services/ResetPositionService";
+import { getRecaptchaToken } from "../services/RecaptchaService";
 import { triggerHaptic } from "../utils/hapticUtils";
 import i18n from "../i18n/config";
 
@@ -352,7 +355,7 @@ export function AuthProvider({ children }) {
 
   const clearAuthError = useCallback(() => setAuthError(null), []);
 
-  /** 重新投票：清除當前立場與投票；若 resetProfile 為 true，一併清除年齡／性別／球隊／國家／城市並設 hasProfile 為 false */
+  /** 重新投票：透過廣告獎勵與 Cloud Function resetPosition 清除當前立場；resetProfile 僅作為 UI 選項，後端保留擴充空間。 */
   const revote = useCallback(
     async (resetProfile = false) => {
       const uid = currentUser?.uid;
@@ -363,12 +366,48 @@ export function AuthProvider({ children }) {
       }
       setAuthError(null);
       try {
-        await revokeVote(uid, resetProfile);
+        // 1. 先透過 Rewarded Ads 取得廣告獎勵 Token；使用者若中途關閉，丟出 ad-not-watched。
+        const adRewardToken = await requestResetAdRewardToken();
+
+        // 2. 在呼叫 Cloud Function 前取得最新 reCAPTCHA token，以提升安全評分。
+        const recaptchaToken = await getRecaptchaToken("reset_position");
+
+        // 3. 呼叫 Cloud Function resetPosition，後端會驗證 reCAPTCHA 分數與廣告獎勵 Token。
+        const { deletedVoteId } = await callResetPosition({
+          adRewardToken,
+          recaptchaToken,
+        });
+
+        if (import.meta.env.DEV) {
+          console.log(
+            "[AuthContext] resetPosition 完成 — deletedVoteId:",
+            deletedVoteId
+          );
+        }
+
+        // resetProfile 目前僅作為 UI 勾選項目，後端尚未擴充欄位重置；未來可在此追加 profiles 重設流程。
       } catch (err) {
-        const msg = err?.message ?? i18n.t("common:revoteError");
+        const backendCode = err?.details?.code || err?.code;
+
+        let msg;
+        if (backendCode === "auth-required") {
+          msg = i18n.t("common:voteError_authRequired");
+        } else if (backendCode === "low-score-robot") {
+          msg = i18n.t("common:voteError_lowScoreRobot");
+        } else if (backendCode === "device-already-voted") {
+          msg = i18n.t("common:voteError_deviceAlreadyVoted");
+        } else if (backendCode === "ad-not-watched") {
+          msg = i18n.t("common:voteError_adNotWatched");
+        } else {
+          msg = err?.message ?? i18n.t("common:revoteError");
+        }
+
         setAuthError(msg);
         if (import.meta.env.DEV) {
-          console.warn("[AuthContext] revote 失敗:", err?.message);
+          console.warn("[AuthContext] revote/resetPosition 失敗:", {
+            code: backendCode,
+            message: err?.message,
+          });
         }
         throw err;
       }
