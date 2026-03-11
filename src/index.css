@@ -25,6 +25,8 @@ body {
 body {
   margin: 0;
   min-height: 100vh;
+  /* 為固定於底部的 reCAPTCHA 聲明預留空間（聲明列本體 + 底部 safe area），避免內容被遮擋 */
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* 頂部安全區（固定 Header 用） */
@@ -89,4 +91,14 @@ body {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #FFD700;
+}
+
+/* reCAPTCHA 聲明列：底部留白至少等於 safe area，且無 safe area 時至少 2.5rem，避免被手機原生導覽列／Home Indicator 遮蔽 */
+.recaptcha-disclosure-bar {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 2.5rem);
+}
+
+/* reCAPTCHA v3 徽章隱藏：依 Google 政策隱藏時須在頁面顯眼處提供聲明（見 RecaptchaDisclosure.jsx） */
+.grecaptcha-badge {
+  visibility: hidden !important;
 }

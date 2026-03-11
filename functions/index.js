@@ -11,6 +11,7 @@ import admin from "firebase-admin";
 
 import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
 import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
+import { signAdRewardToken } from "./utils/adRewardSigning.js";
 import { computeGlobalDeductions } from "./utils/voteAggregation.js";
 
 if (!admin.apps.length) {
@@ -24,12 +25,14 @@ const Timestamp = admin.firestore.Timestamp;
 const STAR_ID = "lbj";
 const GLOBAL_SUMMARY_DOC_ID = "global_summary";
 
-// 本地開發／尚未設定 RECAPTCHA_SECRET 時，允許後端略過 reCAPTCHA 驗證與廣告驗證，避免阻塞開發流程。
+/**
+ * 是否允許略過嚴格安全驗證（僅限本地開發）。
+ * 正式環境：僅允許來自 localhost 的請求略過；來自 Netlify 等正式網域的請求一律執行 reCAPTCHA／廣告驗證，驗證失敗即拋出 low-score-robot。
+ */
 function shouldBypassHardSecurity(context) {
-  const origin = context.rawRequest?.headers?.origin || "";
-  const isLocalOrigin = /localhost|127\.0\.0\.1/.test(origin);
-  const hasRecaptchaSecret = Boolean(process.env.RECAPTCHA_SECRET);
-  return isLocalOrigin || !hasRecaptchaSecret;
+  const origin = (context.rawRequest?.headers?.origin || "").trim();
+  const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) || origin === "";
+  return isLocalOrigin;
 }
 
 function requireAuth(context) {
@@ -72,7 +75,7 @@ export const submitVote = functions.https.onCall(async (data, context) => {
   }
 
   if (shouldBypassHardSecurity(context)) {
-    console.warn("[submitVote] Bypassing reCAPTCHA verification (local dev or missing RECAPTCHA_SECRET).");
+    console.warn("[submitVote] Bypassing reCAPTCHA verification (localhost only).");
   } else {
     const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
     if (!recaptchaResult.success) {
@@ -82,6 +85,14 @@ export const submitVote = functions.https.onCall(async (data, context) => {
       });
     }
   }
+
+  // Observability：社會風向計後續人工審核用 metadata（userAgent / ip）
+  const ip =
+    context.rawRequest?.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    context.rawRequest?.ip ||
+    "";
+  const userAgent = context.rawRequest?.headers?.["user-agent"] || "";
+  console.log("[submitVote] metadata", { ip, userAgent, uid });
 
   const profileRef = db.doc(`profiles/${uid}`);
   const votesRef = db.collection("votes");
@@ -265,9 +276,7 @@ export const resetPosition = functions.https.onCall(async (data, context) => {
 
   const bypassSecurity = shouldBypassHardSecurity(context);
   if (bypassSecurity) {
-    console.warn(
-      "[resetPosition] Bypassing reCAPTCHA and ad reward verification (local dev or missing RECAPTCHA_SECRET)."
-    );
+    console.warn("[resetPosition] Bypassing reCAPTCHA and ad reward verification (localhost only).");
   } else {
     const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
     if (!recaptchaResult.success) {
@@ -280,6 +289,13 @@ export const resetPosition = functions.https.onCall(async (data, context) => {
     const adResult = await verifyAdRewardToken(adRewardToken);
     if (!adResult.success) {
       throw new functions.https.HttpsError("failed-precondition", "Ad reward not verified", {
+        code: "ad-not-watched",
+      });
+    }
+    // 自簽 Token 必須為當前使用者簽發，防止 Token 被轉用
+    const tokenUid = adResult.raw?.payload?.uid;
+    if (typeof tokenUid === "string" && tokenUid !== uid) {
+      throw new functions.https.HttpsError("failed-precondition", "Ad reward token user mismatch", {
         code: "ad-not-watched",
       });
     }
@@ -361,5 +377,31 @@ export const resetPosition = functions.https.onCall(async (data, context) => {
   });
 
   return { ok: true, deletedVoteId };
+});
+
+/**
+ * issueAdRewardToken — 簽發廣告獎勵 Token（看完廣告後由前端呼叫）。
+ *
+ * 設計意圖：當未使用 AD_REWARD_VERIFY_ENDPOINT 時，改由後端以 AD_REWARD_SIGNING_SECRET 簽發短期 Token，
+ * 前端於「廣告觀看完成」後呼叫此函式取得 Token，再傳入 resetPosition。僅限已登入使用者，且 Token 5 分鐘有效。
+ */
+export const issueAdRewardToken = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+
+  const placement = typeof data?.placement === "string" ? data.placement.trim() : "reset_position";
+
+  try {
+    const token = signAdRewardToken({
+      placement,
+      uid: context.auth.uid,
+    });
+    return { token };
+  } catch (err) {
+    // 不將內部錯誤訊息（如 Secret 未設定）回傳給客戶端，避免資訊洩漏
+    console.error("[issueAdRewardToken]", err?.message);
+    throw new functions.https.HttpsError("internal", "Failed to issue ad reward token", {
+      code: "ad-reward-issue-failed",
+    });
+  }
 });
 

@@ -296,5 +296,9 @@
     "scan_to_debate": "SCAN TO DEBATE.",
     "define_history": "DEFINE HISTORY.",
     "disclaimer": "This is a fan-made analytics project. Not affiliated with the NBA or its teams."
-  }
+  },
+  "recaptchaDisclosure": "This site is protected by reCAPTCHA and the Google <privacy>Privacy Policy</privacy> and <terms>Terms of Service</terms> apply.",
+  "recaptchaDisclosureAria": "reCAPTCHA disclosure and links to Google Privacy Policy and Terms of Service",
+  "recaptchaPrivacyPolicy": "Privacy Policy",
+  "recaptchaTermsOfService": "Terms of Service"
 }

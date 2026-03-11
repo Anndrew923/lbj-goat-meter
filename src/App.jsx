@@ -9,6 +9,7 @@ import SetupPage from './pages/SetupPage'
 import PrivacyPage from './pages/PrivacyPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import ExitConfirmModal from './components/ExitConfirmModal'
+import RecaptchaDisclosure from './components/RecaptchaDisclosure'
 import { triggerHaptic } from './utils/hapticUtils'
 import { initializeAdMob } from './services/AdMobService'
 
@@ -135,6 +136,7 @@ export default function App() {
         open={isExitModalOpen}
         onClose={() => setIsExitModalOpen(false)}
       />
+      <RecaptchaDisclosure />
     </>
   )
 }
