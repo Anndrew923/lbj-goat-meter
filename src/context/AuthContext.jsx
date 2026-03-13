@@ -85,6 +85,14 @@ function getAuthErrorMessage(err) {
   if (code === "auth/requires-recent-login") {
     return i18n.t("common:authError_requiresRecentLogin");
   }
+  // APK/WebView：Capacitor androidScheme 為 https 時，Firebase 請求 referer 為 https://localhost，若 GCP API 金鑰未允許會被擋
+  const msg = err?.message ?? "";
+  if (
+    code === "auth/requests-from-referer-https://localhost-are-blocked" ||
+    (msg.includes("referer") && msg.includes("localhost"))
+  ) {
+    return i18n.t("common:authError_refererBlocked");
+  }
   return err?.message ?? i18n.t("common:authError_loginFailed");
 }
 
@@ -92,14 +100,19 @@ function getAuthErrorMessage(err) {
 function logAuthErrorDiagnostic(err, context = "登入") {
   if (!import.meta.env.DEV || !err) return;
   const code = err?.code ?? "";
+  const refererBlocked =
+    code === "auth/requests-from-referer-https://localhost-are-blocked" ||
+    (err?.message?.includes("referer") && err?.message?.includes("localhost"));
   const hint =
     code === "auth/configuration-not-found"
       ? "→ 檢查 Firebase Console 已啟用 Google 登入，且 .env 的 API_KEY / AUTH_DOMAIN / PROJECT_ID 與專案設定一致；修改 .env 後需重啟 npm run dev"
       : code === "auth/unauthorized-domain"
         ? "→ 到 Firebase Console > Authentication > Settings > Authorized domains，加入目前網域（如 localhost 或 127.0.0.1）"
-        : code === "auth/popup-blocked"
-          ? "→ 允許瀏覽器彈出視窗，或改用 signInWithRedirect"
-          : null;
+        : refererBlocked
+          ? "→ APK/WebView 請求 referer 為 https://localhost：到 Google Cloud Console > APIs & Services > Credentials > 選取本專案 API 金鑰 > 應用程式限制 > HTTP referrers，加入 https://localhost 與 https://localhost/*（詳見 docs/APK_GOOGLE_LOGIN_FIX.md）"
+          : code === "auth/popup-blocked"
+            ? "→ 允許瀏覽器彈出視窗，或改用 signInWithRedirect"
+            : null;
   if (hint) {
     console.warn(`[AuthContext] ${context} 失敗 (${code})，診斷:`, hint);
   }

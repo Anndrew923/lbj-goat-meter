@@ -112,7 +112,7 @@ export default function FilterFunnel({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "tween", duration: 0.25 }}
-              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl flex flex-col"
+              className="fixed right-0 top-0 bottom-[4.5rem] z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl flex flex-col"
               role="dialog"
               aria-label={t("filterDrawerAria")}
               aria-disabled={locked || undefined}

@@ -120,6 +120,22 @@ Get-Content android\app\google-services.json | Select-String "package_name|clien
   - 若已部署 Web 版，則加入實際網域（例如 `yourapp.web.app` 或自訂網域）
 - 在 **APK 內 WebView** 使用 Firebase JS SDK 時，部分環境會以 `localhost` 或專案預設網域送請求，故需確保上述網域已授權。
 
+### 2.3 錯誤「auth/requests-from-referer-https://localhost-are-blocked」（APK 內 Google 登入被擋）
+
+**原因**：Capacitor 的 `capacitor.config.json` 使用 `server.androidScheme: "https"` 時，WebView 的 document origin 會是 `https://localhost`。當原生取得 idToken 後，Firebase JS SDK 在 WebView 內呼叫 `signInWithCredential` 時，發往 Firebase Auth 的請求會帶上 **Referer: https://localhost**。若 Google Cloud 專案中該 **API 金鑰** 設定了「HTTP referrer 限制」且未包含 localhost，Firebase 會拒絕請求並回傳此錯誤。
+
+**解法（Google Cloud Console — API 金鑰的 HTTP referrer）：**
+
+1. 前往 [Google Cloud Console](https://console.cloud.google.com) → 選擇與 Firebase 相同的專案（例如 `lbj-goat-meter`）。
+2. **APIs & Services** → **Credentials**（憑證）。
+3. 在 **API 金鑰** 區塊找到本專案使用的金鑰（與 `google-services.json` 內 `api_key.current_key` 或 Firebase 網頁設定中的 API Key 一致）。
+4. 點選該金鑰 → **應用程式限制** 若為「無」則不需改；若為 **HTTP referrers (網站)**，在「參照網址」清單中**新增**：
+   - `https://localhost`
+   - `https://localhost/*`
+5. 儲存。重新安裝 APK 後再試「使用 Google 登入」。
+
+完成後，來自 APK 內 WebView（referer 為 https://localhost）的 Firebase Auth 請求會被允許，Google 登入即可通過。
+
 ---
 
 ## 3. 環境清理與重建

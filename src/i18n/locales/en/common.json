@@ -209,6 +209,7 @@
   "authError_popupClosed": "Sign-in window was closed. Please try again or use redirect sign-in if popups are blocked.",
   "authError_popupBlocked": "Sign-in popup was blocked. Allow popups or use redirect sign-in.",
   "authError_requiresRecentLogin": "This action requires recent sign-in. Please sign in again in the popup and retry.",
+  "authError_refererBlocked": "Sign-in blocked (referer localhost). In Google Cloud Console, add https://localhost and https://localhost/* to the API key's allowed HTTP referrers. See docs/APK_GOOGLE_LOGIN_FIX.md.",
   "authError_loginFailed": "Google sign-in failed",
   "lang_zhTW": "Chinese (Traditional)",
   "lang_en": "English",
