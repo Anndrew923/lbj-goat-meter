@@ -3,6 +3,9 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useTranslation } from 'react-i18next'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
+import { PushNotifications } from '@capacitor/push-notifications'
+import { useAuth } from './context/AuthContext'
+import { saveFCMToken } from './services/AccountService'
 import LoginPage from './pages/LoginPage'
 import VotePage from './pages/VotePage'
 import SetupPage from './pages/SetupPage'
@@ -36,6 +39,7 @@ const toastStyle = {
 
 export default function App() {
   const { t } = useTranslation('common')
+  const { currentUser, hasProfile } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [toastMessage, setToastMessage] = useState('')
@@ -50,6 +54,40 @@ export default function App() {
   useEffect(() => {
     initializeAdMob().catch(() => {})
   }, [])
+
+  // 戰況即時快報：僅在原生平台、已登入且 profile 已存在時請求推播權限並註冊（避免 updateDoc 時 profile 尚未建立）
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !currentUser || !hasProfile) return
+
+    const setupPush = async () => {
+      let perm = await PushNotifications.checkPermissions()
+      if (perm.receive === 'prompt') {
+        perm = await PushNotifications.requestPermissions()
+      }
+      if (perm.receive === 'granted') {
+        await PushNotifications.register()
+      }
+    }
+
+    setupPush().catch((err) => {
+      if (import.meta.env.DEV) console.warn('[App] setupPush:', err?.message)
+    })
+
+    const registrationHandler = PushNotifications.addListener(
+      'registration',
+      (token) => {
+        saveFCMToken(currentUser.uid, token.value).catch((err) => {
+          if (import.meta.env.DEV) console.warn('[App] saveFCMToken:', err?.message)
+        })
+      }
+    )
+
+    return () => {
+      registrationHandler.then((listener) => listener.remove())
+    }
+    // 僅依賴 uid / hasProfile，故意不列 currentUser 避免物件參照變動導致重複註冊
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.uid, hasProfile])
 
   // 原生返回鍵：僅在 Capacitor 原生平台註冊，攔截返回並依路由/Modal 狀態處理
   useEffect(() => {

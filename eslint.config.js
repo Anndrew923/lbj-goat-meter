@@ -4,8 +4,8 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  // android/app/src/main/assets 內為 Capacitor 複製的建置產物，非原始碼，避免對 minified bundle 報 react-hooks 誤判
-  { ignores: ['dist', 'node_modules', 'android/app/src/main/assets'] },
+  // android/app 建置產物與 assets 為 Capacitor 複製的 bundle，非原始碼，避免對 minified 報 react-hooks 誤判
+  { ignores: ['dist', 'node_modules', 'android/app/src/main/assets', 'android/app/build'] },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {

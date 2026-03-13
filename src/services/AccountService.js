@@ -10,6 +10,7 @@
  */
 
 import {
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -17,6 +18,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
   increment,
 } from "firebase/firestore";
@@ -26,6 +28,23 @@ import { GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS } from "../lib/constants";
 import { computeGlobalDeductions, computeWarzoneDeltas } from "./VoteService";
 
 const STAR_ID = "lbj";
+
+/**
+ * 儲存 FCM Token 至 profile，供後端「戰況即時快報」推播鎖定發送對象。
+ * 設計意圖：arrayUnion 避免同一設備多開分頁重複寫入造成陣列膨脹；lastActive 供後續清理過期 token 使用。
+ * 呼叫端須確保 profiles/{uid} 已存在（例如僅在 hasProfile 為 true 時註冊推播），否則 updateDoc 會拋錯。
+ *
+ * @param {string} uid - Firebase Auth UID
+ * @param {string} token - FCM device token
+ */
+export async function saveFCMToken(uid, token) {
+  if (!uid || !token) return;
+  const userRef = doc(db, "profiles", uid);
+  await updateDoc(userRef, {
+    fcmTokens: arrayUnion(token),
+    lastActive: new Date(),
+  });
+}
 
 /**
  * 帳號刪除 — Firestore 全域清理（不含 Auth）。

@@ -405,6 +405,74 @@ async function runResetPosition(data, context) {
   return { ok: true, deletedVoteId };
 }
 
+const FCM_TOPIC_WARZONE = "global_warzone";
+
+/**
+ * onProfileFCMTokensUpdate — 當 profile 的 fcmTokens 變更時，將 token 訂閱至 global_warzone topic，以接收戰況即時快報。
+ * 僅在 fcmTokens 陣列實際變更時呼叫 FCM API，避免每次 profile 更新都重複訂閱。
+ */
+export const onProfileFCMTokensUpdate = functions.firestore
+  .document("profiles/{userId}")
+  .onUpdate(async (change) => {
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const prevTokens = Array.isArray(before.fcmTokens) ? before.fcmTokens : [];
+    const nextTokens = Array.isArray(after.fcmTokens) ? after.fcmTokens : [];
+    const changed =
+      prevTokens.length !== nextTokens.length ||
+      nextTokens.some((t, i) => prevTokens[i] !== t);
+    if (!changed || nextTokens.length === 0) return;
+    try {
+      const res = await admin.messaging().subscribeToTopic(nextTokens, FCM_TOPIC_WARZONE);
+      if (process.env.GCLOUD_PROJECT?.includes("dev") || process.env.NODE_ENV === "development") {
+        console.log("[onProfileFCMTokensUpdate] subscribeToTopic", res?.successCount, res?.failureCount);
+      }
+    } catch (err) {
+      console.warn("[onProfileFCMTokensUpdate]", err?.message);
+    }
+  });
+
+/**
+ * onWarzoneLeaderChange — 戰況即時快報：僅在「領先者易主」時推播。
+ *
+ * 設計意圖：監聽 warzoneStats/global_summary 的 onUpdate，比較前後狀態的認同／反對加總，
+ * 若領先方從認同變反對（或反之）則發送 FCM 至 topic "global_warzone"。
+ * 平手（pro === anti）不視為領先者，不發送推播，避免誤報。
+ * 訂閱由 onProfileFCMTokensUpdate 在寫入 fcmTokens 時自動完成。
+ */
+export const onWarzoneLeaderChange = functions.firestore
+  .document("warzoneStats/global_summary")
+  .onUpdate(async (change) => {
+    const prev = change.before.data() || {};
+    const curr = change.after.data() || {};
+
+    const getLeader = (data) => {
+      const pro = (data.goat || 0) + (data.king || 0) + (data.machine || 0);
+      const anti = (data.fraud || 0) + (data.stat_padder || 0) + (data.mercenary || 0);
+      if (pro === anti) return null;
+      return pro > anti ? "認同" : "反對";
+    };
+
+    const prevLeader = getLeader(prev);
+    const currLeader = getLeader(curr);
+
+    if (prevLeader != null && currLeader != null && prevLeader !== currLeader) {
+      const payload = {
+        topic: "global_warzone",
+        notification: {
+          title: "🚨 戰況反轉！歷史定位重新洗牌",
+          body: `LBJ 的評價已被「${currLeader}派」佔領！目前戰況陷入拉鋸，快回來查看最新數據！`,
+        },
+      };
+      try {
+        return await admin.messaging().send(payload);
+      } catch (err) {
+        console.error("[onWarzoneLeaderChange] FCM send failed:", err?.message);
+        // 不 rethrow，避免觸發器因 FCM 暫時失敗而重試；文件已更新，推播可於下次易主時再送
+      }
+    }
+  });
+
 /**
  * issueAdRewardToken — 簽發廣告獎勵 Token（看完廣告後由前端呼叫）。
  *
