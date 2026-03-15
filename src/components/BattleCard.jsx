@@ -2,8 +2,10 @@
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
  * 固定 1:1 (640×640)，scale-to-fit 縮放；640×640 高清下載需 isExportReady（廣告解鎖後自動觸發一次下載）。
+ * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
 import { useRef, useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { toPng } from "html-to-image";
@@ -177,27 +179,33 @@ export default function BattleCard({
 
   const secondaryWithAlpha = hexWithAlpha(teamColors.secondary, "A0");
 
-  return (
-    <motion.div
-      ref={overlayRef}
-      className="fixed inset-0 z-[100] flex flex-col items-center bg-black/90 p-4 backdrop-blur-sm pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="battle-card-title"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={exit}
-      transition={{ duration: 0.25 }}
-      onClick={() => onClose?.()}
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[9998] flex flex-col"
+      style={{ isolation: "isolate" }}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-full flex flex-col items-center justify-center"
-        onClick={(e) => e.stopPropagation()}
+        ref={overlayRef}
+        className="absolute inset-0 flex flex-col items-center bg-black/90 p-4 backdrop-blur-sm pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="battle-card-title"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={exit}
+        transition={{ duration: 0.25 }}
+        onClick={() => onClose?.()}
       >
-        {/* 磁吸簇：縮放後卡片 + 按鈕組同一容器，gap-y-6 緊貼 */}
-        <div className="flex flex-col items-center gap-y-6">
+        {/* 戰報卡掃描顯影：從上到下的線性掃描遮罩，營造解密／顯影感 */}
+        <div className="scan-line" aria-hidden />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex-1 min-h-0 w-full max-w-full flex flex-col items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 磁吸簇：縮放後卡片 + 按鈕組同一容器，gap-y-6 緊貼 */}
+          <div className="flex flex-col items-center gap-y-6">
           <div className="relative w-full flex items-center justify-center">
             <div
               style={{
@@ -499,5 +507,8 @@ export default function BattleCard({
         </div>
       </motion.div>
     </motion.div>
+    </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

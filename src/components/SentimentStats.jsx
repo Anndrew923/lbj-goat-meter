@@ -146,11 +146,11 @@ export default function SentimentStats({ filters = {} }) {
         </span>
         <div className="flex-1 h-6 rounded-full bg-gray-800 overflow-hidden min-w-0">
           <motion.div
-            className="h-full rounded-full"
+            className="h-full rounded-full transition-all duration-1000 ease-out"
             style={{ backgroundColor: barColor }}
-            initial={false}
+            initial={{ width: "0%" }}
             animate={{ width: `${pct}%` }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
+            transition={{ duration: 1, ease: "easeOut" }}
           />
         </div>
         <span className="min-w-[30px] shrink-0 text-right text-sm text-gray-400">

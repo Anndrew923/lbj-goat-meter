@@ -531,9 +531,9 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
         type="button"
         onClick={handleSubmit}
         disabled={!canSubmit || submitting || isProcessing}
-        whileHover={canSubmit && !isProcessing ? { scale: 1.02 } : {}}
-        whileTap={canSubmit && !isProcessing ? { scale: 0.98 } : {}}
-        className="w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+        whileHover={canSubmit && !isProcessing ? { scale: 1.05 } : {}}
+        whileTap={canSubmit && !isProcessing ? { scale: 0.95 } : {}}
+        className={`w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold transition-transform disabled:opacity-50 disabled:cursor-not-allowed ${canSubmit && !submitting && !isProcessing ? "animate-pulse" : ""}`}
       >
         {submitting || isProcessing
           ? t("common:submittingWithAudit")

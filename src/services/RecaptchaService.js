@@ -70,7 +70,7 @@ export async function getRecaptchaToken(action = "submit_vote") {
     if (!g?.execute) {
       if (import.meta.env.DEV) {
         console.warn(
-          "[RecaptchaService] grecaptcha 未就緒，即使載入 script 仍無 execute，可檢查瀏覽器外掛或網路攔截。"
+          "[RecaptchaService] grecaptcha 未就緒（可能被外掛或網路攔截）。投票仍可送出，後端將依設定決定是否要求 token。"
         );
       }
       return null;
@@ -83,6 +83,7 @@ export async function getRecaptchaToken(action = "submit_vote") {
     return token.trim();
   } catch (err) {
     if (import.meta.env.DEV) {
+      // 註：recaptcha/api2/pat 的 401 為 PAT 協定預期行為，不影響 token 取得，見 docs/DEPLOY-DIAGNOSIS-401.md
       console.warn(
         "[RecaptchaService] 取得 reCAPTCHA token 失敗：",
         err?.message ?? err

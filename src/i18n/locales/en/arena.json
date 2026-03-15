@@ -24,7 +24,7 @@
     },
     "machine": {
       "body_investment": { "primary": "$20M Body", "secondary": "$20M body investment" },
-      "22_years_peak": { "primary": "22-Year Peak", "secondary": "22 years at peak" },
+      "22_years_peak": { "primary": "Unmatched Longevity", "secondary": "22 years at peak" },
       "27_7_7": { "primary": "27-7-7", "secondary": "27-7-7 steady output" },
       "playoffs_pts_king": { "primary": "Playoffs Scoring King", "secondary": "Playoffs all-time scoring leader" },
       "the_block": { "primary": "The Block", "secondary": "The Block specialist" }
@@ -33,7 +33,7 @@
       "2011_finals": { "primary": "2011 Finals Meltdown", "secondary": "2011 Finals disappeared (8pt game)" },
       "the_decision": { "primary": "The Decision", "secondary": "The Decision" },
       "leflop": { "primary": "LeFlop", "secondary": "LeFlop acting" },
-      "passing_clutch": { "primary": "Passing in Clutch", "secondary": "Passing in clutch moments" },
+      "passing_clutch": { "primary": "Deferring in the Clutch", "secondary": "Passing in clutch moments" },
       "finals_4_6": { "primary": "4-6 in Finals", "secondary": "4-6 in Finals" }
     },
     "mercenary": {
@@ -48,7 +48,7 @@
       "garbage_time": { "primary": "Garbage Time Stats", "secondary": "Garbage time stat-padding" },
       "walking_defense": { "primary": "Walking Defense", "secondary": "Walking defense in late career" },
       "ball_dominant": { "primary": "Ball Dominance", "secondary": "Ball dominance at teammates' cost" },
-      "stats_over_wins": { "primary": "Stats Over Wins", "secondary": "Stats over win rate" }
+      "stats_over_wins": { "primary": "Chasing Stats Over Wins", "secondary": "Stats over win rate" }
     }
   }
 }
