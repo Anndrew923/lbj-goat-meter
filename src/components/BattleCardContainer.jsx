@@ -19,6 +19,28 @@ import BattleCard from './BattleCard'
 const CARD_SIZE = 640
 const GOAT_ALBUM_NAME = 'GOAT_Warzone'
 
+/** warzoneStats 單次 getDoc 結果快取 60 秒，減少重複開啟同一戰區卡時的 Reads（Optional Optimization） */
+const WARZONE_STATS_CACHE_TTL_MS = 60 * 1000
+const warzoneStatsCache = new Map()
+
+/** 回傳 { hit: true, data } 表示快取命中（data 可能為 null）；否則為快取未命中 */
+function getCachedWarzoneStats(warzoneId) {
+  const entry = warzoneStatsCache.get(warzoneId)
+  if (!entry || typeof entry.expiresAt !== 'number') return undefined
+  if (Date.now() >= entry.expiresAt) {
+    warzoneStatsCache.delete(warzoneId)
+    return undefined
+  }
+  return { hit: true, data: entry.data }
+}
+
+function setCachedWarzoneStats(warzoneId, data) {
+  warzoneStatsCache.set(warzoneId, {
+    data,
+    expiresAt: Date.now() + WARZONE_STATS_CACHE_TTL_MS,
+  })
+}
+
 function getTeamLabel(voterTeam, t) {
   const team = TEAMS.find((x) => x.value === voterTeam)
   if (team && t) return t(`team_${voterTeam}`) || team.label
@@ -143,10 +165,22 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     const warzoneId = String(voterTeam).trim()
     if (!warzoneId) return
     let cancelled = false
+
+    const cached = getCachedWarzoneStats(warzoneId)
+    if (cached?.hit) {
+      setWarzoneStats(cached.data) // data 可能為 null（文件不存在），與快取未命中區分開
+      return
+    }
+
+    if (import.meta.env.DEV) {
+      console.log('Firebase Fetching [BattleCardContainer] warzoneStats/' + warzoneId)
+    }
     getDoc(doc(db, 'warzoneStats', warzoneId))
       .then((snap) => {
         if (cancelled) return
-        setWarzoneStats(snap.exists() ? snap.data() : null)
+        const data = snap.exists() ? snap.data() : null
+        setCachedWarzoneStats(warzoneId, data)
+        setWarzoneStats(data)
       })
       .catch(() => {
         if (!cancelled) setWarzoneStats(null)

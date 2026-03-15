@@ -194,12 +194,13 @@ export function useSentimentData(filters = EMPTY_FILTERS, options = {}) {
     ]
     const q = query(votesRef, ...constraints)
 
-    if (import.meta.env.DEV)
-      console.log('[useSentimentData] Firestore getDocs 查詢（debounced + session cache）', {
+    if (import.meta.env.DEV) {
+      console.log('Firebase Fetching [useSentimentData] votes 查詢 (getDocs + session cache)', {
         starId,
         filterEntries: filterEntries.length,
         ttlMs,
       })
+    }
 
     const snapshot = await getDocs(q)
     const docs = snapshot.docs ?? []

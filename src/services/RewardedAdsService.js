@@ -26,7 +26,8 @@ function getRewardedVideoAdId() {
   return id && String(id).trim() ? id : GOOGLE_TEST_REWARDED_VIDEO_ID;
 }
 
-function useTestRewardedAd() {
+/** 是否使用測試用廣告單元 ID（非 React Hook，僅讀取 env） */
+function shouldUseTestRewardedIds() {
   const useTest = import.meta.env.VITE_ADMOB_USE_TEST_IDS === "true";
   const hasProdId = Boolean(import.meta.env.VITE_ADMOB_REWARDED_VIDEO_ID?.trim());
   return useTest || !hasProdId;
@@ -60,7 +61,7 @@ async function fetchAdRewardTokenFromBackend() {
  */
 async function showNativeRewardedAd() {
   const adId = getRewardedVideoAdId();
-  const isTesting = useTestRewardedAd();
+  const isTesting = shouldUseTestRewardedIds();
 
   await AdMob.prepareRewardVideoAd({
     adId,
