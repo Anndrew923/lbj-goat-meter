@@ -12,6 +12,7 @@ import { useAnalystAuth } from "../hooks/useAnalystAuth";
 import FilterFunnel from "../components/FilterFunnel";
 import ReconPermissionIndicator from "../components/ReconPermissionIndicator";
 import LiveTicker from "../components/LiveTicker";
+import UniversalBreakingBanner from "../components/UniversalBreakingBanner";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
 import { SentimentDataProvider } from "../context/SentimentDataContext";
@@ -162,6 +163,7 @@ export default function VotePage() {
       <div className="header-spacer" aria-hidden />
       <WarzoneDataProvider>
         <LiveTicker forcePaused={tickerPausedForExport} />
+        <UniversalBreakingBanner />
         <motion.main
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}

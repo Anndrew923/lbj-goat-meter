@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage'
 import VotePage from './pages/VotePage'
 import SetupPage from './pages/SetupPage'
 import PrivacyPage from './pages/PrivacyPage'
+import UniversalAdmin from './pages/UniversalAdmin'
 import ProtectedRoute from './components/ProtectedRoute'
 import ExitConfirmModal from './components/ExitConfirmModal'
 import RecaptchaDisclosure from './components/RecaptchaDisclosure'
@@ -163,6 +164,14 @@ export default function App() {
           }
         />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <UniversalAdmin />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {toastMessage && (

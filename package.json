@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "storage:cors": "node scripts/apply-storage-cors.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "android:sha": "powershell -ExecutionPolicy Bypass -File ./scripts/get-debug-sha.ps1",
@@ -39,6 +40,7 @@
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@google-cloud/storage": "^7.14.0",
     "@capacitor/android": "^8.1.0",
     "@capacitor/cli": "^8.1.0",
     "@capacitor/core": "^8.1.0",

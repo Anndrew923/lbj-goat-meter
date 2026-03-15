@@ -13,42 +13,67 @@
       "411_first": { "primary": "4-1-1 Club", "secondary": "4-1-1 first ever (40K/10K/10K)" },
       "eight_finals": { "primary": "8 Straight Finals", "secondary": "8 straight years ruling the Finals" },
       "death_stare_2012": { "primary": "Death Stare G6", "secondary": "2012 Death Stare (Game 6 vs Celtics)" },
-      "ultimate_answer": { "primary": "Ultimate Two-Way", "secondary": "Ultimate two-way basketball answer" }
+      "ultimate_answer": { "primary": "Ultimate Two-Way", "secondary": "Ultimate two-way basketball answer" },
+      "three_team_fmvp": { "primary": "Three-Team FMVP", "secondary": "FMVP with three franchises" },
+      "ist_winner": { "primary": "In-Season Tournament Champ", "secondary": "First IST winner" },
+      "redeem_team_gold": { "primary": "Redeem Team Gold", "secondary": "2008 Olympic gold" },
+      "playoff_win_shares": { "primary": "Playoff Win Shares Leader", "secondary": "All-time playoff win shares" },
+      "all_nba_20_times": { "primary": "20× All-NBA", "secondary": "20 All-NBA selections" }
     },
     "king": {
       "highest_iq": { "primary": "Highest Basketball IQ", "secondary": "Highest basketball IQ ever" },
       "2018_solo": { "primary": "2018 Solo Run", "secondary": "2018 playoffs single-handedly" },
       "floor_general": { "primary": "Floor General", "secondary": "Floor general" },
       "oldest_allstar": { "primary": "Oldest All-Star", "secondary": "Oldest active All-Star" },
-      "kid_from_akron": { "primary": "The Kid from Akron", "secondary": "The Kid from Akron" }
+      "kid_from_akron": { "primary": "The Kid from Akron", "secondary": "The Kid from Akron" },
+      "on_court_coach": { "primary": "On-Court Coach", "secondary": "Coaches while playing" },
+      "point_forward": { "primary": "Point-Forward Blueprint", "secondary": "Point-forward template" },
+      "i_promise": { "primary": "Off-Court Impact", "secondary": "I Promise School & legacy" },
+      "tactical_evolution": { "primary": "Tactical Evolution Master", "secondary": "Evolved play style" },
+      "court_vision_elite": { "primary": "Elite Court Vision", "secondary": "God's-eye passing" },
+      "teammate_maximized": { "primary": "Vet-Min Amplifier", "secondary": "Maximizes role players" }
     },
     "machine": {
       "body_investment": { "primary": "$20M Body", "secondary": "$20M body investment" },
       "22_years_peak": { "primary": "Unmatched Longevity", "secondary": "22 years at peak" },
       "27_7_7": { "primary": "27-7-7", "secondary": "27-7-7 steady output" },
       "playoffs_pts_king": { "primary": "Playoffs Scoring King", "secondary": "Playoffs all-time scoring leader" },
-      "the_block": { "primary": "The Block", "secondary": "The Block specialist" }
+      "the_block": { "primary": "The Block", "secondary": "The Block specialist" },
+      "all_time_scoring_king": { "primary": "All-Time Scoring King", "secondary": "NBA all-time points leader" },
+      "aged_like_wine": { "primary": "Aged Like Wine", "secondary": "Ageless warrior" },
+      "iron_body": { "primary": "Iron Body", "secondary": "Alien durability" },
+      "1200_game_streak": { "primary": "1,200-Game Double-Digit Streak", "secondary": "Consecutive 10+ pts record" },
+      "minutes_leader_all_time": { "primary": "All-Time Minutes Leader", "secondary": "Most minutes played ever" }
     },
     "fraud": {
       "2011_finals": { "primary": "2011 Finals Meltdown", "secondary": "2011 Finals disappeared (8pt game)" },
       "the_decision": { "primary": "The Decision", "secondary": "The Decision" },
       "leflop": { "primary": "LeFlop", "secondary": "LeFlop acting" },
       "passing_clutch": { "primary": "Deferring in the Clutch", "secondary": "Passing in clutch moments" },
-      "finals_4_6": { "primary": "4-6 in Finals", "secondary": "4-6 in Finals" }
+      "finals_4_6": { "primary": "4-6 in Finals", "secondary": "4-6 in Finals" },
+      "2004_olympic_bronze": { "primary": "2004 Athens Bronze", "secondary": "Olympic bronze" },
+      "2010_jersey_toss": { "primary": "2010 Jersey Toss", "secondary": "Jersey toss incident" },
+      "2007_swept": { "primary": "2007 Finals Swept", "secondary": "Swept in Finals" }
     },
     "mercenary": {
       "superteam_era": { "primary": "Superteam Era", "secondary": "Superteam era pioneer" },
       "legm": { "primary": "LeGM", "secondary": "LeGM (trade teammates)" },
       "ring_chaser": { "primary": "Ring Chaser", "secondary": "Ring-chasing nomad" },
       "no_loyalty": { "primary": "No One-Team Loyalty", "secondary": "No one-team loyalty" },
-      "coach_killer": { "primary": "Coach Killer", "secondary": "Coach killer" }
+      "coach_killer": { "primary": "Coach Killer", "secondary": "Coach killer" },
+      "draft_asset_depletion": { "primary": "Draft-Asset Depleter", "secondary": "Draft-pick harvester" },
+      "market_jumper": { "primary": "Market Jumper", "secondary": "Big-market hopping" },
+      "klutch_empire": { "primary": "Klutch Empire", "secondary": "Rich Paul empire" }
     },
     "stat_padder": {
       "40k_hunter": { "primary": "40,000-Point Hunt", "secondary": "40,000-point record hunter" },
       "garbage_time": { "primary": "Garbage Time Stats", "secondary": "Garbage time stat-padding" },
       "walking_defense": { "primary": "Walking Defense", "secondary": "Walking defense in late career" },
       "ball_dominant": { "primary": "Ball Dominance", "secondary": "Ball dominance at teammates' cost" },
-      "stats_over_wins": { "primary": "Chasing Stats Over Wins", "secondary": "Stats over win rate" }
+      "stats_over_wins": { "primary": "Chasing Stats Over Wins", "secondary": "Stats over win rate" },
+      "usage_rate_historian": { "primary": "Historic Usage Rate", "secondary": "Epic ball-dominance" },
+      "transition_cherry_picker": { "primary": "Transition Cherry-Picker", "secondary": "Fast-break cherry-picking" },
+      "selective_shot_taking": { "primary": "Efficiency Curator", "secondary": "Selective shot selection" }
     }
   }
 }

@@ -13,42 +13,67 @@
       "411_first": { "primary": "4-1-1 Club", "secondary": "4-1-1 歷史第一人 (40K/10K/10K)" },
       "eight_finals": { "primary": "8 Straight Finals", "secondary": "連續 8 年統治決賽" },
       "death_stare_2012": { "primary": "Death Stare G6", "secondary": "2012 死亡之瞳 (Game 6 vs Celtics)" },
-      "ultimate_answer": { "primary": "Ultimate Two-Way", "secondary": "全能籃球最終答案" }
+      "ultimate_answer": { "primary": "Ultimate Two-Way", "secondary": "全能籃球最終答案" },
+      "three_team_fmvp": { "primary": "三隊 FMVP", "secondary": "三支球隊皆奪 FMVP" },
+      "ist_winner": { "primary": "首屆季中賽冠軍", "secondary": "首屆 NBA 季中錦標賽 MVP" },
+      "redeem_team_gold": { "primary": "救贖之隊金牌", "secondary": "2008 北京奧運金牌" },
+      "playoff_win_shares": { "primary": "季後賽勝貢獻第一", "secondary": "季後賽 Win Shares 歷史第一" },
+      "all_nba_20_times": { "primary": "20 次最佳陣容", "secondary": "20 次入選 All-NBA" }
     },
     "king": {
       "highest_iq": { "primary": "Highest Basketball IQ", "secondary": "史上最高籃球智商" },
       "2018_solo": { "primary": "2018 Solo Run", "secondary": "2018 季後賽單核滅火" },
       "floor_general": { "primary": "Floor General", "secondary": "球場總管" },
       "oldest_allstar": { "primary": "Oldest All-Star", "secondary": "現役最老全明星" },
-      "kid_from_akron": { "primary": "The Kid from Akron", "secondary": "阿克倫之子" }
+      "kid_from_akron": { "primary": "The Kid from Akron", "secondary": "阿克倫之子" },
+      "on_court_coach": { "primary": "場上教練", "secondary": "場上即時指揮調度" },
+      "point_forward": { "primary": "全能前鋒模板", "secondary": "Point Forward 開創者" },
+      "i_promise": { "primary": "場外影響力", "secondary": "I Promise 學校與公益" },
+      "tactical_evolution": { "primary": "戰法進化大師", "secondary": "隨時代調整打法" },
+      "court_vision_elite": { "primary": "上帝視角傳球", "secondary": "頂級視野與傳球" },
+      "teammate_maximized": { "primary": "底薪隊友增幅器", "secondary": "讓角色球員發光" }
     },
     "machine": {
       "body_investment": { "primary": "$20M Body", "secondary": "兩千萬美金的身體投資" },
       "22_years_peak": { "primary": "22-Year Peak", "secondary": "22 年恆定巔峰" },
       "27_7_7": { "primary": "27-7-7", "secondary": "27-7-7 穩定輸出" },
       "playoffs_pts_king": { "primary": "Playoffs Scoring King", "secondary": "季後賽總得分王" },
-      "the_block": { "primary": "The Block", "secondary": "追擊阻攻專家" }
+      "the_block": { "primary": "The Block", "secondary": "追擊阻攻專家" },
+      "all_time_scoring_king": { "primary": "歷史總得分王", "secondary": "NBA 例行賽總得分第一" },
+      "aged_like_wine": { "primary": "不老戰神", "secondary": "年過 35 仍維持巔峰" },
+      "iron_body": { "primary": "外星人體質", "secondary": "極少傷病、出勤率驚人" },
+      "1200_game_streak": { "primary": "連續得分雙位數紀錄", "secondary": "連續 1,200+ 場 10 分以上" },
+      "minutes_leader_all_time": { "primary": "歷史上場時間第一", "secondary": "總上場時間歷史第一" }
     },
     "fraud": {
       "2011_finals": { "primary": "2011 Finals Meltdown", "secondary": "2011 總決賽消失 (8分慘案)" },
       "the_decision": { "primary": "The Decision", "secondary": "決定一" },
       "leflop": { "primary": "LeFlop", "secondary": "LeFlop 演技派" },
       "passing_clutch": { "primary": "Passing in Clutch", "secondary": "關鍵時刻甩鍋" },
-      "finals_4_6": { "primary": "4-6 in Finals", "secondary": "總決賽 4 勝 6 敗" }
+      "finals_4_6": { "primary": "4-6 in Finals", "secondary": "總決賽 4 勝 6 敗" },
+      "2004_olympic_bronze": { "primary": "2004 雅典銅牌", "secondary": "雅典奧運僅獲銅牌" },
+      "2010_jersey_toss": { "primary": "2010 脫球衣事件", "secondary": "輸球後脫衣離場" },
+      "2007_swept": { "primary": "2007 總決賽橫掃", "secondary": "總決賽遭馬刺橫掃" }
     },
     "mercenary": {
       "superteam_era": { "primary": "Superteam Era", "secondary": "抱團文化開創者" },
       "legm": { "primary": "LeGM", "secondary": "LeGM 操盤手 (Trade teammates)" },
       "ring_chaser": { "primary": "Ring Chaser", "secondary": "四處遷徙的冠軍獵人" },
       "no_loyalty": { "primary": "No One-Team Loyalty", "secondary": "缺乏一生一隊的忠誠" },
-      "coach_killer": { "primary": "Coach Killer", "secondary": "教練殺手" }
+      "coach_killer": { "primary": "Coach Killer", "secondary": "教練殺手" },
+      "draft_asset_depletion": { "primary": "選秀權收割機", "secondary": "耗盡球隊選秀資產" },
+      "market_jumper": { "primary": "大市場跳板術", "secondary": "專挑大市場球隊" },
+      "klutch_empire": { "primary": "富保羅帝國", "secondary": "Klutch 經紀勢力" }
     },
     "stat_padder": {
       "40k_hunter": { "primary": "40,000-Point Hunt", "secondary": "40,000 分紀錄獵人" },
       "garbage_time": { "primary": "Garbage Time Stats", "secondary": "垃圾時間刷數據" },
       "walking_defense": { "primary": "Walking Defense", "secondary": "晚年防守散步" },
       "ball_dominant": { "primary": "Ball Dominance", "secondary": "掌控球權犧牲隊友" },
-      "stats_over_wins": { "primary": "Stats Over Wins", "secondary": "數據大於勝率" }
+      "stats_over_wins": { "primary": "Stats Over Wins", "secondary": "數據大於勝率" },
+      "usage_rate_historian": { "primary": "史詩級高球權佔有率", "secondary": "史上最高使用率之一" },
+      "transition_cherry_picker": { "primary": "快攻偷跑大師", "secondary": "專撿快攻簡單分" },
+      "selective_shot_taking": { "primary": "高效率值維護者", "secondary": "挑選高命中出手" }
     }
   }
 }

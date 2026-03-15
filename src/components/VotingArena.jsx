@@ -216,335 +216,332 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
     }
   };
 
-  // 狀態分流：A. 已登入且有 Profile → 下方正常投票／已投票 UI；B. 匿名 (isGuest) → 引導登入；C. 半登錄 (isLimboUser) → 顯示卡但點擊攔截
-  if (profileLoading && userId) {
-    return (
-      <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
-        <p className="text-king-gold animate-pulse" role="status">
-          {t("common:loadingArena")}
-        </p>
-      </div>
-    );
-  }
-
-  /** C. 已登入但無 Profile (isLimboUser)：顯示投票卡，點擊時攔截並引導完成戰區登錄 */
-  if (isLimboUser) {
-    return (
-      <>
-        <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
-          <h3 className="text-lg font-bold text-king-gold mb-2">
-            {t("common:chooseStance")}
-          </h3>
-          <p className="text-sm text-gray-500 mb-4">
-            {t("common:completeProfileFirst")}
-          </p>
-          <StanceCards
-            selectedStance={null}
-            onSelect={() => setShowLoginPrompt(true)}
-            disabled={false}
-          />
-          <motion.button
-            type="button"
-            onClick={() => {
-              setShowLoginPrompt(false);
-              onOpenWarzoneSelect?.();
-            }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full mt-4 py-3 rounded-lg bg-king-gold text-black font-bold shadow-lg shadow-king-gold/20 hover:shadow-king-gold/30 transition-shadow"
-            aria-label={t("common:completeWarzonePromptButton")}
-          >
-            {t("common:completeWarzonePromptButton")}
-          </motion.button>
-        </div>
-        <LoginPromptModal
-          open={showLoginPrompt}
-          onClose={() => setShowLoginPrompt(false)}
-          variant="limbo"
-          onCompleteWarzone={() => onOpenWarzoneSelect?.()}
-        />
-      </>
-    );
-  }
-
-  if (isGuest) {
-    return (
-      <>
-        <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
-          <h3 className="text-lg font-bold text-king-gold mb-2">
-            {t("common:chooseStance")}
-          </h3>
-          <p className="text-sm text-gray-500 mb-4">
-            {t("common:loginToVoteHint")}
-          </p>
-          <StanceCards
-            selectedStance={null}
-            onSelect={() => setShowLoginPrompt(true)}
-            disabled={false}
-          />
-        </div>
-        <LoginPromptModal
-          open={showLoginPrompt}
-          onClose={() => setShowLoginPrompt(false)}
-        />
-      </>
-    );
-  }
-
-  if (profile && !hasVoted && !hasSelectedWarzone) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="rounded-xl border-2 border-king-gold/60 bg-gradient-to-b from-king-gold/10 to-villain-purple/10 p-8 text-center"
-      >
-        <div className="mb-6">
-          <h3 className="text-2xl font-black tracking-tight text-king-gold uppercase">
-            {t("common:claimYourWarzone")}
-          </h3>
-          <p className="mt-3 text-gray-300 text-sm max-w-sm mx-auto">
-            {t("common:claimYourWarzoneDesc")}
-          </p>
-        </div>
-        <motion.button
-          type="button"
-          onClick={() => onOpenWarzoneSelect?.()}
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.98 }}
-          className="w-full max-w-xs mx-auto py-4 px-6 rounded-xl bg-king-gold text-black font-bold text-lg shadow-lg shadow-king-gold/30 hover:shadow-king-gold/50 transition-shadow"
-          aria-label={t("common:openWarzoneSelect")}
-        >
-          {t("common:openWarzoneSelect")}
-        </motion.button>
-      </motion.div>
-    );
-  }
-
-  if (hasVoted) {
-    return (
-      <>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="rounded-xl border border-king-gold/40 bg-gray-900/80 p-8 text-center"
-        >
-          <p className="text-king-gold font-semibold">
-            {t("common:alreadyVoted")}
-          </p>
-          <p className="mt-2 text-sm text-gray-400">
-            {t("common:thanksVoted")}
-          </p>
-          <motion.button
-            type="button"
-            onClick={() => setShowBattleCard(true)}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="mt-4 px-6 py-2.5 rounded-full font-bold bg-gradient-to-r from-king-gold to-king-gold/80 text-black shadow-lg shadow-king-gold/20 transition-all inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-king-gold focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-            aria-label={t("common:viewMyBattleCard")}
-          >
-            <Share2 className="w-4 h-4 shrink-0" aria-hidden />
-            {t("common:viewMyBattleCard")}
-          </motion.button>
-        </motion.div>
-        <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
-          {showBattleCard && (
-            <BattleCardContainer
-              ref={battleCardContainerRef}
-              key="battle-card"
-              open={showBattleCard}
-              onClose={() => setShowBattleCard(false)}
-              onRevote={handleRevote}
-              revoking={revoking}
-              revoteError={revoteError}
-              onRevoteReload={handleRevoteRetry}
-              photoURL={currentUser?.photoURL}
-              displayName={currentUser?.displayName ?? currentUser?.email}
-              voterTeam={profile?.voterTeam}
-              status={profile?.currentStance ?? selectedStance}
-              reasonLabels={getReasonLabels(
-                profile?.currentStance ?? selectedStance,
-                Array.isArray(profile?.currentReasons)
-                  ? profile.currentReasons
-                  : (selectedReasons ?? []),
-              )}
-              city={profile?.city}
-              country={profile?.country}
-              rankLabel={
-                profile?.city
-                  ? t("common:rankLabelWithCity", { city: profile.city })
-                  : t("common:rankLabel")
-              }
-              exit={{ opacity: 0, scale: 0.8 }}
-              onRequestRewardAd={onRequestRewardAd}
-              onExportStart={onExportStart}
-              onExportEnd={onExportEnd}
-            />
-          )}
-        </AnimatePresence>
-        <AdMobPortal
-          open={showAdPortal}
-          onWatched={() => {
-            pendingOnWatchedRef.current?.();
-            pendingOnWatchedRef.current = null;
-            setShowAdPortal(false);
-            setShowSaveReportConfirm(true);
-          }}
-          onClose={() => setShowAdPortal(false)}
-        />
-        {showSaveReportConfirm && (
-          <div
-            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="save-report-confirm-title"
-            onClick={() => !saveReportPending && setShowSaveReportConfirm(false)}
-          >
-            <motion.div
-              className="rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h2 id="save-report-confirm-title" className="text-lg font-bold text-king-gold mb-4">
-                {t("common:saveReportToGalleryPrompt")}
-              </h2>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSaveReportConfirm(false)}
-                  disabled={saveReportPending}
-                  className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors disabled:opacity-50"
-                >
-                  {t("common:saveReportToGalleryLater")}
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setSaveReportPending(true);
-                    try {
-                      await battleCardContainerRef.current?.saveToGallery?.();
-                      setShowSaveReportConfirm(false);
-                    } catch (err) {
-                      console.error("[VotingArena] save to gallery failed", err);
-                      setShowSaveReportConfirm(false);
-                    } finally {
-                      setSaveReportPending(false);
-                    }
-                  }}
-                  disabled={saveReportPending}
-                  className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {saveReportPending ? t("common:saveReportToGallerySaving") : t("common:saveReportToGalleryConfirm")}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </>
-    );
-  }
+  // 外殼包裝（Wrapper）模式：單一出口，依 contentMode 渲染 DynamicContent，確保上層可固定插入突發戰區入口等區塊
+  const contentMode =
+    profileLoading && userId
+      ? "loading"
+      : isLimboUser
+        ? "limbo"
+        : isGuest
+          ? "guest"
+          : profile && !hasVoted && !hasSelectedWarzone
+            ? "no_warzone"
+            : hasVoted
+              ? "voted"
+              : "form";
 
   const anti = isAntiStance(selectedStance);
 
   return (
-    <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
-      <h3 className="text-lg font-bold text-king-gold mb-4">
-        {t("common:chooseStance")}
-      </h3>
-
-      <motion.div
-        key={revoteCompleteKey}
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: "spring", stiffness: 300, damping: 24 }}
-        className="mb-4"
-      >
-        <StanceCards
-          selectedStance={selectedStance}
-          onSelect={handleStanceSelect}
-          goatFlash={goatFlash}
-          fraudShatter={fraudShatter}
-          disabled={isProcessing}
-        />
-      </motion.div>
-
-      <AnimatePresence mode="wait">
-        {selectedStance && (
-          <motion.div
-            key={selectedStance}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="mb-4"
-          >
-            <p className="text-sm text-gray-400 mb-2" id="choose-reasons-hint">
-              {t("common:chooseReasons")}
-              <span className="ml-1 text-gray-500">
-                （{t("common:chooseReasonsMax", { max: REASONS_MAX_SELECT })}）
-              </span>
+    <>
+      <div className="voting-arena-wrapper space-y-0">
+        {contentMode === "loading" && (
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
+            <p className="text-king-gold animate-pulse" role="status">
+              {t("common:loadingArena")}
             </p>
-            <div
-              className="flex flex-wrap gap-2"
-              role="group"
-              aria-labelledby="choose-reasons-hint"
+          </div>
+        )}
+        {contentMode === "limbo" && (
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+            <h3 className="text-lg font-bold text-king-gold mb-2">
+              {t("common:chooseStance")}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {t("common:completeProfileFirst")}
+            </p>
+            <StanceCards
+              selectedStance={null}
+              onSelect={() => setShowLoginPrompt(true)}
+              disabled={false}
+            />
+            <motion.button
+              type="button"
+              onClick={() => {
+                setShowLoginPrompt(false);
+                onOpenWarzoneSelect?.();
+              }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full mt-4 py-3 rounded-lg bg-king-gold text-black font-bold shadow-lg shadow-king-gold/20 hover:shadow-king-gold/30 transition-shadow"
+              aria-label={t("common:completeWarzonePromptButton")}
             >
-              {reasons.map(({ value, secondary, weight }) => {
-                const isSelected = selectedReasons.includes(value);
-                const atMax = selectedReasons.length >= REASONS_MAX_SELECT;
-                const disabled = !isSelected && atMax;
-                return (
-                  <motion.button
-                    key={value}
-                    type="button"
-                    onClick={() => toggleReason(value)}
-                    disabled={disabled || isProcessing}
-                    aria-pressed={isSelected}
-                    aria-label={secondary}
-                    whileHover={!disabled ? { scale: 1.05 } : {}}
-                    whileTap={!disabled ? { scale: 0.95 } : {}}
-                    className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                      weight === "high" ? "font-semibold" : ""
-                    } ${
-                      isSelected
-                        ? anti
-                          ? "bg-villain-purple/70 text-white"
-                          : "bg-king-gold/80 text-black"
-                        : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                    } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
-                  >
-                    {secondary}
-                  </motion.button>
-                );
-              })}
+              {t("common:completeWarzonePromptButton")}
+            </motion.button>
+          </div>
+        )}
+        {contentMode === "guest" && (
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+            <h3 className="text-lg font-bold text-king-gold mb-2">
+              {t("common:chooseStance")}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {t("common:loginToVoteHint")}
+            </p>
+            <StanceCards
+              selectedStance={null}
+              onSelect={() => setShowLoginPrompt(true)}
+              disabled={false}
+            />
+          </div>
+        )}
+        {contentMode === "no_warzone" && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="rounded-xl border-2 border-king-gold/60 bg-gradient-to-b from-king-gold/10 to-villain-purple/10 p-8 text-center"
+          >
+            <div className="mb-6">
+              <h3 className="text-2xl font-black tracking-tight text-king-gold uppercase">
+                {t("common:claimYourWarzone")}
+              </h3>
+              <p className="mt-3 text-gray-300 text-sm max-w-sm mx-auto">
+                {t("common:claimYourWarzoneDesc")}
+              </p>
             </div>
+            <motion.button
+              type="button"
+              onClick={() => onOpenWarzoneSelect?.()}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full max-w-xs mx-auto py-4 px-6 rounded-xl bg-king-gold text-black font-bold text-lg shadow-lg shadow-king-gold/30 hover:shadow-king-gold/50 transition-shadow"
+              aria-label={t("common:openWarzoneSelect")}
+            >
+              {t("common:openWarzoneSelect")}
+            </motion.button>
           </motion.div>
         )}
+        {contentMode === "voted" && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-xl border border-king-gold/40 bg-gray-900/80 p-8 text-center"
+          >
+            <p className="text-king-gold font-semibold">
+              {t("common:alreadyVoted")}
+            </p>
+            <p className="mt-2 text-sm text-gray-400">
+              {t("common:thanksVoted")}
+            </p>
+            <motion.button
+              type="button"
+              onClick={() => setShowBattleCard(true)}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="mt-4 px-6 py-2.5 rounded-full font-bold bg-gradient-to-r from-king-gold to-king-gold/80 text-black shadow-lg shadow-king-gold/20 transition-all inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-king-gold focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+              aria-label={t("common:viewMyBattleCard")}
+            >
+              <Share2 className="w-4 h-4 shrink-0" aria-hidden />
+              {t("common:viewMyBattleCard")}
+            </motion.button>
+          </motion.div>
+        )}
+        {contentMode === "form" && (
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+            <h3 className="text-lg font-bold text-king-gold mb-4">
+              {t("common:chooseStance")}
+            </h3>
+
+            <motion.div
+              key={revoteCompleteKey}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24 }}
+              className="mb-4"
+            >
+              <StanceCards
+                selectedStance={selectedStance}
+                onSelect={handleStanceSelect}
+                goatFlash={goatFlash}
+                fraudShatter={fraudShatter}
+                disabled={isProcessing}
+              />
+            </motion.div>
+
+            <AnimatePresence mode="wait">
+              {selectedStance && (
+                <motion.div
+                  key={selectedStance}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="mb-4"
+                >
+                  <p className="text-sm text-gray-400 mb-2" id="choose-reasons-hint">
+                    {t("common:chooseReasons")}
+                    <span className="ml-1 text-gray-500">
+                      （{t("common:chooseReasonsMax", { max: REASONS_MAX_SELECT })}）
+                    </span>
+                  </p>
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-labelledby="choose-reasons-hint"
+                  >
+                    {reasons.map(({ value, secondary, weight }) => {
+                      const isSelected = selectedReasons.includes(value);
+                      const atMax = selectedReasons.length >= REASONS_MAX_SELECT;
+                      const disabled = !isSelected && atMax;
+                      return (
+                        <motion.button
+                          key={value}
+                          type="button"
+                          onClick={() => toggleReason(value)}
+                          disabled={disabled || isProcessing}
+                          aria-pressed={isSelected}
+                          aria-label={secondary}
+                          whileHover={!disabled ? { scale: 1.05 } : {}}
+                          whileTap={!disabled ? { scale: 0.95 } : {}}
+                          className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                            weight === "high" ? "font-semibold" : ""
+                          } ${
+                            isSelected
+                              ? anti
+                                ? "bg-villain-purple/70 text-white"
+                                : "bg-king-gold/80 text-black"
+                              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                          } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+                        >
+                          {secondary}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {submitError && (
+              <p className="mb-4 text-sm text-red-400" role="alert">
+                {submitError}
+              </p>
+            )}
+
+            <motion.button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit || submitting || isProcessing}
+              whileHover={canSubmit && !isProcessing ? { scale: 1.05 } : {}}
+              whileTap={canSubmit && !isProcessing ? { scale: 0.95 } : {}}
+              className={`w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold transition-transform disabled:opacity-50 disabled:cursor-not-allowed ${canSubmit && !submitting && !isProcessing ? "animate-pulse" : ""}`}
+            >
+              {submitting || isProcessing
+                ? t("common:submittingWithAudit")
+                : t("common:submitVote")}
+            </motion.button>
+            {/* 戰前信心暗示：減少用戶對於灌票的疑慮，提升單次投票的心理價值；極低調樣式避免干擾主流程。 */}
+            <p className="mt-2 text-[10px] text-gray-500/60 text-center" aria-hidden>
+              {isProcessing
+                ? t("common:security_verified_hint_audit")
+                : t("common:security_verified_hint")}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Limbo / Guest 共用：登入／完成戰區引導 Modal */}
+      <LoginPromptModal
+        open={showLoginPrompt}
+        onClose={() => setShowLoginPrompt(false)}
+        variant={contentMode === "limbo" ? "limbo" : undefined}
+        onCompleteWarzone={contentMode === "limbo" ? () => onOpenWarzoneSelect?.() : undefined}
+      />
+
+      {/* 已投票流程：戰報卡、廣告解鎖、存檔確認 */}
+      <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
+        {showBattleCard && (
+          <BattleCardContainer
+            ref={battleCardContainerRef}
+            key="battle-card"
+            open={showBattleCard}
+            onClose={() => setShowBattleCard(false)}
+            onRevote={handleRevote}
+            revoking={revoking}
+            revoteError={revoteError}
+            onRevoteReload={handleRevoteRetry}
+            photoURL={currentUser?.photoURL}
+            displayName={currentUser?.displayName ?? currentUser?.email}
+            voterTeam={profile?.voterTeam}
+            status={profile?.currentStance ?? selectedStance}
+            reasonLabels={getReasonLabels(
+              profile?.currentStance ?? selectedStance,
+              Array.isArray(profile?.currentReasons)
+                ? profile.currentReasons
+                : (selectedReasons ?? []),
+            )}
+            city={profile?.city}
+            country={profile?.country}
+            rankLabel={
+              profile?.city
+                ? t("common:rankLabelWithCity", { city: profile.city })
+                : t("common:rankLabel")
+            }
+            exit={{ opacity: 0, scale: 0.8 }}
+            onRequestRewardAd={onRequestRewardAd}
+            onExportStart={onExportStart}
+            onExportEnd={onExportEnd}
+          />
+        )}
       </AnimatePresence>
-
-      {submitError && (
-        <p className="mb-4 text-sm text-red-400" role="alert">
-          {submitError}
-        </p>
+      <AdMobPortal
+        open={showAdPortal}
+        onWatched={() => {
+          pendingOnWatchedRef.current?.();
+          pendingOnWatchedRef.current = null;
+          setShowAdPortal(false);
+          setShowSaveReportConfirm(true);
+        }}
+        onClose={() => setShowAdPortal(false)}
+      />
+      {showSaveReportConfirm && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="save-report-confirm-title"
+          onClick={() => !saveReportPending && setShowSaveReportConfirm(false)}
+        >
+          <motion.div
+            className="rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="save-report-confirm-title" className="text-lg font-bold text-king-gold mb-4">
+              {t("common:saveReportToGalleryPrompt")}
+            </h2>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSaveReportConfirm(false)}
+                disabled={saveReportPending}
+                className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors disabled:opacity-50"
+              >
+                {t("common:saveReportToGalleryLater")}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setSaveReportPending(true);
+                  try {
+                    await battleCardContainerRef.current?.saveToGallery?.();
+                    setShowSaveReportConfirm(false);
+                  } catch (err) {
+                    console.error("[VotingArena] save to gallery failed", err);
+                    setShowSaveReportConfirm(false);
+                  } finally {
+                    setSaveReportPending(false);
+                  }
+                }}
+                disabled={saveReportPending}
+                className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {saveReportPending ? t("common:saveReportToGallerySaving") : t("common:saveReportToGalleryConfirm")}
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
-
-      <motion.button
-        type="button"
-        onClick={handleSubmit}
-        disabled={!canSubmit || submitting || isProcessing}
-        whileHover={canSubmit && !isProcessing ? { scale: 1.05 } : {}}
-        whileTap={canSubmit && !isProcessing ? { scale: 0.95 } : {}}
-        className={`w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold transition-transform disabled:opacity-50 disabled:cursor-not-allowed ${canSubmit && !submitting && !isProcessing ? "animate-pulse" : ""}`}
-      >
-        {submitting || isProcessing
-          ? t("common:submittingWithAudit")
-          : t("common:submitVote")}
-      </motion.button>
-      {/* 戰前信心暗示：減少用戶對於灌票的疑慮，提升單次投票的心理價值；極低調樣式避免干擾主流程。 */}
-      <p className="mt-2 text-[10px] text-gray-500/60 text-center" aria-hidden>
-        {isProcessing
-          ? t("common:security_verified_hint_audit")
-          : t("common:security_verified_hint")}
-      </p>
-    </div>
+    </>
   );
 }

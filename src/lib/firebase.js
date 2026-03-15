@@ -28,6 +28,7 @@ import { initializeApp } from 'firebase/app'
 import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
+import { getStorage } from 'firebase/storage'
 import { Capacitor } from '@capacitor/core'
 
 // 與 Firebase Console 一致：使用 reCAPTCHA Enterprise（GCP 管理之金鑰）
@@ -108,6 +109,7 @@ function buildConfig() {
 let app = null
 let auth = null
 let db = null
+let storage = null
 let googleProvider = null
 /** App Check 是否已成功啟用；用於 UI 顯示「數據經實時驗證」等公信力標籤的防禦性邏輯。 */
 let appCheckEnabled = false
@@ -145,6 +147,9 @@ if (config) {
         localCache: persistentLocalCache({}),
       }),
     })
+    if (config.storageBucket) {
+      storage = getStorage(app)
+    }
     googleProvider = new GoogleAuthProvider()
   } catch (err) {
     if (import.meta.env.DEV) {
@@ -223,5 +228,5 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export { auth, db, googleProvider }
+export { auth, db, storage, googleProvider }
 export default app

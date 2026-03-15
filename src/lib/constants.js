@@ -99,6 +99,15 @@ export const STANCES = [
 /** 全球聚合文件 ID（warzoneStats/global_summary）：圖表與跳表嚴禁掃描 votes，一律讀此文件以極致節流 */
 export const GLOBAL_SUMMARY_DOC_ID = 'global_summary'
 
+/**
+ * 當前專案 App ID — 用於 global_events 的 target_app 過濾，僅顯示屬於本 App 的突發話題。
+ * 跨專案時：同一 Firestore 集合 global_events，各 App 僅抓 target_app 包含此 ID 的活動。
+ */
+export const PROJECT_APP_ID = 'goat_meter'
+
+/** Firestore 突發戰區集合：跨專案通用，以 target_app 陣列篩選所屬 App */
+export const GLOBAL_EVENTS_COLLECTION = 'global_events'
+
 /** 立場鍵列表，與 STANCES 順序一致，供 global_summary 計數欄位使用 */
 export const STANCE_KEYS = STANCES.map((s) => s.value)
 
@@ -167,6 +176,11 @@ export const REASONS_BY_STANCE = {
     { key: 'eight_finals', labelKey: 'reasons.goat.eight_finals', weight: 'high', category: 'honors' },
     { key: 'death_stare_2012', labelKey: 'reasons.goat.death_stare_2012', weight: 'normal', category: 'legacy' },
     { key: 'ultimate_answer', labelKey: 'reasons.goat.ultimate_answer', weight: 'normal', category: 'legacy' },
+    { key: 'three_team_fmvp', labelKey: 'reasons.goat.three_team_fmvp', weight: 'high', category: 'honors' },
+    { key: 'ist_winner', labelKey: 'reasons.goat.ist_winner', weight: 'normal', category: 'honors' },
+    { key: 'redeem_team_gold', labelKey: 'reasons.goat.redeem_team_gold', weight: 'normal', category: 'honors' },
+    { key: 'playoff_win_shares', labelKey: 'reasons.goat.playoff_win_shares', weight: 'normal', category: 'stats' },
+    { key: 'all_nba_20_times', labelKey: 'reasons.goat.all_nba_20_times', weight: 'high', category: 'stats' },
   ],
   king: [
     { key: 'highest_iq', labelKey: 'reasons.king.highest_iq', weight: 'high', category: 'leadership' },
@@ -174,6 +188,12 @@ export const REASONS_BY_STANCE = {
     { key: 'floor_general', labelKey: 'reasons.king.floor_general', weight: 'normal', category: 'leadership' },
     { key: 'oldest_allstar', labelKey: 'reasons.king.oldest_allstar', weight: 'normal', category: 'stats' },
     { key: 'kid_from_akron', labelKey: 'reasons.king.kid_from_akron', weight: 'normal', category: 'legacy' },
+    { key: 'on_court_coach', labelKey: 'reasons.king.on_court_coach', weight: 'normal', category: 'leadership' },
+    { key: 'point_forward', labelKey: 'reasons.king.point_forward', weight: 'normal', category: 'legacy' },
+    { key: 'i_promise', labelKey: 'reasons.king.i_promise', weight: 'normal', category: 'legacy' },
+    { key: 'tactical_evolution', labelKey: 'reasons.king.tactical_evolution', weight: 'normal', category: 'leadership' },
+    { key: 'court_vision_elite', labelKey: 'reasons.king.court_vision_elite', weight: 'normal', category: 'leadership' },
+    { key: 'teammate_maximized', labelKey: 'reasons.king.teammate_maximized', weight: 'high', category: 'leadership' },
   ],
   machine: [
     { key: 'body_investment', labelKey: 'reasons.machine.body_investment', weight: 'high', category: 'stats' },
@@ -181,6 +201,11 @@ export const REASONS_BY_STANCE = {
     { key: '27_7_7', labelKey: 'reasons.machine.27_7_7', weight: 'normal', category: 'stats' },
     { key: 'playoffs_pts_king', labelKey: 'reasons.machine.playoffs_pts_king', weight: 'normal', category: 'stats' },
     { key: 'the_block', labelKey: 'reasons.machine.the_block', weight: 'normal', category: 'honors' },
+    { key: 'all_time_scoring_king', labelKey: 'reasons.machine.all_time_scoring_king', weight: 'high', category: 'stats' },
+    { key: 'aged_like_wine', labelKey: 'reasons.machine.aged_like_wine', weight: 'normal', category: 'stats' },
+    { key: 'iron_body', labelKey: 'reasons.machine.iron_body', weight: 'normal', category: 'stats' },
+    { key: '1200_game_streak', labelKey: 'reasons.machine.1200_game_streak', weight: 'normal', category: 'stats' },
+    { key: 'minutes_leader_all_time', labelKey: 'reasons.machine.minutes_leader_all_time', weight: 'normal', category: 'stats' },
   ],
   fraud: [
     { key: '2011_finals', labelKey: 'reasons.fraud.2011_finals', weight: 'high', category: 'controversy' },
@@ -188,6 +213,9 @@ export const REASONS_BY_STANCE = {
     { key: 'leflop', labelKey: 'reasons.fraud.leflop', weight: 'normal', category: 'controversy' },
     { key: 'passing_clutch', labelKey: 'reasons.fraud.passing_clutch', weight: 'normal', category: 'controversy' },
     { key: 'finals_4_6', labelKey: 'reasons.fraud.finals_4_6', weight: 'high', category: 'stats' },
+    { key: '2004_olympic_bronze', labelKey: 'reasons.fraud.2004_olympic_bronze', weight: 'normal', category: 'controversy' },
+    { key: '2010_jersey_toss', labelKey: 'reasons.fraud.2010_jersey_toss', weight: 'normal', category: 'controversy' },
+    { key: '2007_swept', labelKey: 'reasons.fraud.2007_swept', weight: 'high', category: 'stats' },
   ],
   mercenary: [
     { key: 'superteam_era', labelKey: 'reasons.mercenary.superteam_era', weight: 'high', category: 'controversy' },
@@ -195,6 +223,9 @@ export const REASONS_BY_STANCE = {
     { key: 'ring_chaser', labelKey: 'reasons.mercenary.ring_chaser', weight: 'normal', category: 'narrative' },
     { key: 'no_loyalty', labelKey: 'reasons.mercenary.no_loyalty', weight: 'normal', category: 'narrative' },
     { key: 'coach_killer', labelKey: 'reasons.mercenary.coach_killer', weight: 'normal', category: 'controversy' },
+    { key: 'draft_asset_depletion', labelKey: 'reasons.mercenary.draft_asset_depletion', weight: 'normal', category: 'controversy' },
+    { key: 'market_jumper', labelKey: 'reasons.mercenary.market_jumper', weight: 'normal', category: 'narrative' },
+    { key: 'klutch_empire', labelKey: 'reasons.mercenary.klutch_empire', weight: 'normal', category: 'controversy' },
   ],
   stat_padder: [
     { key: '40k_hunter', labelKey: 'reasons.stat_padder.40k_hunter', weight: 'high', category: 'stats' },
@@ -202,5 +233,8 @@ export const REASONS_BY_STANCE = {
     { key: 'walking_defense', labelKey: 'reasons.stat_padder.walking_defense', weight: 'normal', category: 'controversy' },
     { key: 'ball_dominant', labelKey: 'reasons.stat_padder.ball_dominant', weight: 'normal', category: 'narrative' },
     { key: 'stats_over_wins', labelKey: 'reasons.stat_padder.stats_over_wins', weight: 'high', category: 'narrative' },
+    { key: 'usage_rate_historian', labelKey: 'reasons.stat_padder.usage_rate_historian', weight: 'normal', category: 'stats' },
+    { key: 'transition_cherry_picker', labelKey: 'reasons.stat_padder.transition_cherry_picker', weight: 'normal', category: 'narrative' },
+    { key: 'selective_shot_taking', labelKey: 'reasons.stat_padder.selective_shot_taking', weight: 'normal', category: 'stats' },
   ],
 }
