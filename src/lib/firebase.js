@@ -27,6 +27,7 @@
 import { initializeApp } from 'firebase/app'
 import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 import { Capacitor } from '@capacitor/core'
@@ -151,6 +152,13 @@ if (config) {
       storage = getStorage(app)
     }
     googleProvider = new GoogleAuthProvider()
+
+    // 本地開發：可選使用 Functions Emulator 避免 localhost → Cloud 的 CORS 阻擋（突發戰區 submitBreakingVote 等）
+    if (typeof window !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
+      const functions = getFunctions(app)
+      connectFunctionsEmulator(functions, 'localhost', 5001)
+      console.log('[Firebase] Functions 使用本機 Emulator (localhost:5001)，避免 CORS')
+    }
   } catch (err) {
     if (import.meta.env.DEV) {
       console.error('[Firebase] 初始化失敗，Auth/Firestore 將不可用:', err?.message ?? err)

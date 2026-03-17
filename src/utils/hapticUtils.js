@@ -59,3 +59,12 @@ export async function triggerHapticPattern(pattern) {
     window.navigator.vibrate(pattern);
   }
 }
+
+/**
+ * 雙段震動：用於「歷史存證」等儀式感回饋（10ms → 30ms 連續兩次）。
+ * 先短後長，強化「已記錄」的體感。
+ * @returns {Promise<void>}
+ */
+export async function triggerHapticImpact() {
+  await triggerHapticPattern([10, 20, 30]);
+}

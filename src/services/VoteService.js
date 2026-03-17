@@ -59,6 +59,47 @@ function getVoteFunctionErrorMessage(err, getMessage) {
 }
 
 /**
+ * 突發戰區投票：一話題一設備一票，需帶入 deviceId 與 recaptchaToken。
+ *
+ * @param {string} eventId - global_events 文件 ID
+ * @param {number} optionIndex - 選項索引（0-based）
+ * @param {string} deviceId - 設備識別碼（getDeviceId()）
+ * @param {string | null} recaptchaToken - RecaptchaService.getRecaptchaToken('submit_breaking_vote')
+ * @param {(key: string) => string} getMessage - i18n 鍵→文案
+ */
+export async function submitBreakingVote(eventId, optionIndex, deviceId, recaptchaToken, getMessage) {
+  if (typeof getMessage !== "function") throw new Error("getMessage is required");
+  const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
+  if (!eventIdStr) throw new Error(getMessage("common:breakingVoteError"));
+  const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
+  if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
+
+  const functions = getFunctionsInstance();
+  const callable = httpsCallable(functions, "submitBreakingVote");
+  try {
+    await callable({
+      eventId: eventIdStr,
+      optionIndex: typeof optionIndex === "number" ? optionIndex : 0,
+      deviceId: deviceIdStr,
+      recaptchaToken: recaptchaToken ?? null,
+    });
+  } catch (err) {
+    const code = err?.details?.code || err?.code;
+    if (code === "breaking-already-voted") {
+      throw new Error(getMessage("common:breakingAlreadyVoted"));
+    }
+    if (code === "low-score-robot") {
+      throw new Error(getMessage("common:voteError_lowScoreRobot"));
+    }
+    if (code === "unauthenticated" || code === "auth-required") {
+      throw new Error(getMessage("common:voteError_authRequired"));
+    }
+    const msg = (err?.message && typeof err.message === "string" && err.message) || getMessage("common:breakingVoteError");
+    throw new Error(msg);
+  }
+}
+
+/**
  * 提交一票（含設備鎖：一設備一票，與 revokeVote / deleteAccountData 連動解鎖）。
  *
  * @param {string} userId - Firebase Auth UID

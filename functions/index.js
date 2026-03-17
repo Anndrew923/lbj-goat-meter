@@ -473,6 +473,67 @@ export const onWarzoneLeaderChange = functions.firestore
     }
   });
 
+const GLOBAL_EVENTS_COLLECTION = "global_events";
+
+/**
+ * submitBreakingVote — 突發戰區投票：一話題一設備一票，寫入 global_events/{eventId}/votes/{deviceId}。
+ */
+export const submitBreakingVote = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+
+  try {
+    return await runSubmitBreakingVote(data, context);
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    console.error("[submitBreakingVote]", err?.message);
+    throw new functions.https.HttpsError("internal", "Breaking vote failed", {
+      code: "breaking-vote-internal",
+    });
+  }
+});
+
+async function runSubmitBreakingVote(data, context) {
+  const { eventId, optionIndex, deviceId, recaptchaToken } = data || {};
+  const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
+  const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
+  if (!eventIdStr || !deviceIdStr) {
+    throw new functions.https.HttpsError("invalid-argument", "eventId and deviceId required");
+  }
+  const option = typeof optionIndex === "number" ? optionIndex : 0;
+
+  if (!shouldBypassHardSecurity(context)) {
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
+    if (!recaptchaResult.success) {
+      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
+        code: "low-score-robot",
+        recaptchaScore: recaptchaResult.score,
+      });
+    }
+  }
+
+  const eventRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventIdStr}`);
+  const voteRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventIdStr}/votes/${deviceIdStr}`);
+
+  await db.runTransaction(async (tx) => {
+    const eventSnap = await tx.get(eventRef);
+    if (!eventSnap.exists) {
+      throw new functions.https.HttpsError("not-found", "Event not found");
+    }
+    const voteSnap = await tx.get(voteRef);
+    if (voteSnap.exists) {
+      throw new functions.https.HttpsError("failed-precondition", "Already voted on this topic", {
+        code: "breaking-already-voted",
+      });
+    }
+    tx.set(voteRef, {
+      optionIndex: option,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { ok: true };
+}
+
 /**
  * issueAdRewardToken — 簽發廣告獎勵 Token（看完廣告後由前端呼叫）。
  *

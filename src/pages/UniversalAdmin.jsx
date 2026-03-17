@@ -6,14 +6,24 @@
  * - 動態雙語存儲：標題、描述、選項皆以語系物件 { "zh-TW": "...", "en": "..." } 寫入 Firestore。
  * - 圖片上傳後 URL 與雙語內容一併存入同一 Document。
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  getDocs,
+  query,
+  orderBy,
+  deleteDoc,
+  doc,
+} from 'firebase/firestore'
 import { db, storage } from '../lib/firebase'
 import { GLOBAL_EVENTS_COLLECTION } from '../lib/constants'
+import { compressAndConvertToWebP } from '../lib/imageCompression'
 
 const ASPECT_16_9 = 16 / 9
 
@@ -44,6 +54,24 @@ function toLocaleObject(zh, en) {
   }
 }
 
+/**
+ * 從 Firebase Storage 的 download URL 解析出 Storage 路徑（供刪除用）。
+ * 僅在文件無 image_storage_path 時用於舊資料相容。
+ */
+function getStoragePathFromUrl(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') return null
+  try {
+    const u = new URL(imageUrl)
+    const pathname = u.pathname || ''
+    const match = pathname.match(/\/o\/(.+?)(?:\?|$)/)
+    const encoded = match?.[1]
+    if (!encoded) return null
+    return decodeURIComponent(encoded)
+  } catch {
+    return null
+  }
+}
+
 export default function UniversalAdmin() {
   const { t } = useTranslation('common')
   const [targetAppText, setTargetAppText] = useState('goat_meter')
@@ -59,6 +87,9 @@ export default function UniversalAdmin() {
   const [publishing, setPublishing] = useState(false)
   const [message, setMessage] = useState(null)
   const [dragOver, setDragOver] = useState(false)
+  const [allTopics, setAllTopics] = useState([])
+  const [topicsLoading, setTopicsLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState(null)
 
   const onFile = useCallback((file) => {
     if (!file?.type?.startsWith('image/')) return
@@ -83,6 +114,57 @@ export default function UniversalAdmin() {
   }, [])
   const onDragLeave = useCallback(() => setDragOver(false), [])
 
+  const loadAllTopics = useCallback(async () => {
+    if (!db) return
+    setTopicsLoading(true)
+    try {
+      const col = collection(db, GLOBAL_EVENTS_COLLECTION)
+      const q = query(col, orderBy('createdAt', 'desc'))
+      const snapshot = await getDocs(q)
+      const list = (snapshot.docs ?? []).map((d) => ({ id: d.id, ...d.data() }))
+      setAllTopics(list)
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('[UniversalAdmin] loadAllTopics', err)
+      setMessage({ type: 'error', text: err?.message || t('adminError') })
+    } finally {
+      setTopicsLoading(false)
+    }
+  }, [t])
+
+  useEffect(() => {
+    loadAllTopics()
+  }, [loadAllTopics])
+
+  const handleDelete = async (ev) => {
+    const id = ev?.id
+    if (!id) return
+    setDeletingId(id)
+    setMessage(null)
+    try {
+      const item = allTopics.find((x) => x.id === id)
+      const storagePath =
+        item?.image_storage_path ||
+        (item?.image_url ? getStoragePathFromUrl(item.image_url) : null)
+      if (storagePath && storage) {
+        try {
+          const storageRef = ref(storage, storagePath)
+          await deleteObject(storageRef)
+        } catch (storageErr) {
+          if (import.meta.env.DEV) console.warn('[UniversalAdmin] deleteObject', storageErr)
+          // 仍刪除 Firestore，避免孤兒 Doc 殘留
+        }
+      }
+      await deleteDoc(doc(db, GLOBAL_EVENTS_COLLECTION, id))
+      setMessage({ type: 'success', text: t('adminDeleted') })
+      setAllTopics((prev) => prev.filter((x) => x.id !== id))
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('[UniversalAdmin] handleDelete', err)
+      setMessage({ type: 'error', text: err?.message || t('adminError') })
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const handlePublish = async () => {
     const target_app = parseCommaList(targetAppText)
     if (!target_app.length) {
@@ -99,16 +181,33 @@ export default function UniversalAdmin() {
     setMessage(null)
     let imageUploadFailed = false
     let image_url = ''
+    let image_storage_path = null
     try {
       if (imageFile && storage) {
         try {
-          const path = `${GLOBAL_EVENTS_COLLECTION}/${Date.now()}_${imageFile.name}`
+          // 上傳前壓縮：16:9 裁切、寬度 ≤1280px、轉 WebP，目標 150–200KB；長效快取省重複下載流量
+          const webpBlob = await compressAndConvertToWebP(imageFile)
+          const path = `${GLOBAL_EVENTS_COLLECTION}/${Date.now()}.webp`
+          image_storage_path = path
           const storageRef = ref(storage, path)
-          await uploadBytes(storageRef, imageFile)
-          image_url = await getDownloadURL(storageRef)
+          const metadata = {
+            cacheControl: 'public, max-age=31536000',
+            contentType: 'image/webp',
+          }
+          const uploadTask = uploadBytesResumable(storageRef, webpBlob, metadata)
+          const snapshot = await new Promise((resolve, reject) => {
+            uploadTask.on(
+              'state_changed',
+              () => {},
+              reject,
+              () => resolve(uploadTask.snapshot)
+            )
+          })
+          image_url = await getDownloadURL(snapshot.ref)
         } catch (uploadErr) {
           if (import.meta.env.DEV) console.error('[UniversalAdmin] image upload', uploadErr)
           imageUploadFailed = true
+          image_storage_path = null
           // 不阻斷發布：活動仍寫入 Firestore（image_url 為 null），僅提示需設定 Storage CORS
         }
       }
@@ -122,6 +221,7 @@ export default function UniversalAdmin() {
         title,
         description,
         image_url: image_url || null,
+        image_storage_path: image_storage_path || null,
         options,
         is_active: !!isActive,
         createdAt: serverTimestamp(),
@@ -130,6 +230,7 @@ export default function UniversalAdmin() {
         type: 'success',
         text: imageUploadFailed ? t('adminSavedNoImage') : t('adminSaved'),
       })
+      loadAllTopics()
       setTitleZh('')
       setTitleEn('')
       setDescriptionZh('')
@@ -370,6 +471,59 @@ export default function UniversalAdmin() {
             </div>
           </motion.section>
         </div>
+
+        {/* 所有話題清單：可刪除 Doc 與對應 Storage .webp */}
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6"
+        >
+          <h2 className="text-sm font-semibold text-king-gold mb-4">
+            {t('adminAllTopics')}
+          </h2>
+          {topicsLoading ? (
+            <p className="text-sm text-gray-500 animate-pulse">{t('breakingLoading')}</p>
+          ) : allTopics.length === 0 ? (
+            <p className="text-sm text-gray-500">{t('adminNoTopics')}</p>
+          ) : (
+            <ul className="space-y-2">
+              {allTopics.map((ev) => {
+                const titleText =
+                  (typeof ev.title === 'object' && ev.title != null
+                    ? (ev.title['zh-TW'] || ev.title.en || '—')
+                    : String(ev.title ?? '—')) || '—'
+                const isDeleting = deletingId === ev.id
+                return (
+                  <li
+                    key={ev.id}
+                    className="flex items-center justify-between gap-4 py-2 px-3 rounded-lg bg-gray-800/80 border border-villain-purple/20"
+                  >
+                    <span className="text-sm text-white truncate flex-1 min-w-0">
+                      {titleText}
+                    </span>
+                    <span
+                      className={`text-xs shrink-0 ${
+                        ev.is_active ? 'text-king-gold' : 'text-gray-500'
+                      }`}
+                    >
+                      {ev.is_active ? t('adminIsActive') : '—'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(ev)}
+                      disabled={isDeleting}
+                      aria-label={t('adminDelete')}
+                      className="shrink-0 py-1.5 px-3 rounded-lg text-xs font-medium text-red-400 border border-red-500/40 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDeleting ? t('adminDeleting') : t('adminDelete')}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </motion.section>
       </div>
     </div>
   )

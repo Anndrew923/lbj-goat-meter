@@ -28,6 +28,23 @@
       "fields": [
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "global_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "target_app", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "global_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "target_app", "order": "ASCENDING" },
+        { "fieldPath": "is_active", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

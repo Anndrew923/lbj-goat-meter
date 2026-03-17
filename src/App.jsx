@@ -11,7 +11,9 @@ import VotePage from './pages/VotePage'
 import SetupPage from './pages/SetupPage'
 import PrivacyPage from './pages/PrivacyPage'
 import UniversalAdmin from './pages/UniversalAdmin'
+import BreakingHistoryPage from './pages/BreakingHistoryPage'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import ExitConfirmModal from './components/ExitConfirmModal'
 import RecaptchaDisclosure from './components/RecaptchaDisclosure'
 import { triggerHaptic } from './utils/hapticUtils'
@@ -165,11 +167,19 @@ export default function App() {
         />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route
-          path="/admin"
+          path="/breaking-history"
           element={
             <ProtectedRoute>
-              <UniversalAdmin />
+              <BreakingHistoryPage />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <UniversalAdmin />
+            </AdminRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

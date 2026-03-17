@@ -5,20 +5,98 @@
  * - 跨專案通用：從 global_events 讀取 target_app 包含當前專案 ID 的活動，投票前／投票後皆顯示。
  * - 動態雙語：標題、描述、選項自 Firestore 語系物件提取，依 useTranslation 語系渲染，缺語系時 fallback 到 en。
  * - 暗黑競技風：金/紫邊框、16:9 圖區。圖片 URL 與雙語內容存於同一 Document。
+ * - 點擊選項後先彈出 CommitmentModal，確認後才呼叫 submitBreakingVote；投票成功後寫入 localStorage 緩存已投話題，防止重複點擊。
  */
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { Zap } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
 import { PROJECT_APP_ID } from '../lib/constants'
 import { getLocalizedText } from '../lib/localeUtils'
+import { getDeviceId } from '../utils/deviceId'
+import { getRecaptchaToken } from '../services/RecaptchaService'
+import { submitBreakingVote } from '../services/VoteService'
+import { triggerHaptic } from '../utils/hapticUtils'
+import CommitmentModal from './CommitmentModal'
 
 const ASPECT_RATIO = 16 / 9
+const STORAGE_KEY_VOTED = 'lbj_breaking_voted'
+
+function loadVotedEventIds() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_VOTED) : null
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+function saveVotedEventIds(ids) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_VOTED, JSON.stringify(ids))
+    }
+  } catch {
+    // ignore
+  }
+}
 
 export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
+  const [votedEventIds, setVotedEventIds] = useState(() => loadVotedEventIds())
+  const [submitting, setSubmitting] = useState(null)
+  const [toast, setToast] = useState(null)
+  const [pending, setPending] = useState(null)
+
+  const markEventVoted = useCallback((eventId) => {
+    setVotedEventIds((prev) => {
+      const next = prev.includes(eventId) ? prev : [...prev, eventId]
+      saveVotedEventIds(next)
+      return next
+    })
+  }, [])
+
+  const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
+    if (votedEventIds.includes(ev.id)) {
+      triggerHaptic(10)
+      setToast(t('breakingAlreadyVoted'))
+      return
+    }
+    if (submitting) return
+    triggerHaptic(10)
+    setToast(null)
+    setPending({ ev, optionIndex, optionLabel })
+  }, [t, votedEventIds, submitting])
+
+  const closeCommitmentModal = useCallback(() => {
+    if (!submitting) setPending(null)
+  }, [submitting])
+
+  const handleCommitmentConfirm = useCallback(
+    async () => {
+      if (!pending) return
+      const { ev, optionIndex } = pending
+      setSubmitting(`${ev.id}-${optionIndex}`)
+      try {
+        const deviceId = getDeviceId()
+        const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
+        const getMessage = (k) => t(k.replace(/^common:/, ''))
+        await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage)
+        markEventVoted(ev.id)
+        setToast(t('breakingVoteSuccess'))
+        setPending(null)
+      } catch (err) {
+        setToast(err?.message || t('breakingVoteError'))
+      } finally {
+        setSubmitting(null)
+      }
+    },
+    [pending, t, markEventVoted]
+  )
 
   if (loading) {
     return (
@@ -44,36 +122,47 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         const optionsList = Array.isArray(ev.options) ? ev.options : []
 
         return (
-          <motion.article
+          <div
             key={ev.id}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl border border-king-gold/40 bg-gray-900/80 overflow-hidden shadow-lg shadow-king-gold/5"
+            className="rounded-xl p-[2px] bg-gradient-to-r from-king-gold via-red-500 to-king-gold bg-beam animate-border-beam motion-reduce:animate-none"
           >
-            <div
-              className="relative w-full overflow-hidden"
-              style={{ aspectRatio: ASPECT_RATIO }}
+            <motion.article
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-[10px] bg-gray-900/80 overflow-hidden shadow-lg shadow-king-gold/5"
             >
-              {ev.image_url ? (
-                <img
-                  src={ev.image_url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-king-gold/10 to-villain-purple/10">
-                  <Zap className="w-10 h-10 text-king-gold/60" aria-hidden />
-                </div>
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
-              <div className="absolute bottom-0 left-0 right-0 p-3 text-left">
-                <span className="text-[10px] uppercase tracking-wider text-king-gold/90 font-semibold">
-                  {t('breakingTitle')}
-                </span>
-                <p className="text-white font-semibold text-sm line-clamp-2 mt-0.5">
-                  {titleText || ''}
-                </p>
+              <div
+                className="relative w-full overflow-hidden"
+                style={{ aspectRatio: ASPECT_RATIO }}
+              >
+                {ev.image_url ? (
+                  <img
+                    src={ev.image_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-king-gold/10 to-villain-purple/10">
+                    <Zap className="w-10 h-10 text-king-gold/60" aria-hidden />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute bottom-0 left-0 right-0 p-3 text-left">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded bg-red-600 text-[10px] font-bold text-white uppercase tracking-wider animate-pulse motion-reduce:animate-none"
+                      aria-hidden
+                    >
+                      LIVE
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider text-king-gold/90 font-semibold">
+                      {t('breakingTitle')}
+                    </span>
+                  </div>
+                  <p className="text-white font-semibold text-sm line-clamp-2 mt-0.5">
+                    {titleText || ''}
+                  </p>
                 {descText && (
                   <p className="text-gray-300 text-xs line-clamp-1 mt-0.5">
                     {descText}
@@ -82,26 +171,55 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
               </div>
             </div>
             {optionsList.length > 0 && (
-              <div className="px-3 pb-3 flex flex-wrap gap-2">
-                {optionsList.slice(0, 4).map((opt, i) => {
+              <div
+                className={
+                  optionsList.length > 4
+                    ? 'px-3 pb-3 grid grid-cols-2 gap-1.5'
+                    : 'px-3 pb-3 flex flex-wrap gap-2'
+                }
+              >
+                {(optionsList.length > 4 ? optionsList.slice(0, 8) : optionsList.slice(0, 4)).map((opt, i) => {
                   const label = typeof opt === 'object' && opt !== null
                     ? getLocalizedText(opt, lang)
                     : String(opt ?? '')
                   if (!label) return null
+                  const voted = votedEventIds.includes(ev.id)
+                  const isSubmitting = submitting === `${ev.id}-${i}`
+                  const isCompact = optionsList.length > 4
                   return (
-                    <span
+                    <button
                       key={i}
-                      className="px-2 py-1 rounded-md text-xs bg-king-gold/20 text-king-gold border border-king-gold/30"
+                      type="button"
+                      disabled={voted || isSubmitting}
+                      onClick={() => openCommitmentModal(ev, i, label)}
+                      className={`rounded-md text-king-gold border border-king-gold/30 hover:bg-king-gold/30 disabled:opacity-70 disabled:cursor-not-allowed transition-colors ${
+                        isCompact
+                          ? 'px-2 py-1.5 text-[11px] bg-king-gold/20'
+                          : 'px-2 py-1 text-xs bg-king-gold/20'
+                      }`}
                     >
-                      {label}
-                    </span>
+                      {isSubmitting ? t('submitting') : label}
+                    </button>
                   )
                 })}
               </div>
             )}
-          </motion.article>
+            </motion.article>
+          </div>
         )
       })}
+      {toast && (
+        <p className="text-xs text-king-gold mt-2" role="status">
+          {toast}
+        </p>
+      )}
+      <CommitmentModal
+        open={Boolean(pending)}
+        onClose={closeCommitmentModal}
+        onConfirm={handleCommitmentConfirm}
+        optionLabel={pending?.optionLabel ?? ''}
+        loading={Boolean(submitting)}
+      />
     </div>
   )
 }

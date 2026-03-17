@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   LogOut,
   Info,
+  Archive,
 } from "lucide-react";
 
 export default function VotePage() {
@@ -163,7 +164,19 @@ export default function VotePage() {
       <div className="header-spacer" aria-hidden />
       <WarzoneDataProvider>
         <LiveTicker forcePaused={tickerPausedForExport} />
-        <UniversalBreakingBanner />
+        <div className="space-y-2">
+          <UniversalBreakingBanner />
+          <div className="flex justify-end">
+            <Link
+              to="/breaking-history"
+              aria-label={t("viewAllBreakingHistory")}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-king-gold/30 bg-transparent text-king-gold/90 hover:bg-king-gold/10 hover:border-king-gold/50 transition-colors text-sm font-medium"
+            >
+              <Archive className="w-4 h-4 shrink-0" aria-hidden />
+              {t("viewAllBreakingHistory")}
+            </Link>
+          </div>
+        </div>
         <motion.main
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}

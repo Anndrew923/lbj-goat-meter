@@ -161,12 +161,83 @@
 
 ---
 
-## 九、操作檢查清單（日後重現／排查用）
+## 九、Firestore 複合索引（global_events）
+
+`useGlobalBreakingEvents` 的查詢需要以下複合索引，否則會出現 **The query requires an index** 並附建立連結。
+
+### 9.1 索引定義（已寫入 `firestore.indexes.json`）
+
+| 用途 | 欄位 |
+|------|------|
+| 歷史分頁（含未啟用） | `target_app` ASC、`createdAt` DESC |
+| 突發橫幅（僅啟用） | `target_app` ASC、`is_active` ASC、`createdAt` DESC |
+
+### 9.2 建立方式（二擇一）
+
+1. **點擊錯誤訊息裡的連結**：畫面上會顯示 `You can create it here: https://console.firebase.google.com/...`，點進去後 Firebase Console 會預填索引，按「建立」即可（需等數分鐘建置）。
+2. **用 CLI 部署**：專案已將上述索引寫入 `firestore.indexes.json`，執行  
+   `npx firebase deploy --only firestore:indexes`  
+   會一次建立所有缺少的索引。
+
+---
+
+## 十、操作檢查清單（日後重現／排查用）
 
 1. **突發橫幅有資料**：Firestore `global_events` 有文件且 `target_app` 含 `goat_meter`、`is_active == true`。
-2. **後台可發布**：已登入、Firestore 與 Storage 規則已部署；若為新環境，需先執行 CORS 設定與 Storage 啟用。
-3. **localhost 上傳成功**：已對 `lbj-goat-meter.firebasestorage.app` 套用 CORS（Cloud Shell 或本機 `STORAGE_BUCKET=... npm run storage:cors`）。
-4. **規則更新**：Storage 改 `storage.rules` 後執行 `npx firebase deploy --only storage`；Firestore 改 `firestore.rules` 後執行 `npx firebase deploy --only firestore:rules`。
+2. **索引已建立**：若出現 "The query requires an index"，依「九、Firestore 複合索引」建立後重新整理歷史分頁／橫幅。
+3. **後台可發布**：已登入、Firestore 與 Storage 規則已部署；若為新環境，需先執行 CORS 設定與 Storage 啟用。
+4. **localhost 上傳成功**：已對 `lbj-goat-meter.firebasestorage.app` 套用 CORS（Cloud Shell 或本機 `STORAGE_BUCKET=... npm run storage:cors`）。
+5. **規則更新**：Storage 改 `storage.rules` 後執行 `npx firebase deploy --only storage`；Firestore 改 `firestore.rules` 後執行 `npx firebase deploy --only firestore:rules`。
+
+---
+
+## 十一、localhost 突發戰區投票 CORS 錯誤
+
+從 **http://localhost:2323**（或其它本機 port）點「確認投下」時，若 Console 出現：
+
+`Access to fetch at 'https://us-central1-lbj-goat-meter.cloudfunctions.net/submitBreakingVote' from origin 'http://localhost:2323' has been blocked by CORS policy`
+
+表示瀏覽器對 Cloud Functions 的跨來源請求被擋下。
+
+### 11.1 解法一：部署 Functions 並確認授權網域（建議先做）
+
+1. **部署 Cloud Functions**（含 `submitBreakingVote`）  
+   ```bash
+   npx firebase deploy --only functions
+   ```
+   若從未部署或新增過 `submitBreakingVote`，部署後雲端端點才會正確回傳並帶 CORS 標頭。
+
+2. **確認授權網域**  
+   Firebase Console → **Authentication** → **Settings** → **Authorized domains**  
+   確認有 **localhost**（不需加 port）。若沒有，新增 `localhost` 後儲存。
+
+3. 重新整理 localhost 頁面，再試一次「確認投下」。
+
+### 11.2 解法二：本地用 Functions Emulator（避開 CORS）
+
+若仍被 CORS 阻擋，可改讓前端連到本機 Emulator，請求就不會跨到雲端、不會觸發 CORS：
+
+1. **啟動 Emulator**（另開終端）  
+   ```bash
+   npx firebase emulators:start --only functions
+   ```
+   預設 Functions 會跑在 `http://localhost:5001`。
+
+2. **讓前端連到 Emulator**  
+   在專案根目錄的 `.env` 或 `.env.local` 加上：  
+   ```env
+   VITE_USE_FUNCTIONS_EMULATOR=true
+   ```  
+   重啟 `npm run dev`（或 `vite`）後，前端會改連 `localhost:5001` 的 Functions，不再呼叫雲端 `submitBreakingVote`。
+
+3. **注意**：Emulator 使用的是本機函式碼與本機/測試用 Auth、Firestore（若一併開 Firestore emulator）。要測「真實雲端」行為時，請關掉 `VITE_USE_FUNCTIONS_EMULATOR` 並重新整理。
+
+程式面：`src/lib/firebase.js` 在 `import.meta.env.DEV && VITE_USE_FUNCTIONS_EMULATOR === 'true'` 時會呼叫 `connectFunctionsEmulator(functions, 'localhost', 5001)`，所有 `httpsCallable`（含 `submitBreakingVote`）會改走 Emulator。
+
+### 11.3 localhost 出現 403（securetoken）且被導回登入
+
+若 Console 出現 `POST https://securetoken.googleapis.com/v1/token 403`，接著 `Redirecting because not authenticated`，代表 **Auth token 刷新** 被擋，投票不會成功。  
+請依 **`docs/FIX-403-SECURETOKEN-LOCALHOST.md`** 在 Google Cloud Console 的 API 金鑰「HTTP referrers」中加入目前使用的 localhost 網址（例如 `http://localhost:2323/*`）。
 
 ---
 

@@ -112,6 +112,12 @@
   "breakingTitle": "突發戰區",
   "breakingEnter": "進入",
   "breakingLoading": "載入中…",
+  "breakingVoteSuccess": "已記錄你的選擇",
+  "breakingVoteError": "投票失敗，請稍後再試",
+  "breakingAlreadyVoted": "你已在此話題投過票",
+  "viewAllBreakingHistory": "查看所有歷史話題",
+  "breakingCommitmentMessage": "立場即將載入歷史檔案，一旦存證將無法更改。確認投下這一票？",
+  "breakingCommitmentConfirm": "確認投下",
   "justNow": "剛剛",
   "secondsAgo": "{{count}}秒前",
   "minutesAgo": "{{count}}分鐘前",
@@ -320,5 +326,10 @@
   "adminError": "錯誤",
   "adminErrorTargetAppRequired": "請填寫目標 App",
   "adminErrorTitleRequired": "請填寫標題",
-  "adminErrorTitleEnRequired": "請填寫標題（英文）"
+  "adminErrorTitleEnRequired": "請填寫標題（英文）",
+  "adminAllTopics": "所有話題清單",
+  "adminNoTopics": "尚無話題",
+  "adminDelete": "刪除",
+  "adminDeleting": "刪除中…",
+  "adminDeleted": "已刪除。"
 }

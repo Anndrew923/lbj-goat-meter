@@ -16,18 +16,22 @@ import {
   query,
   where,
   limit,
+  orderBy,
   onSnapshot,
 } from 'firebase/firestore'
 import { db, isFirebaseReady } from '../lib/firebase'
 import { PROJECT_APP_ID, GLOBAL_EVENTS_COLLECTION } from '../lib/constants'
 
 const MAX_EVENTS = 5
+const MAX_EVENTS_HISTORY = 50
 
 /**
  * @param {string} [appId] - 當前專案 App ID，預設 PROJECT_APP_ID（goat_meter）
+ * @param {{ includeInactive?: boolean, limit?: number }} [opts] - includeInactive: 含未啟用話題（歷史頁）；limit: 筆數上限
  * @returns {{ events: Array<{ id: string, title: Record<string, string>|string, description?: Record<string, string>|string, image_url?: string, options?: Array<Record<string, string>|string>, target_app?: string[], is_active?: boolean }>, loading: boolean, error: Error | null }}
  */
-export function useGlobalBreakingEvents(appId = PROJECT_APP_ID) {
+export function useGlobalBreakingEvents(appId = PROJECT_APP_ID, opts = {}) {
+  const { includeInactive = false, limit: limitOverride } = opts
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -40,12 +44,15 @@ export function useGlobalBreakingEvents(appId = PROJECT_APP_ID) {
     }
 
     const col = collection(db, GLOBAL_EVENTS_COLLECTION)
-    const q = query(
-      col,
+    const constraints = [
       where('target_app', 'array-contains', appId.trim()),
-      where('is_active', '==', true),
-      limit(MAX_EVENTS)
-    )
+      orderBy('createdAt', 'desc'),
+      limit(includeInactive ? (limitOverride ?? MAX_EVENTS_HISTORY) : (limitOverride ?? MAX_EVENTS)),
+    ]
+    if (!includeInactive) {
+      constraints.splice(1, 0, where('is_active', '==', true))
+    }
+    const q = query(col, ...constraints)
 
     let unsubscribe
     try {
@@ -79,7 +86,7 @@ export function useGlobalBreakingEvents(appId = PROJECT_APP_ID) {
         unsubscribe()
       }
     }
-  }, [appId])
+  }, [appId, includeInactive, limitOverride])
 
   return { events, loading, error }
 }

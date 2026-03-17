@@ -43,12 +43,27 @@ export default {
           '40%': { transform: 'scale(1.1)', boxShadow: '0 0 18px rgba(212,175,55,0.65)', borderColor: 'rgba(212,175,55,0.9)' },
           '100%': { transform: 'scale(1)', boxShadow: '0 0 0 rgba(212,175,55,0.0)', borderColor: 'rgba(148,163,184,0.5)' },
         },
+        /* 突發橫幅：邊框漸層流光（Border Beam） */
+        'border-beam': {
+          '0%': { backgroundPosition: '0% 50%' },
+          '100%': { backgroundPosition: '200% 50%' },
+        },
+        /* 歷史分頁：水平掃描線，進入時播放 1 秒，自左至右掃過容器 */
+        'scanning-line': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(500%)' },
+        },
       },
       animation: {
         'border-blink': 'border-blink 1.5s ease-in-out infinite',
         marquee: 'marquee 40s linear infinite',
         'gate-scan': 'gate-scan 2.6s linear infinite',
         'intel-ping': 'intel-ping 0.45s ease-out',
+        'border-beam': 'border-beam 2.5s linear infinite',
+        'scanning-line': 'scanning-line 1s ease-out forwards',
+      },
+      backgroundSize: {
+        'beam': '200% 100%',
       },
       colors: {
         // 暗黑競技風：粉方（金/紅）、黑方（紫/靛）；對抗版六立場視覺意圖

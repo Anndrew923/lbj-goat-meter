@@ -112,6 +112,12 @@
   "breakingTitle": "Breaking",
   "breakingEnter": "Enter",
   "breakingLoading": "Loading…",
+  "breakingVoteSuccess": "Your choice has been recorded",
+  "breakingVoteError": "Vote failed. Please try again.",
+  "breakingAlreadyVoted": "You have already voted on this topic",
+  "viewAllBreakingHistory": "View all history",
+  "breakingCommitmentMessage": "Your stance will be recorded in the archive. Once saved, it cannot be changed. Confirm this vote?",
+  "breakingCommitmentConfirm": "Confirm vote",
   "justNow": "Just now",
   "secondsAgo": "{{count}}s ago",
   "minutesAgo": "{{count}}m ago",
@@ -331,5 +337,10 @@
   "adminError": "Error",
   "adminErrorTargetAppRequired": "Target app(s) required",
   "adminErrorTitleRequired": "Title required",
-  "adminErrorTitleEnRequired": "Title (en) required"
+  "adminErrorTitleEnRequired": "Title (en) required",
+  "adminAllTopics": "All topics",
+  "adminNoTopics": "No topics yet",
+  "adminDelete": "Delete",
+  "adminDeleting": "Deleting…",
+  "adminDeleted": "Deleted."
 }
