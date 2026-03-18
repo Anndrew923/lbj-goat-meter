@@ -115,6 +115,8 @@
   "breakingVoteSuccess": "已記錄你的選擇",
   "breakingVoteError": "投票失敗，請稍後再試",
   "breakingAlreadyVoted": "你已在此話題投過票",
+  "breakingTeaser": "{{count}} 人已參與，投下立場以觀看實時戰報",
+  "arenaDeclaration": "王座審判：定義傳奇的最終立場。在此刻，你的選擇即是歷史。",
   "viewAllBreakingHistory": "查看所有歷史話題",
   "breakingCommitmentMessage": "立場即將載入歷史檔案，一旦存證將無法更改。確認投下這一票？",
   "breakingCommitmentConfirm": "確認投下",

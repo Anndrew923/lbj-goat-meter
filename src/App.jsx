@@ -110,7 +110,7 @@ export default function App() {
         setIsExitModalOpen(true)
         return
       }
-      // 其他頁（如 /setup、/privacy）：返回鍵先回投票頁
+      // 其他頁（/breaking-history、/setup、/privacy 等）：返回鍵回到投票頁，確保 Android 物理返回鍵行為一致
       navigate('/vote', { replace: true })
     }
 

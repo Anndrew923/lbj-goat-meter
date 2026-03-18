@@ -216,6 +216,10 @@ export default function UniversalAdmin() {
       const description = toLocaleObject(descriptionZh, descriptionEn)
       const options = zipOptionsToList(optionsZh, optionsEn)
 
+      // vote_counts：以選項索引為 key 的 Map，供後端 increment 與前端結果條計算百分比；total_votes 總計
+      const vote_counts = options.length
+        ? Object.fromEntries(options.map((_, i) => [String(i), 0]))
+        : {};
       await addDoc(collection(db, GLOBAL_EVENTS_COLLECTION), {
         target_app,
         title,
@@ -223,6 +227,8 @@ export default function UniversalAdmin() {
         image_url: image_url || null,
         image_storage_path: image_storage_path || null,
         options,
+        vote_counts,
+        total_votes: 0,
         is_active: !!isActive,
         createdAt: serverTimestamp(),
       })

@@ -164,40 +164,40 @@ export default function VotePage() {
       <div className="header-spacer" aria-hidden />
       <WarzoneDataProvider>
         <LiveTicker forcePaused={tickerPausedForExport} />
-        <div className="space-y-2">
-          <UniversalBreakingBanner />
-          <div className="flex justify-end">
-            <Link
-              to="/breaking-history"
-              aria-label={t("viewAllBreakingHistory")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-king-gold/30 bg-transparent text-king-gold/90 hover:bg-king-gold/10 hover:border-king-gold/50 transition-colors text-sm font-medium"
-            >
-              <Archive className="w-4 h-4 shrink-0" aria-hidden />
-              {t("viewAllBreakingHistory")}
-            </Link>
-          </div>
-        </div>
         <motion.main
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="mt-8 space-y-8"
-      >
-        <VotingArena
-          userId={currentUser?.uid}
-          currentUser={currentUser}
-          onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
-          onExportStart={() => setTickerPausedForExport(true)}
-          onExportEnd={() => setTickerPausedForExport(false)}
-        />
-        <SentimentDataProvider
-          filters={stableFilters}
-          authorized={isAnalystAuthorized}
-          remainingPoints={remainingPoints}
-          consumePoint={consumePoint}
-          onEnergyExhausted={onEnergyExhausted}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mt-8 space-y-8"
         >
-        <section className="relative">
+          <VotingArena
+            userId={currentUser?.uid}
+            currentUser={currentUser}
+            onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
+            onExportStart={() => setTickerPausedForExport(true)}
+            onExportEnd={() => setTickerPausedForExport(false)}
+          />
+          <div className="space-y-2">
+            <UniversalBreakingBanner />
+            <div className="flex justify-end">
+              <Link
+                to="/breaking-history"
+                aria-label={t("viewAllBreakingHistory")}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-king-gold/30 bg-transparent text-king-gold/90 hover:bg-king-gold/10 hover:border-king-gold/50 transition-colors text-sm font-medium"
+              >
+                <Archive className="w-4 h-4 shrink-0" aria-hidden />
+                {t("viewAllBreakingHistory")}
+              </Link>
+            </div>
+          </div>
+          <SentimentDataProvider
+            filters={stableFilters}
+            authorized={isAnalystAuthorized}
+            remainingPoints={remainingPoints}
+            consumePoint={consumePoint}
+            onEnergyExhausted={onEnergyExhausted}
+          >
+          <section className="relative" aria-label={t("globalStats")}>
           {analystAdPortal}
           {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/匿名觀察者皆可直接看到 */}
           <div className="mb-3 flex items-center justify-between">
@@ -263,9 +263,9 @@ export default function VotePage() {
               />
             </div>
           </AnalystGate>
-        </section>
-        </SentimentDataProvider>
-      </motion.main>
+          </section>
+          </SentimentDataProvider>
+        </motion.main>
       </WarzoneDataProvider>
 
       {currentUser?.uid && (

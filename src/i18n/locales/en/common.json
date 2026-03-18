@@ -115,6 +115,8 @@
   "breakingVoteSuccess": "Your choice has been recorded",
   "breakingVoteError": "Vote failed. Please try again.",
   "breakingAlreadyVoted": "You have already voted on this topic",
+  "breakingTeaser": "{{count}} have participated — cast your stance to see live results",
+  "arenaDeclaration": "The King's Verdict: Define the legacy. Your stance is the final record of history.",
   "viewAllBreakingHistory": "View all history",
   "breakingCommitmentMessage": "Your stance will be recorded in the archive. Once saved, it cannot be changed. Confirm this vote?",
   "breakingCommitmentConfirm": "Confirm vote",

@@ -5,7 +5,7 @@
  * - 使用 useGlobalBreakingEvents(..., { includeInactive: true }) 抓取所有話題（含已關閉）。
  * - 每個歷史卡片進入投票前先呼叫 RewardedAdsService 播放獎勵廣告以增加營收，再執行 submitBreakingVote。
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -19,6 +19,7 @@ import { submitBreakingVote } from '../services/VoteService'
 import { requestResetAdRewardToken } from '../services/RewardedAdsService'
 import { triggerHaptic, triggerHapticImpact } from '../utils/hapticUtils'
 import CommitmentModal from '../components/CommitmentModal'
+import BreakingOptionResultBars from '../components/BreakingOptionResultBars'
 
 const ASPECT_RATIO = 16 / 9
 const STORAGE_KEY_VOTED = 'lbj_breaking_voted'
@@ -50,17 +51,25 @@ export default function BreakingHistoryPage() {
   })
   const lang = i18n.language || 'en'
   const [votedEventIds, setVotedEventIds] = useState(() => loadVotedEventIds())
+  const [lastVoted, setLastVoted] = useState(null)
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
 
-  const markEventVoted = useCallback((eventId) => {
+  const markEventVoted = useCallback((eventId, optionIndex) => {
     setVotedEventIds((prev) => {
       const next = prev.includes(eventId) ? prev : [...prev, eventId]
       saveVotedEventIds(next)
       return next
     })
+    setLastVoted({ eventId, optionIndex })
   }, [])
+
+  useEffect(() => {
+    if (!lastVoted?.eventId || !events?.length) return
+    const ev = events.find((e) => e.id === lastVoted.eventId)
+    if (ev && (ev.total_votes ?? 0) > 0) setLastVoted(null)
+  }, [events, lastVoted?.eventId])
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (votedEventIds.includes(ev.id)) {
@@ -89,7 +98,7 @@ export default function BreakingHistoryPage() {
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
         await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage)
-        markEventVoted(ev.id)
+        markEventVoted(ev.id, optionIndex)
         triggerHapticImpact()
         setToast(t('breakingVoteSuccess'))
         setPending(null)
@@ -137,19 +146,26 @@ export default function BreakingHistoryPage() {
               className="absolute left-0 top-0 z-10 h-0.5 w-1/4 bg-gradient-to-r from-transparent via-king-gold to-transparent opacity-80 animate-scanning-line motion-reduce:animate-none pointer-events-none"
               aria-hidden
             />
-            <div className="space-y-4 relative">
+            {/* 單欄列表：每張卡片保持灰階→彩色歷史解鎖儀式感，寬度撐滿 max-w-lg */}
+            <div className="relative flex flex-col space-y-6">
               {events.map((ev) => {
                 const titleText = getLocalizedText(ev.title, lang)
                 const descText = getLocalizedText(ev.description, lang)
                 const optionsList = Array.isArray(ev.options) ? ev.options : []
                 const voted = votedEventIds.includes(ev.id)
+                const displayOptions = optionsList.length > 4 ? optionsList.slice(0, 8) : optionsList.slice(0, 4)
+                const displayOptionsWithLabels = displayOptions.map((opt) => ({
+                  label: typeof opt === 'object' && opt !== null ? getLocalizedText(opt, lang) : String(opt ?? ''),
+                }))
+                const optimisticOptionIndex =
+                  voted && lastVoted?.eventId === ev.id ? lastVoted.optionIndex : undefined
 
                 return (
                   <motion.article
                     key={ev.id}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-xl border border-villain-purple/30 bg-gray-900/80 overflow-hidden shadow-lg relative"
+                    className="w-full rounded-xl border border-villain-purple/30 bg-gray-900/80 overflow-hidden shadow-lg relative"
                   >
                     {/* 投票成功後：歷史存證浮水印 */}
                     {voted && (
@@ -205,37 +221,48 @@ export default function BreakingHistoryPage() {
                       </div>
                     </div>
                   {optionsList.length > 0 && (
-                    <div
-                      className={
-                        optionsList.length > 4
-                          ? 'px-3 pb-3 pt-2 grid grid-cols-2 gap-1.5'
-                          : 'px-3 pb-3 pt-2 flex flex-wrap gap-2'
-                      }
-                    >
-                      {(optionsList.length > 4 ? optionsList.slice(0, 8) : optionsList.slice(0, 4)).map((opt, i) => {
-                        const label =
-                          typeof opt === 'object' && opt !== null
-                            ? getLocalizedText(opt, lang)
-                            : String(opt ?? '')
-                        if (!label) return null
-                        const isSubmitting = submitting === `${ev.id}-${i}`
-                        const isCompact = optionsList.length > 4
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            disabled={voted || isSubmitting}
-                            onClick={() => openCommitmentModal(ev, i, label)}
-                            className={`rounded-md text-king-gold border border-king-gold/30 hover:bg-king-gold/30 disabled:opacity-70 disabled:cursor-not-allowed transition-colors ${
-                              isCompact
-                                ? 'px-2 py-1.5 text-[11px] bg-king-gold/20'
-                                : 'px-2 py-1 text-xs bg-king-gold/20'
+                    <div className="px-3 pb-3 pt-2 space-y-2">
+                      {voted ? (
+                        <BreakingOptionResultBars
+                          options={displayOptionsWithLabels}
+                          voteCounts={ev.vote_counts ?? {}}
+                          totalVotes={ev.total_votes ?? 0}
+                          optimisticOptionIndex={optimisticOptionIndex}
+                        />
+                      ) : (
+                        <>
+                          <div
+                            className={`options-buttons-grid ${
+                              optionsList.length > 4 ? 'grid grid-cols-2 gap-1.5' : 'flex flex-wrap gap-2'
                             }`}
                           >
-                            {isSubmitting ? t('submitting') : label}
-                          </button>
-                        )
-                      })}
+                            {displayOptionsWithLabels.map((opt, i) => {
+                              if (!opt.label) return null
+                              const isSubmitting = submitting === `${ev.id}-${i}`
+                              const isCompact = optionsList.length > 4
+                              return (
+                                <motion.button
+                                  key={i}
+                                  layout
+                                  type="button"
+                                  disabled={isSubmitting}
+                                  onClick={() => openCommitmentModal(ev, i, opt.label)}
+                                  className={`rounded-md text-king-gold border border-king-gold/30 hover:bg-king-gold/30 disabled:opacity-70 disabled:cursor-not-allowed transition-colors ${
+                                    isCompact
+                                      ? 'px-2 py-1.5 text-[11px] bg-king-gold/20'
+                                      : 'px-2 py-1 text-xs bg-king-gold/20'
+                                  }`}
+                                >
+                                  {isSubmitting ? t('submitting') : opt.label}
+                                </motion.button>
+                              )
+                            })}
+                          </div>
+                          <p className="text-[11px] text-gray-500 mt-1.5" role="status">
+                            {t('breakingTeaser', { count: ev.total_votes ?? 0 })}
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
                 </motion.article>

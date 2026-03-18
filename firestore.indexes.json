@@ -23,9 +23,10 @@
       ]
     },
     {
-      "collectionGroup": "votes",
+      "collectionGroup": "global_events",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "target_app", "arrayConfig": "CONTAINS" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -33,15 +34,7 @@
       "collectionGroup": "global_events",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "target_app", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "global_events",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "target_app", "order": "ASCENDING" },
+        { "fieldPath": "target_app", "arrayConfig": "CONTAINS" },
         { "fieldPath": "is_active", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]

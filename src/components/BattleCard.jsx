@@ -172,7 +172,7 @@ export default function BattleCard({
           onExportEnd?.();
         });
     },
-    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
+    [battleTitle, cardRef, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
   );
 
   if (!open) return null;

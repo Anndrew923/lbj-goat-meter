@@ -135,7 +135,8 @@ export default function AnalyticsDashboard({
     [radarData],
   );
 
-  /** 原因熱點：來自 displaySummary（篩選時為動態 reasonCounts） */
+  /** 原因熱點：來自 displaySummary（篩選時為動態 reasonCounts）；i18n.language 確保語系切換時重算翻譯 */
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- getReasonLabelMap 內部依賴 i18n，語系變更需重算
   const reasonLabelMap = useMemo(() => getReasonLabelMap(), [i18n.language]);
   const topReasons = useMemo(
     () => ({

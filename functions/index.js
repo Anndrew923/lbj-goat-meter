@@ -525,9 +525,20 @@ async function runSubmitBreakingVote(data, context) {
         code: "breaking-already-voted",
       });
     }
+    const eventData = eventSnap.data();
+    const optionsArr = Array.isArray(eventData?.options) ? eventData.options : [];
+    const optionsLen = optionsArr.length;
+    const optionClamped =
+      optionsLen > 0 ? Math.max(0, Math.min(Math.floor(Number(option)), optionsLen - 1)) : 0;
     tx.set(voteRef, {
-      optionIndex: option,
+      optionIndex: optionClamped,
       createdAt: FieldValue.serverTimestamp(),
+    });
+    // 突發戰區 Vote-to-Reveal：同一 Transaction 內更新活動文件的票數統計，供前端投票後顯示結果條
+    const voteCountKey = `vote_counts.${optionClamped}`;
+    tx.update(eventRef, {
+      [voteCountKey]: FieldValue.increment(1),
+      total_votes: FieldValue.increment(1),
     });
   });
 

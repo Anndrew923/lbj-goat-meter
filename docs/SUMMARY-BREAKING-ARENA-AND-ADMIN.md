@@ -241,4 +241,32 @@
 
 ---
 
+## 十二、突發戰區部署確認清單（Environment Sync）
+
+### 12.1 Cloud Functions 部署
+
+```bash
+npx firebase deploy --only functions
+```
+
+- **必備函式**：`submitBreakingVote` — 突發戰區投票入口，前端點擊「確認投下」會呼叫此函式。
+- **驗證**：部署完成後，Console 會顯示 `submitBreakingVote(us-central1)` 狀態；若無變更會顯示 `Skipped (No changes detected)`，表示已上線。
+
+### 12.2 Firestore 索引
+
+- **歷史頁查詢**：`useGlobalBreakingEvents` 使用 `target_app` array-contains + `orderBy('createdAt', 'desc')`，需複合索引。
+- **索引定義**：已於 `firestore.indexes.json` 中定義 `global_events` 的 `target_app` + `createdAt` 複合索引。
+- **部署**：`npx firebase deploy --only firestore:indexes`
+- **首次進入報錯**：若 Console 報錯缺少索引，點擊錯誤訊息中的連結即可在 Firebase Console 建立對應複合索引。
+
+### 12.3 reCAPTCHA 動作名稱
+
+- **前端 Action**：突發戰區投票使用 `submit_breaking_vote`（`getRecaptchaToken('submit_breaking_vote')`）。
+- **格式**：reCAPTCHA v3 的 action 名稱僅需符合「字母、數字、斜線、底線」，無需在 Admin Console 預先註冊。
+- **檢查要點**：
+  1. **reCAPTCHA Admin Console**（[admin](https://www.google.com/recaptcha/admin)）：確認網站金鑰的「網域」包含實際部署網域（含 localhost 若需本地測試）。
+  2. **Cloud Functions 環境變數**：`RECAPTCHA_SECRET` 必須已綁定（Secret Manager 或 Firebase Functions 環境變數），否則 `submitBreakingVote` 驗證會失敗。
+
+---
+
 *文件產生日期：依本對話完成時間存查。*

@@ -84,7 +84,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   const reasons = useMemo(
     () =>
       selectedStance ? shuffle(getReasonsForStance(selectedStance)) : [],
-    [selectedStance, i18n.language],
+    [selectedStance, i18n.language], // eslint-disable-line react-hooks/exhaustive-deps -- getReasonsForStance 使用 i18n，語系變更需重算
   );
 
   useEffect(() => {
@@ -235,6 +235,12 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   return (
     <>
       <div className="voting-arena-wrapper space-y-0">
+        {/* 主戰場宣言：王座審判風格，上下細線裝飾強化沈浸感 */}
+        <div className="border-y border-king-gold/20 py-3 my-4" aria-hidden>
+          <p className="italic text-king-gold/90 text-sm text-center tracking-wide">
+            {t("common:arenaDeclaration")}
+          </p>
+        </div>
         {contentMode === "loading" && (
           <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
             <p className="text-king-gold animate-pulse" role="status">

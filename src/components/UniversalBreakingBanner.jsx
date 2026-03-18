@@ -7,7 +7,7 @@
  * - 暗黑競技風：金/紫邊框、16:9 圖區。圖片 URL 與雙語內容存於同一 Document。
  * - 點擊選項後先彈出 CommitmentModal，確認後才呼叫 submitBreakingVote；投票成功後寫入 localStorage 緩存已投話題，防止重複點擊。
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { Zap } from 'lucide-react'
@@ -19,6 +19,7 @@ import { getRecaptchaToken } from '../services/RecaptchaService'
 import { submitBreakingVote } from '../services/VoteService'
 import { triggerHaptic } from '../utils/hapticUtils'
 import CommitmentModal from './CommitmentModal'
+import BreakingOptionResultBars from './BreakingOptionResultBars'
 
 const ASPECT_RATIO = 16 / 9
 const STORAGE_KEY_VOTED = 'lbj_breaking_voted'
@@ -48,17 +49,26 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
   const [votedEventIds, setVotedEventIds] = useState(() => loadVotedEventIds())
+  const [lastVoted, setLastVoted] = useState(null)
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
 
-  const markEventVoted = useCallback((eventId) => {
+  const markEventVoted = useCallback((eventId, optionIndex) => {
     setVotedEventIds((prev) => {
       const next = prev.includes(eventId) ? prev : [...prev, eventId]
       saveVotedEventIds(next)
       return next
     })
+    setLastVoted({ eventId, optionIndex })
   }, [])
+
+  // 當 Firestore 已回傳該活動的票數時，清除樂觀狀態避免殘留
+  useEffect(() => {
+    if (!lastVoted?.eventId || !events?.length) return
+    const ev = events.find((e) => e.id === lastVoted.eventId)
+    if (ev && (ev.total_votes ?? 0) > 0) setLastVoted(null)
+  }, [events, lastVoted?.eventId])
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (votedEventIds.includes(ev.id)) {
@@ -86,7 +96,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
         await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage)
-        markEventVoted(ev.id)
+        markEventVoted(ev.id, optionIndex)
         setToast(t('breakingVoteSuccess'))
         setPending(null)
       } catch (err) {
@@ -114,12 +124,22 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
     return null
   }
 
+  // 首頁僅顯示最新一則話題，其餘引導至 /breaking-history
+  const displayEvents = events.slice(0, 1)
+
   return (
     <div className="space-y-3">
-      {events.map((ev) => {
+      {displayEvents.map((ev) => {
         const titleText = getLocalizedText(ev.title, lang)
         const descText = getLocalizedText(ev.description, lang)
         const optionsList = Array.isArray(ev.options) ? ev.options : []
+        const voted = votedEventIds.includes(ev.id)
+        const displayOptions = optionsList.length > 4 ? optionsList.slice(0, 8) : optionsList.slice(0, 4)
+        const displayOptionsWithLabels = displayOptions.map((opt) => ({
+          label: typeof opt === 'object' && opt !== null ? getLocalizedText(opt, lang) : String(opt ?? ''),
+        }))
+        const optimisticOptionIndex =
+          voted && lastVoted?.eventId === ev.id ? lastVoted.optionIndex : undefined
 
         return (
           <div
@@ -171,37 +191,48 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
               </div>
             </div>
             {optionsList.length > 0 && (
-              <div
-                className={
-                  optionsList.length > 4
-                    ? 'px-3 pb-3 grid grid-cols-2 gap-1.5'
-                    : 'px-3 pb-3 flex flex-wrap gap-2'
-                }
-              >
-                {(optionsList.length > 4 ? optionsList.slice(0, 8) : optionsList.slice(0, 4)).map((opt, i) => {
-                  const label = typeof opt === 'object' && opt !== null
-                    ? getLocalizedText(opt, lang)
-                    : String(opt ?? '')
-                  if (!label) return null
-                  const voted = votedEventIds.includes(ev.id)
-                  const isSubmitting = submitting === `${ev.id}-${i}`
-                  const isCompact = optionsList.length > 4
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      disabled={voted || isSubmitting}
-                      onClick={() => openCommitmentModal(ev, i, label)}
-                      className={`rounded-md text-king-gold border border-king-gold/30 hover:bg-king-gold/30 disabled:opacity-70 disabled:cursor-not-allowed transition-colors ${
-                        isCompact
-                          ? 'px-2 py-1.5 text-[11px] bg-king-gold/20'
-                          : 'px-2 py-1 text-xs bg-king-gold/20'
+              <div className="px-3 pb-3 space-y-2">
+                {voted ? (
+                  <BreakingOptionResultBars
+                    options={displayOptionsWithLabels}
+                    voteCounts={ev.vote_counts ?? {}}
+                    totalVotes={ev.total_votes ?? 0}
+                    optimisticOptionIndex={optimisticOptionIndex}
+                  />
+                ) : (
+                  <>
+                    <div
+                      className={`options-buttons-grid ${
+                        optionsList.length > 4 ? 'grid grid-cols-2 gap-1.5' : 'flex flex-wrap gap-2'
                       }`}
                     >
-                      {isSubmitting ? t('submitting') : label}
-                    </button>
-                  )
-                })}
+                      {displayOptionsWithLabels.map((opt, i) => {
+                        if (!opt.label) return null
+                        const isSubmitting = submitting === `${ev.id}-${i}`
+                        const isCompact = optionsList.length > 4
+                        return (
+                          <motion.button
+                            key={i}
+                            layout
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => openCommitmentModal(ev, i, opt.label)}
+                            className={`rounded-md text-king-gold border border-king-gold/30 hover:bg-king-gold/30 disabled:opacity-70 disabled:cursor-not-allowed transition-colors ${
+                              isCompact
+                                ? 'px-2 py-1.5 text-[11px] bg-king-gold/20'
+                                : 'px-2 py-1 text-xs bg-king-gold/20'
+                            }`}
+                          >
+                            {isSubmitting ? t('submitting') : opt.label}
+                          </motion.button>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1.5" role="status">
+                      {t('breakingTeaser', { count: ev.total_votes ?? 0 })}
+                    </p>
+                  </>
+                )}
               </div>
             )}
             </motion.article>
