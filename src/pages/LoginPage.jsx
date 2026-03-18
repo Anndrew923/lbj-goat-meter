@@ -119,7 +119,7 @@ export default function LoginPage() {
           <p className="text-gray-400 text-sm md:text-base opacity-90 mb-6">{t('appSlogan')}</p>
           <img
             src={crownIcon}
-            alt="The GOAT Meter 皇冠裂變圖標"
+            alt={t('goatMeterBrandAria')}
             className="w-48 h-48 mx-auto object-contain my-6 drop-shadow-lg"
             decoding="async"
             fetchpriority="high"

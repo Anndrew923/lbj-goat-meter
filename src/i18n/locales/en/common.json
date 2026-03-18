@@ -15,7 +15,7 @@
   "chooseReasons": "Choose reasons (multiple)",
   "chooseReasonsMax": "Max {{max}}",
   "submitVote": "Cast your vote",
-  "security_verified_hint": "🛡️ Secured via Device ID & App Check",
+  "security_verified_hint": "🛡️ Secured via Device ID & App Integrity Check",
   "security_verified_hint_audit": "🛡️ Running secure audit & logging. Please do not close this page.",
   "verified_data_status": "VERIFIED DATA",
   "submitting": "Submitting…",
@@ -349,5 +349,7 @@
   "breakingPercentLabel": "{{percent}}%",
   "liveTag": "LIVE",
   "goatMeterBrandAria": "The GOAT Meter brand mark",
-  "adPortalAria": "Ad"
+  "adPortalAria": "Ad",
+  "breakingAdNotice": "This scan requires intel energy. Watch a short clip for voting authorization.",
+  "breakingFirstVoteFreeHint": "🛡️ First Strike: Warzone authorization granted for free."
 }
