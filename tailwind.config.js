@@ -75,22 +75,25 @@ export default {
           '0%': { backgroundPosition: '0% 50%' },
           '100%': { backgroundPosition: '200% 50%' },
         },
-        /* StanceCards：GOAT/FRAUD 觸發時邊框流光劇烈閃爍 */
+        /* 史詩級視覺：邊框閃爍、呼吸縮放、背景流動（務必保留） */
         'beam-flash': {
           '0%, 100%': { opacity: '1', filter: 'brightness(1)' },
           '25%': { opacity: '1', filter: 'brightness(2)' },
           '50%': { opacity: '0.6', filter: 'brightness(1.5)' },
           '75%': { opacity: '1', filter: 'brightness(2)' },
         },
+        'subtle-pulse': {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.015)' },
+        },
+        'energy-flow': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
         /* 歷史分頁：水平掃描線，進入時播放 1 秒，自左至右掃過容器 */
         'scanning-line': {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(500%)' },
-        },
-        /* StanceCards 未選中：吸引力引擎 — 緩慢呼吸縮放 */
-        'subtle-pulse': {
-          '0%, 100%': { transform: 'scale(1)' },
-          '50%': { transform: 'scale(1.015)' },
         },
         /* 主投票區塊：史詩級背景光暈 — 緩慢旋轉 + 呼吸 */
         'aura-rotate': {
@@ -101,11 +104,6 @@ export default {
           '0%, 100%': { opacity: '0.4' },
           '50%': { opacity: '0.7' },
         },
-        /* 主投票區塊：全域流動能量場 — 背景漸層流動 */
-        'energy-flow': {
-          '0%, 100%': { backgroundPosition: '0% 50%' },
-          '50%': { backgroundPosition: '100% 50%' },
-        },
       },
       animation: {
         'border-blink': 'border-blink 1.5s ease-in-out infinite',
@@ -113,10 +111,11 @@ export default {
         'gate-scan': 'gate-scan 2.6s linear infinite',
         'intel-ping': 'intel-ping 0.45s ease-out',
         'border-beam': 'border-beam 2.5s linear infinite',
+        /* 史詩級視覺動畫（務必保留） */
         'beam-flash': 'beam-flash 0.5s ease-out',
         'subtle-pulse': 'subtle-pulse 3s ease-in-out infinite',
+        'energy-flow': 'energy-flow 10s ease infinite',
         'aura-epic': 'aura-rotate 20s linear infinite, aura-breathe 8s ease-in-out infinite',
-        'energy-flow': 'energy-flow 15s ease infinite',
         'scanning-line': 'scanning-line 1s ease-out forwards',
       },
       backgroundSize: {

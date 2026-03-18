@@ -234,18 +234,22 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
 
   return (
     <>
-      <div className="voting-arena-wrapper space-y-0 relative overflow-hidden isolate">
-        {/* 全域流動能量場：三色網格流光，金-紅-紫；z-0 在內容層下方 */}
+      <div className="voting-arena-wrapper space-y-0 isolate relative overflow-hidden rounded-2xl">
+        {/* Version 1 史詩級能量炸裂：高透明度 0.5~0.6，OLED 與深黑背景下清晰可見 */}
         <div
-          className="absolute inset-0 z-0 bg-[length:400%_400%] animate-energy-flow motion-reduce:animate-none pointer-events-none bg-[linear-gradient(-45deg,rgba(212,175,55,0.15),rgba(180,40,50,0.1),rgba(75,0,130,0.15),rgba(212,175,55,0.1))]"
+          className="absolute inset-0 z-0 animate-energy-flow pointer-events-none motion-reduce:animate-none"
+          style={{
+            background: 'linear-gradient(-45deg, rgba(212,175,55,0.6), rgba(180,40,50,0.5), rgba(75,0,130,0.6), rgba(212,175,55,0.5))',
+            backgroundSize: '400% 400%',
+          }}
           aria-hidden
         />
-        {/* 戰術網格：極低透明度點陣，強化競技質感 */}
+        {/* 金色戰術網格：金屬化強化，opacity 0.1 */}
         <div
-          className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none"
+          className="absolute inset-0 z-0 opacity-[0.1] pointer-events-none"
           style={{
-            backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
-            backgroundSize: '20px 20px',
+            backgroundImage: 'radial-gradient(circle, #d4af37 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
           }}
           aria-hidden
         />
