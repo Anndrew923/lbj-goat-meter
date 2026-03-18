@@ -234,27 +234,41 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
 
   return (
     <>
-      <div className="voting-arena-wrapper space-y-0 isolate relative overflow-hidden rounded-2xl">
-        {/* Version 1 史詩級能量炸裂：高透明度 0.5~0.6，OLED 與深黑背景下清晰可見 */}
-        <div
-          className="absolute inset-0 z-0 animate-energy-flow pointer-events-none motion-reduce:animate-none"
-          style={{
-            background: 'linear-gradient(-45deg, rgba(212,175,55,0.6), rgba(180,40,50,0.5), rgba(75,0,130,0.6), rgba(212,175,55,0.5))',
-            backgroundSize: '400% 400%',
-          }}
-          aria-hidden
-        />
-        {/* 金色戰術網格：金屬化強化，opacity 0.1 */}
-        <div
-          className="absolute inset-0 z-0 opacity-[0.1] pointer-events-none"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #d4af37 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
-          aria-hidden
-        />
-        {/* 內容層：Declaration、StanceCards、按鈕等，確保繪製在背景之上 */}
-        <div className="relative z-10">
+      {/* Supernova 外殼：雷達流光邊框（與突發戰區共用語彙），將內層能量場與卡片包裹在同一個高對比容器中。 */}
+      <div className="voting-arena-wrapper relative isolate overflow-hidden rounded-2xl p-[3px] bg-gradient-to-br from-king-gold via-red-500 to-king-gold bg-[length:200%_200%] animate-border-beam shadow-[0_0_40px_rgba(255,191,0,0.4)] motion-reduce:animate-none">
+        <div className="relative overflow-hidden rounded-[1.1rem] bg-gray-950/90 backdrop-blur-xl">
+          {/* Version 2 Supernova 能量場：提高透明度並加入旋轉層，模擬恆星噴發感但仍保持文字可讀性。 */}
+          <div
+            className="absolute inset-0 z-0 animate-energy-flow pointer-events-none motion-reduce:animate-none"
+            style={{
+              background:
+                "linear-gradient(-45deg, rgba(212,175,55,0.85), rgba(180,40,50,0.7), rgba(75,0,130,0.85), rgba(212,175,55,0.7))",
+              backgroundSize: "400% 400%",
+            }}
+            aria-hidden
+          />
+          {/* 旋轉輻射層：單純負責色彩噴發與流動感，與主流光分離，避免影響 Tailwind 動畫設定。 */}
+          <div
+            className="absolute -inset-16 z-0 pointer-events-none animate-spin-slow motion-reduce:animate-none"
+            style={{
+              background:
+                "conic-gradient(from 0deg, rgba(212,175,55,0.15), rgba(180,40,50,0.3), rgba(75,0,130,0.25), rgba(212,175,55,0.15))",
+              filter: "blur(18px)",
+            }}
+            aria-hidden
+          />
+          {/* 金色戰術網格：金屬化強化，opacity 0.25 */}
+          <div
+            className="absolute inset-0 z-0 opacity-[0.25] pointer-events-none"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle, #d4af37 1px, transparent 1px)",
+              backgroundSize: "24px 24px",
+            }}
+            aria-hidden
+          />
+          {/* 內容層：Declaration、StanceCards、按鈕等，確保繪製在背景之上 */}
+          <div className="relative z-10">
         {/* 主戰場宣言：王座審判風格，上下細線裝飾強化沈浸感 */}
         <div className="border-y border-king-gold/20 py-3 my-4" aria-hidden>
           <p className="italic text-king-gold/90 text-sm text-center tracking-wide">
@@ -262,14 +276,14 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
           </p>
         </div>
         {contentMode === "loading" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-8 text-center">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-8 text-center">
             <p className="text-king-gold animate-pulse" role="status">
               {t("common:loadingArena")}
             </p>
           </div>
         )}
         {contentMode === "limbo" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-6">
             <h3 className="text-lg font-bold text-king-gold mb-2">
               {t("common:chooseStance")}
             </h3>
@@ -297,7 +311,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
           </div>
         )}
         {contentMode === "guest" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-6">
             <h3 className="text-lg font-bold text-king-gold mb-2">
               {t("common:chooseStance")}
             </h3>
@@ -341,7 +355,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="rounded-xl border border-king-gold/40 bg-gray-900/80 p-8 text-center"
+            className="rounded-xl border border-king-gold/40 bg-gray-950/90 backdrop-blur-xl p-8 text-center"
           >
             <p className="text-king-gold font-semibold">
               {t("common:alreadyVoted")}
@@ -363,7 +377,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
           </motion.div>
         )}
         {contentMode === "form" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-6">
             <h3 className="text-lg font-bold text-king-gold mb-4">
               {t("common:chooseStance")}
             </h3>
@@ -463,6 +477,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
             </p>
           </div>
         )}
+          </div>
         </div>
       </div>
 
@@ -529,7 +544,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
           onClick={() => !saveReportPending && setShowSaveReportConfirm(false)}
         >
           <motion.div
-            className="rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+            className="rounded-xl border-2 border-king-gold/50 bg-gray-950/90 backdrop-blur-xl p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             onClick={(e) => e.stopPropagation()}

@@ -121,3 +121,31 @@ body {
   opacity: 0.3;
   pointer-events: none;
 }
+
+/* Supernova 模式：主戰區能量場旋轉層，與線性流光分離，方便未來調整半徑與節奏。 */
+@keyframes spin-slow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spin-slow 6s linear infinite;
+}
+
+/* 液態金屬 StanceCard：選中態 135 度五段式漸層，中央極亮層透明度刻意加倍以在亮色能量場下仍清晰可辨。
+ * 結構：深（0%）→ 亮（30%）→ 極亮（50%）→ 亮（70%）→ 深（100%），以王者金為基底，可與各主題文字色搭配。
+ */
+.stance-card-active {
+  background-image: linear-gradient(
+    135deg,
+    rgba(15, 12, 5, 0.95) 0%,
+    rgba(212, 175, 55, 0.55) 30%,
+    rgba(255, 215, 128, 1) 50%,
+    rgba(212, 175, 55, 0.55) 70%,
+    rgba(15, 12, 5, 0.95) 100%
+  );
+  background-size: 200% 200%;
+}

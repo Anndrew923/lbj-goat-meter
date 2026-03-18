@@ -34,7 +34,7 @@ function getBeamGradientClass(theme) {
   }
 }
 
-/** 主題 → 選中態呼吸光暈 rgba（供 shadow 使用） */
+/** 主題 → 選中態呼吸光暈 rgba（供 shadow 使用，Supernova 模式下適度提高強度以在亮色背景中保持層次） */
 const THEME_GLOW_RGB = {
   "king-gold": "212,175,55",
   "villain-purple": "75,0,130",
@@ -47,7 +47,7 @@ const THEME_GLOW_RGB = {
 
 function getSelectedShadowStyle(theme) {
   const rgb = THEME_GLOW_RGB[theme] ?? "107,114,128";
-  return { boxShadow: `0 0 20px rgba(${rgb},0.5)` };
+  return { boxShadow: `0 0 24px rgba(${rgb},0.85)` };
 }
 
 /** 未選中：金屬漸層背景（多節點線性漸層模擬金屬反射，深-亮-極亮-亮-深） */
@@ -100,21 +100,21 @@ function getUnselectedCardClass(theme) {
 function getSelectedCardClass(theme) {
   switch (theme) {
     case "king-gold":
-      return "bg-gradient-to-br from-king-gold/95 via-king-gold to-king-gold/85 text-black";
+      return "stance-card-active text-black";
     case "villain-purple":
-      return "bg-gradient-to-br from-villain-purple/95 via-villain-purple to-villain-purple/85 text-white";
+      return "stance-card-active text-white";
     case "crown-red":
-      return "bg-gradient-to-br from-red-600/95 via-red-600 to-red-600/85 text-white";
+      return "stance-card-active text-white";
     case "tactical-emerald":
-      return "bg-gradient-to-br from-tactical-emerald/95 via-tactical-emerald to-tactical-emerald/85 text-black";
+      return "stance-card-active text-black";
     case "graphite":
-      return "bg-gradient-to-br from-gray-600/95 via-gray-600 to-gray-600/85 text-white";
+      return "stance-card-active text-white";
     case "machine-silver":
-      return "bg-gradient-to-br from-machine-silver/95 via-machine-silver to-machine-silver/85 text-black";
+      return "stance-card-active text-black";
     case "rust-copper":
-      return "bg-gradient-to-br from-amber-600/95 via-amber-600 to-amber-600/85 text-black";
+      return "stance-card-active text-black";
     default:
-      return "bg-gradient-to-br from-gray-500/95 via-gray-500 to-gray-500/85 text-white";
+      return "stance-card-active text-white";
   }
 }
 
