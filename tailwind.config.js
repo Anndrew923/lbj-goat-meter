@@ -14,6 +14,33 @@ export default {
     // 跑馬燈：確保 JIT 一定會產出，避免本地未掃到而無動畫
     "animate-marquee",
     "motion-reduce:animate-none",
+    // StanceCards 立場專屬流光漸層（Border Beam）
+    "from-king-gold",
+    "via-red-500",
+    "to-king-gold",
+    "from-villain-purple",
+    "via-indigo-500",
+    "to-villain-purple",
+    "from-tactical-emerald",
+    "via-cyan-400",
+    "to-tactical-emerald",
+    "from-red-600",
+    "via-red-400",
+    "to-red-600",
+    "from-gray-500",
+    "via-gray-400",
+    "to-gray-500",
+    "from-machine-silver",
+    "via-gray-300",
+    "to-machine-silver",
+    "from-amber-600",
+    "via-amber-400",
+    "to-amber-600",
+    "animate-beam-flash",
+    "animate-subtle-pulse",
+    "drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]",
+    "animate-aura-epic",
+    "animate-energy-flow",
   ],
   theme: {
     extend: {
@@ -48,10 +75,36 @@ export default {
           '0%': { backgroundPosition: '0% 50%' },
           '100%': { backgroundPosition: '200% 50%' },
         },
+        /* StanceCards：GOAT/FRAUD 觸發時邊框流光劇烈閃爍 */
+        'beam-flash': {
+          '0%, 100%': { opacity: '1', filter: 'brightness(1)' },
+          '25%': { opacity: '1', filter: 'brightness(2)' },
+          '50%': { opacity: '0.6', filter: 'brightness(1.5)' },
+          '75%': { opacity: '1', filter: 'brightness(2)' },
+        },
         /* 歷史分頁：水平掃描線，進入時播放 1 秒，自左至右掃過容器 */
         'scanning-line': {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(500%)' },
+        },
+        /* StanceCards 未選中：吸引力引擎 — 緩慢呼吸縮放 */
+        'subtle-pulse': {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.015)' },
+        },
+        /* 主投票區塊：史詩級背景光暈 — 緩慢旋轉 + 呼吸 */
+        'aura-rotate': {
+          '0%': { transform: 'translate(-50%, -50%) rotate(0deg)' },
+          '100%': { transform: 'translate(-50%, -50%) rotate(360deg)' },
+        },
+        'aura-breathe': {
+          '0%, 100%': { opacity: '0.4' },
+          '50%': { opacity: '0.7' },
+        },
+        /* 主投票區塊：全域流動能量場 — 背景漸層流動 */
+        'energy-flow': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
         },
       },
       animation: {
@@ -60,6 +113,10 @@ export default {
         'gate-scan': 'gate-scan 2.6s linear infinite',
         'intel-ping': 'intel-ping 0.45s ease-out',
         'border-beam': 'border-beam 2.5s linear infinite',
+        'beam-flash': 'beam-flash 0.5s ease-out',
+        'subtle-pulse': 'subtle-pulse 3s ease-in-out infinite',
+        'aura-epic': 'aura-rotate 20s linear infinite, aura-breathe 8s ease-in-out infinite',
+        'energy-flow': 'energy-flow 15s ease infinite',
         'scanning-line': 'scanning-line 1s ease-out forwards',
       },
       backgroundSize: {

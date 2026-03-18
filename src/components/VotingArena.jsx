@@ -234,7 +234,23 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
 
   return (
     <>
-      <div className="voting-arena-wrapper space-y-0">
+      <div className="voting-arena-wrapper space-y-0 relative overflow-hidden isolate">
+        {/* 全域流動能量場：三色網格流光，金-紅-紫；z-0 在內容層下方 */}
+        <div
+          className="absolute inset-0 z-0 bg-[length:400%_400%] animate-energy-flow motion-reduce:animate-none pointer-events-none bg-[linear-gradient(-45deg,rgba(212,175,55,0.15),rgba(180,40,50,0.1),rgba(75,0,130,0.15),rgba(212,175,55,0.1))]"
+          aria-hidden
+        />
+        {/* 戰術網格：極低透明度點陣，強化競技質感 */}
+        <div
+          className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
+            backgroundSize: '20px 20px',
+          }}
+          aria-hidden
+        />
+        {/* 內容層：Declaration、StanceCards、按鈕等，確保繪製在背景之上 */}
+        <div className="relative z-10">
         {/* 主戰場宣言：王座審判風格，上下細線裝飾強化沈浸感 */}
         <div className="border-y border-king-gold/20 py-3 my-4" aria-hidden>
           <p className="italic text-king-gold/90 text-sm text-center tracking-wide">
@@ -443,6 +459,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
             </p>
           </div>
         )}
+        </div>
       </div>
 
       {/* Limbo / Guest 共用：登入／完成戰區引導 Modal */}
