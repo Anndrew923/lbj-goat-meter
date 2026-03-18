@@ -5,13 +5,14 @@
  * - 跨專案通用：從 global_events 讀取 target_app 包含當前專案 ID 的活動，投票前／投票後皆顯示。
  * - 動態雙語：標題、描述、選項自 Firestore 語系物件提取，依 useTranslation 語系渲染，缺語系時 fallback 到 en。
  * - 暗黑競技風：金/紫邊框、16:9 圖區。圖片 URL 與雙語內容存於同一 Document。
- * - 點擊選項後先彈出 CommitmentModal，確認後才呼叫 submitBreakingVote；投票成功後寫入 localStorage 緩存已投話題，防止重複點擊。
+ * - 已投狀態由 BreakingVoteContext 提供，路由切換（首頁 ↔ 戰區）不丟失。
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { Zap } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
+import { useBreakingVote } from '../context/BreakingVoteContext'
 import { PROJECT_APP_ID } from '../lib/constants'
 import { getLocalizedText } from '../lib/localeUtils'
 import { getDeviceId } from '../utils/deviceId'
@@ -22,53 +23,15 @@ import CommitmentModal from './CommitmentModal'
 import BreakingOptionResultBars from './BreakingOptionResultBars'
 
 const ASPECT_RATIO = 16 / 9
-const STORAGE_KEY_VOTED = 'lbj_breaking_voted'
-
-function loadVotedEventIds() {
-  try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_VOTED) : null
-    const arr = raw ? JSON.parse(raw) : []
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-
-function saveVotedEventIds(ids) {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_VOTED, JSON.stringify(ids))
-    }
-  } catch {
-    // ignore
-  }
-}
 
 export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
+  const { votedEventIds, lastVoted, markEventVoted } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
-  const [votedEventIds, setVotedEventIds] = useState(() => loadVotedEventIds())
-  const [lastVoted, setLastVoted] = useState(null)
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
-
-  const markEventVoted = useCallback((eventId, optionIndex) => {
-    setVotedEventIds((prev) => {
-      const next = prev.includes(eventId) ? prev : [...prev, eventId]
-      saveVotedEventIds(next)
-      return next
-    })
-    setLastVoted({ eventId, optionIndex })
-  }, [])
-
-  // 當 Firestore 已回傳該活動的票數時，清除樂觀狀態避免殘留
-  useEffect(() => {
-    if (!lastVoted?.eventId || !events?.length) return
-    const ev = events.find((e) => e.id === lastVoted.eventId)
-    if (ev && (ev.total_votes ?? 0) > 0) setLastVoted(null)
-  }, [events, lastVoted?.eventId])
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (votedEventIds.includes(ev.id)) {

@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
 import { PushNotifications } from '@capacitor/push-notifications'
 import { useAuth } from './context/AuthContext'
+import { BreakingVoteProvider } from './context/BreakingVoteContext'
 import { saveFCMToken } from './services/AccountService'
 import LoginPage from './pages/LoginPage'
 import VotePage from './pages/VotePage'
@@ -147,6 +148,7 @@ export default function App() {
 
   return (
     <>
+      <BreakingVoteProvider>
       <Routes>
         <Route path="/" element={<LoginPage />} />
         <Route
@@ -184,6 +186,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </BreakingVoteProvider>
       {toastMessage && (
         <div role="status" aria-live="polite" style={toastStyle}>
           {toastMessage}

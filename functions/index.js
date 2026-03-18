@@ -536,10 +536,15 @@ async function runSubmitBreakingVote(data, context) {
     });
     // 突發戰區 Vote-to-Reveal：同一 Transaction 內更新活動文件的票數統計，供前端投票後顯示結果條
     const voteCountKey = `vote_counts.${optionClamped}`;
-    tx.update(eventRef, {
-      [voteCountKey]: FieldValue.increment(1),
-      total_votes: FieldValue.increment(1),
-    });
+    tx.set(
+      eventRef,
+      {
+        [voteCountKey]: FieldValue.increment(1),
+        total_votes: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
   });
 
   return { ok: true };

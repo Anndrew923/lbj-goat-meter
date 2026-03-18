@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore'
 import { db, isFirebaseReady } from '../lib/firebase'
 import { PROJECT_APP_ID, GLOBAL_EVENTS_COLLECTION } from '../lib/constants'
+import { loadLastVotedSafe } from '../utils/breakingVoteStorage'
 
 const MAX_EVENTS = 5
 const MAX_EVENTS_HISTORY = 50
@@ -59,9 +60,53 @@ export function useGlobalBreakingEvents(appId = PROJECT_APP_ID, opts = {}) {
       unsubscribe = onSnapshot(
         q,
         (snapshot) => {
-          const list = (snapshot.docs ?? [])
+          let list = (snapshot.docs ?? [])
             .map((d) => ({ id: d.id, ...d.data() }))
             .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))
+
+          const lastVoted = loadLastVotedSafe()
+
+          if (import.meta.env.DEV) {
+            const target = lastVoted ? list.find((e) => e.id === lastVoted.eventId) : null
+            console.log('[useGlobalBreakingEvents] snapshot', {
+              listLength: list.length,
+              lastVotedEventId: lastVoted?.eventId ?? null,
+              targetTotalVotes: target != null ? (target.total_votes ?? 0) : 'N/A',
+              targetVoteCounts: target?.vote_counts ?? null,
+            })
+          }
+
+          // 返回首頁時首筆快照常為空（快取尚未就緒），若此時寫入 events=[] 會導致 return null、banner 消失。
+          // 有 lastVoted 表示用戶剛投過票，略過空快照不更新，等有資料再寫入，避免「結果丟失」。
+          if (list.length === 0 && lastVoted) {
+            if (import.meta.env.DEV) console.log('[useGlobalBreakingEvents] 略過空快照，等待有資料')
+            setError(null)
+            return
+          }
+
+          // 當本地紀錄「剛對某話題投過票」且該話題在 Firestore 仍為 total_votes === 0 時，
+          // 不論快照來自快取或伺服器，都做一次暫時性補正（total_votes = 1、對應選項 +1），
+          // 避免「從戰區返回首頁」或重新整理時，首筆快照尚未含寫入結果而顯示 0 票。
+          if (lastVoted) {
+            list = list.map((ev) => {
+              if (ev.id !== lastVoted.eventId) return ev
+              const currentTotal = typeof ev.total_votes === 'number' ? ev.total_votes : 0
+              if (currentTotal > 0) return ev
+              if (import.meta.env.DEV) console.log('[useGlobalBreakingEvents] 補正樂觀票數', { eventId: ev.id, optionIndex: lastVoted.optionIndex })
+              const voteCounts = typeof ev.vote_counts === 'object' && ev.vote_counts !== null ? { ...ev.vote_counts } : {}
+              const key = String(lastVoted.optionIndex)
+              const existing = typeof voteCounts[key] === 'number' ? voteCounts[key] : 0
+              return {
+                ...ev,
+                total_votes: 1,
+                vote_counts: {
+                  ...voteCounts,
+                  [key]: existing > 0 ? existing : 1,
+                },
+              }
+            })
+          }
+
           setEvents(list)
           setError(null)
           setLoading(false)

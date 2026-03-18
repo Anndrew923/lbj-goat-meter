@@ -4,6 +4,7 @@
  * 設計意圖：
  * - 使用 useGlobalBreakingEvents(..., { includeInactive: true }) 抓取所有話題（含已關閉）。
  * - 每個歷史卡片進入投票前先呼叫 RewardedAdsService 播放獎勵廣告以增加營收，再執行 submitBreakingVote。
+ * - 已投狀態由 BreakingVoteContext 提供，與首頁共用，路由切換不丟失。
  */
 import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,6 +12,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap, ArrowLeft } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
+import { useBreakingVote } from '../context/BreakingVoteContext'
 import { PROJECT_APP_ID } from '../lib/constants'
 import { getLocalizedText } from '../lib/localeUtils'
 import { getDeviceId } from '../utils/deviceId'
@@ -22,54 +24,20 @@ import CommitmentModal from '../components/CommitmentModal'
 import BreakingOptionResultBars from '../components/BreakingOptionResultBars'
 
 const ASPECT_RATIO = 16 / 9
-const STORAGE_KEY_VOTED = 'lbj_breaking_voted'
-
-function loadVotedEventIds() {
-  try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_VOTED) : null
-    const arr = raw ? JSON.parse(raw) : []
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-
-function saveVotedEventIds(ids) {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_VOTED, JSON.stringify(ids))
-    }
-  } catch {
-    // ignore
-  }
-}
 
 export default function BreakingHistoryPage() {
   const { t, i18n } = useTranslation('common')
+  const { votedEventIds, lastVoted, markEventVoted } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(PROJECT_APP_ID, {
     includeInactive: true,
   })
   const lang = i18n.language || 'en'
-  const [votedEventIds, setVotedEventIds] = useState(() => loadVotedEventIds())
-  const [lastVoted, setLastVoted] = useState(null)
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
 
-  const markEventVoted = useCallback((eventId, optionIndex) => {
-    setVotedEventIds((prev) => {
-      const next = prev.includes(eventId) ? prev : [...prev, eventId]
-      saveVotedEventIds(next)
-      return next
-    })
-    setLastVoted({ eventId, optionIndex })
-  }, [])
-
-  useEffect(() => {
-    if (!lastVoted?.eventId || !events?.length) return
-    const ev = events.find((e) => e.id === lastVoted.eventId)
-    if (ev && (ev.total_votes ?? 0) > 0) setLastVoted(null)
-  }, [events, lastVoted?.eventId])
+  // 不在戰區頁清除 lastVoted：首筆 snapshot 可能來自不同 query 的快取，若在此清除，
+  // 返回首頁時首頁訂閱若仍拿到 total_votes:0 的快取就無法補正，導致票數被清空。僅由首頁 Banner 在確認 total_votes > 0 時清除。
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (votedEventIds.includes(ev.id)) {
