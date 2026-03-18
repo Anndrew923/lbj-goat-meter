@@ -344,5 +344,10 @@
   "adminNoTopics": "No topics yet",
   "adminDelete": "Delete",
   "adminDeleting": "Deleting…",
-  "adminDeleted": "Deleted."
+  "adminDeleted": "Deleted.",
+  "breakingResultAria": "Live vote statistics",
+  "breakingPercentLabel": "{{percent}}%",
+  "liveTag": "LIVE",
+  "goatMeterBrandAria": "The GOAT Meter brand mark",
+  "adPortalAria": "Ad"
 }

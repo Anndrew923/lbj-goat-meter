@@ -335,5 +335,10 @@
   "adminNoTopics": "尚無話題",
   "adminDelete": "刪除",
   "adminDeleting": "刪除中…",
-  "adminDeleted": "已刪除。"
+  "adminDeleted": "已刪除。",
+  "breakingResultAria": "投票結果實時統計",
+  "breakingPercentLabel": "{{percent}}%",
+  "liveTag": "實況",
+  "goatMeterBrandAria": "The GOAT Meter 品牌標章",
+  "adPortalAria": "廣告"
 }

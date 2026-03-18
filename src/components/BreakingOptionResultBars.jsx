@@ -7,6 +7,7 @@
  * - 使用 framer-motion layout 與 animate 提供一致過場。
  */
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 
 /**
  * @param {{ options: Array<{ label: string }>, voteCounts: Record<string, number>, totalVotes: number, optimisticOptionIndex?: number }} props
@@ -18,6 +19,7 @@ export default function BreakingOptionResultBars({
   totalVotes = 0,
   optimisticOptionIndex,
 }) {
+  const { t } = useTranslation('common')
   if (!options?.length) return null
 
   const hasServerData = totalVotes > 0
@@ -30,7 +32,7 @@ export default function BreakingOptionResultBars({
       initial={false}
       transition={{ layout: { duration: 0.25 } }}
       role="list"
-      aria-label="投票結果"
+      aria-label={t('breakingResultAria')}
     >
       {options.map((opt, i) => {
         const label = typeof opt === 'object' && opt !== null ? opt.label : String(opt ?? '')
@@ -51,7 +53,9 @@ export default function BreakingOptionResultBars({
           >
             <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
               <span className="text-king-gold font-medium truncate">{label}</span>
-              <span className="text-gray-400 shrink-0">{percent.toFixed(0)}%</span>
+              <span className="text-gray-400 shrink-0">
+                {t('breakingPercentLabel', { percent: percent.toFixed(0) })}
+              </span>
             </div>
             <div className="h-1.5 bg-gray-900/80 overflow-hidden" aria-hidden>
               <motion.div

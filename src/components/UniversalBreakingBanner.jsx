@@ -150,7 +150,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
                       className="inline-flex items-center px-1.5 py-0.5 rounded bg-red-600 text-[10px] font-bold text-white uppercase tracking-wider animate-pulse motion-reduce:animate-none"
                       aria-hidden
                     >
-                      LIVE
+                      {t('liveTag')}
                     </span>
                     <span className="text-[10px] uppercase tracking-wider text-king-gold/90 font-semibold">
                       {t('breakingTitle')}

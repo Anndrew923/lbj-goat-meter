@@ -408,7 +408,7 @@ export default function BattleCard({
                     <div
                       className="flex items-end gap-2 justify-end flex-shrink-0"
                       role="group"
-                      aria-label="The GOAT Meter"
+                      aria-label={t("goatMeterBrandAria")}
                     >
                       <img
                         src={crownIcon}

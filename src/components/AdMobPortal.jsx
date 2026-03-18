@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { triggerHapticPattern } from '../utils/hapticUtils'
 import {
   useAdMobConfig,
@@ -25,6 +26,7 @@ const HAPTIC_DISMISSED = [20, 40, 20]
 
 export default function AdMobPortal({ open = false, onClose, onWatched }) {
   const location = useLocation()
+  const { t } = useTranslation('common')
   const adMobConfig = useAdMobConfig()
   const onWatchedRef = useRef(onWatched)
   const onCloseRef = useRef(onClose)
@@ -122,7 +124,7 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
       transition={{ duration: 0.2 }}
       role="dialog"
       aria-modal="true"
-      aria-label="廣告"
+      aria-label={t('adPortalAria')}
     >
       <div className="text-center px-6 max-w-sm">
         <p className="text-white/95 text-lg font-medium">正在獲取戰報生成權限...</p>
