@@ -18,6 +18,7 @@ import { getLocalizedText } from '../lib/localeUtils'
 import { getDeviceId } from '../utils/deviceId'
 import { getRecaptchaToken } from '../services/RecaptchaService'
 import { submitBreakingVote } from '../services/VoteService'
+import { requestBreakingVoteAdRewardToken } from '../services/RewardedAdsService'
 import { triggerHaptic } from '../utils/hapticUtils'
 import CommitmentModal from './CommitmentModal'
 import BreakingOptionResultBars from './BreakingOptionResultBars'
@@ -26,7 +27,7 @@ const ASPECT_RATIO = 16 / 9
 
 export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
-  const { votedEventIds, lastVoted, markEventVoted } = useBreakingVote()
+  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
   const [submitting, setSubmitting] = useState(null)
@@ -58,7 +59,19 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         const deviceId = getDeviceId()
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
-        await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage)
+        let adRewardToken = null
+        // 設計意圖：僅在「非首票」時要求觀看廣告，首票視為系統贈送。
+        if (!isFirstVoteOfDay) {
+          adRewardToken = await requestBreakingVoteAdRewardToken()
+        }
+        await submitBreakingVote(
+          ev.id,
+          optionIndex,
+          deviceId,
+          recaptchaToken,
+          getMessage,
+          adRewardToken
+        )
         markEventVoted(ev.id, optionIndex)
         setToast(t('breakingVoteSuccess'))
         setPending(null)
@@ -68,7 +81,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         setSubmitting(null)
       }
     },
-    [pending, t, markEventVoted]
+    [pending, t, markEventVoted, isFirstVoteOfDay]
   )
 
   if (loading) {
@@ -191,9 +204,16 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
                         )
                       })}
                     </div>
-                    <p className="text-[11px] text-gray-500 mt-1.5" role="status">
-                      {t('breakingTeaser', { count: ev.total_votes ?? 0 })}
-                    </p>
+                    <div className="mt-1.5 space-y-0.5">
+                      <p className="text-[11px] text-gray-500" role="status">
+                        {t('breakingTeaser', { count: ev.total_votes ?? 0 })}
+                      </p>
+                      {isFirstVoteOfDay && (
+                        <p className="text-[11px] text-king-gold">
+                          {t('breakingFirstVoteFreeHint')}
+                        </p>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -213,6 +233,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         onConfirm={handleCommitmentConfirm}
         optionLabel={pending?.optionLabel ?? ''}
         loading={Boolean(submitting)}
+        needsAd={!isFirstVoteOfDay}
       />
     </div>
   )

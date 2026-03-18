@@ -11,6 +11,8 @@ import {
   loadLastVoted,
   saveLastVoted,
   clearLastVoted as clearLastVotedStorage,
+  loadLastFreeDate,
+  saveLastFreeDate,
 } from '../utils/breakingVoteStorage'
 
 const BreakingVoteContext = createContext(null)
@@ -18,6 +20,11 @@ const BreakingVoteContext = createContext(null)
 export function BreakingVoteProvider({ children }) {
   const [votedEventIds, setVotedEventIds] = useState(() => loadVotedEventIds())
   const [lastVoted, setLastVoted] = useState(() => loadLastVoted())
+  const [lastFreeDate, setLastFreeDate] = useState(() => loadLastFreeDate())
+
+  const today = new Date().toISOString().slice(0, 10)
+  // 設計意圖：以純日期字串判斷是否已使用過本日首票免費資格
+  const isFirstVoteOfDay = !lastFreeDate || lastFreeDate !== today
 
   const markEventVoted = useCallback((eventId, optionIndex) => {
     const payload = { eventId, optionIndex, timestamp: Date.now() }
@@ -31,7 +38,11 @@ export function BreakingVoteProvider({ children }) {
     })
     setLastVoted(payload)
     saveLastVoted(payload)
-  }, [])
+    if (!lastFreeDate || lastFreeDate !== today) {
+      setLastFreeDate(today)
+      saveLastFreeDate(today)
+    }
+  }, [lastFreeDate, today])
 
   const clearLastVoted = useCallback(() => {
     if (import.meta.env.DEV) {
@@ -55,6 +66,8 @@ export function BreakingVoteProvider({ children }) {
   const value = {
     votedEventIds,
     lastVoted,
+    lastFreeDate,
+    isFirstVoteOfDay,
     markEventVoted,
     clearLastVoted,
   }

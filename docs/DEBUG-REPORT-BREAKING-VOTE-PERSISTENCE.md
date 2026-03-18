@@ -116,4 +116,48 @@
 
 ---
 
+## 七、後記：這類錯誤在實戰中的頻率與除錯心法
+
+### 7.1 是否常見？
+
+在實戰專案裡，**「單票有紀錄、統計沒更新／沒顯示」其實相當常見**，尤其是同時具備以下特徵時：
+
+- 同一套資料有「**紀錄層**」與「**統計層**」（例如 votes 子集合 vs warzoneStats/global_events 聚合欄位）。
+- 前端有做「**樂觀更新 + 本機快取**」，讓短時間內畫面看起來是對的，但掩蓋了後端統計沒更新的事實。
+- 有 **多個環境／Emulator／管理端工具** 同時在寫資料，容易發生「這裡 +1、那裡 set 回 0」的衝突。
+
+本次問題幾乎踩滿所有地雷：
+
+1. `global_events/{eventId}/votes/{deviceId}` 與 `global_events/{eventId}` 的 `total_votes/vote_counts` 分離。  
+2. 首頁與歷史頁各有一個 `onSnapshot` 訂閱，query 條件不同，快取時序不一致。  
+3. 前端一開始以 `total_votes` 判斷「是否已投」，而非以 vote 紀錄／Context 為準。  
+4. 後端曾經用不一致的寫法更新 `vote_counts`，導致出現 `\"'0'\"` 這種歷史壞 key，前端只讀 `"0"`，自然永遠顯示 0%。  
+
+這也是為什麼這次除錯需要同時看：Cloud Functions、Firestore Console、前端 hook、Context、localStorage 與 Network／Logs Explorer，才能把整條鏈路真正走完。
+
+### 7.2 之後遇到類似問題的快速排查順序
+
+若未來在其他專案遇到「後端記錄存在，但統計或 UI 顯示怪怪的」，可以優先照以下順序排查（本次已驗證有效）：
+
+1. **Firestore Console：先看「最後真相」**  
+   - 確認紀錄層（如 `votes/{id}`）是否存在。  
+   - 確認統計層（如 `total_votes` / `vote_counts`）是否有正確加總。  
+   - 若紀錄有、統計沒 → 優先修 Functions 或任何會覆寫統計的程式。  
+
+2. **Callable Response：把統計一併回傳**  
+   - 在 Cloud Function 結尾多讀一次該 doc，回傳 `total_votes/vote_counts/debug`。  
+   - 投票成功後直接在 Network → Response 確認統計是否已更新，免得在 Console 與前端之間來回切。  
+
+3. **前端：把「是否已投」與「統計數字」解耦**  
+   - 「已投狀態」：只看 Context / device lock / vote doc，不看 `total_votes`。  
+   - 統計顯示：允許慢一點或暫時不準，但永遠不能推翻「已投」這個事實。  
+
+4. **快取與多訂閱：只在必要處加樂觀護欄**  
+   - 空快照或舊快照時，若本機知道剛投過，就用樂觀值補上，直到伺服器統計到位。  
+   - 避免在多個頁面／多個 query 看到 `total_votes > 0` 就到處清掉樂觀狀態，容易與快取時序打架。  
+
+掌握這四步，之後不論在哪個專案遇到「票有寫、圖不對」這類問題，都可以用相似的路線快速定位與修復。
+
+---
+
 *報告結束*

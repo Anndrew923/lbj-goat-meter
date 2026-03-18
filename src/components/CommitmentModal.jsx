@@ -15,6 +15,7 @@ export default function CommitmentModal({
   onConfirm,
   optionLabel,
   loading = false,
+  needsAd = false,
 }) {
   const { t } = useTranslation('common')
 
@@ -66,6 +67,17 @@ export default function CommitmentModal({
               >
                 {t('breakingCommitmentMessage')}
               </p>
+              {needsAd && (
+                <div className="mb-4 rounded-lg border border-amber-400/60 bg-amber-500/10 px-3 py-2">
+                  <p className="text-xs font-semibold text-amber-300 mb-0.5 flex items-center gap-1">
+                    <span aria-hidden="true">⚡</span>
+                    <span>{t('breakingFirstVoteFreeHint')}</span>
+                  </p>
+                  <p className="text-xs text-amber-100/90">
+                    {t('breakingAdNotice')}
+                  </p>
+                </div>
+              )}
               {optionLabel && (
                 <div className="mb-4 px-3 py-2 rounded-lg bg-king-gold/15 border border-king-gold/40">
                   <p className="text-xs text-gray-400 mb-0.5">

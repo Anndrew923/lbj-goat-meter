@@ -66,8 +66,16 @@ function getVoteFunctionErrorMessage(err, getMessage) {
  * @param {string} deviceId - 設備識別碼（getDeviceId()）
  * @param {string | null} recaptchaToken - RecaptchaService.getRecaptchaToken('submit_breaking_vote')
  * @param {(key: string) => string} getMessage - i18n 鍵→文案
+ * @param {string | null} [adRewardToken=null] - 若需經過獎勵廣告授權，前置流程取得的 adRewardToken
  */
-export async function submitBreakingVote(eventId, optionIndex, deviceId, recaptchaToken, getMessage) {
+export async function submitBreakingVote(
+  eventId,
+  optionIndex,
+  deviceId,
+  recaptchaToken,
+  getMessage,
+  adRewardToken = null
+) {
   if (typeof getMessage !== "function") throw new Error("getMessage is required");
   const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
   if (!eventIdStr) throw new Error(getMessage("common:breakingVoteError"));
@@ -82,6 +90,7 @@ export async function submitBreakingVote(eventId, optionIndex, deviceId, recaptc
       optionIndex: typeof optionIndex === "number" ? optionIndex : 0,
       deviceId: deviceIdStr,
       recaptchaToken: recaptchaToken ?? null,
+      adRewardToken: adRewardToken ?? null,
     });
   } catch (err) {
     const code = err?.details?.code || err?.code;

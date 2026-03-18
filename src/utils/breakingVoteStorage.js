@@ -4,6 +4,7 @@
  */
 export const STORAGE_KEY_VOTED = 'lbj_breaking_voted'
 export const STORAGE_KEY_LAST_VOTED = 'lbj_breaking_last_voted'
+export const STORAGE_KEY_LAST_FREE_DATE = 'lbj_breaking_last_free_date'
 export const LAST_VOTED_TTL_MS = 60 * 1000
 
 export function loadVotedEventIds() {
@@ -87,5 +88,34 @@ export function loadLastVotedSafe() {
     return parsed
   } catch {
     return null
+  }
+}
+
+/**
+ * 讀取上一個「首票免費」使用日期（YYYY-MM-DD）。
+ * 若 localStorage 不可用或資料不存在／格式不正確，則回傳 null。
+ */
+export function loadLastFreeDate() {
+  try {
+    if (typeof localStorage === 'undefined') return null
+    const value = localStorage.getItem(STORAGE_KEY_LAST_FREE_DATE)
+    if (!value) return null
+    // 我們僅儲存純字串日期，避免額外 JSON parsing 成本
+    return typeof value === 'string' ? value : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 儲存本日「首票免費」使用日期（YYYY-MM-DD）。
+ * 設計意圖：由 Context 控制寫入時機，確保行為一致性。
+ */
+export function saveLastFreeDate(dateString) {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(STORAGE_KEY_LAST_FREE_DATE, dateString)
+  } catch {
+    // ignore
   }
 }

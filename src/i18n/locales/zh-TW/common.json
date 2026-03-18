@@ -115,6 +115,8 @@
   "breakingVoteSuccess": "已記錄你的選擇",
   "breakingVoteError": "投票失敗，請稍後再試",
   "breakingAlreadyVoted": "你已在此話題投過票",
+  "breakingAdNotice": "本次掃描需消耗情報能源。觀看一段短片以獲取投票授權。",
+  "breakingFirstVoteFreeHint": "🛡️ 今日首票：戰區授權免費發放",
   "breakingTeaser": "{{count}} 人已參與，投下立場以觀看實時戰報",
   "arenaDeclaration": "王座審判：定義傳奇的最終立場。在此刻，你的選擇即是歷史。",
   "viewAllBreakingHistory": "查看所有歷史話題",

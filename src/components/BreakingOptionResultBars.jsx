@@ -35,7 +35,8 @@ export default function BreakingOptionResultBars({
       {options.map((opt, i) => {
         const label = typeof opt === 'object' && opt !== null ? opt.label : String(opt ?? '')
         if (!label) return null
-        const serverCount = Number(voteCounts[String(i)] ?? voteCounts[i] ?? 0)
+        // 後端歷史資料容錯：曾出現 key 被寫成 "'0'"（含引號字面）的狀況，這裡一併兼容讀取，避免 UI 顯示 0%。
+        const serverCount = Number(voteCounts[String(i)] ?? voteCounts[`'${i}'`] ?? voteCounts[i] ?? 0)
         const optimisticBonus =
           !hasServerData && i === optimisticOptionIndex ? 1 : 0
         const count = serverCount + optimisticBonus
