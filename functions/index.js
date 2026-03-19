@@ -14,6 +14,7 @@ import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
 import { signAdRewardToken } from "./utils/adRewardSigning.js";
 import { computeGlobalDeductions } from "./utils/voteAggregation.js";
 import { verifyGoldenKey } from "./utils/verifyGoldenKey.js";
+import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionIndex.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -308,9 +309,10 @@ async function runResetPosition(data, context) {
   const { adRewardToken, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const uid = context.auth.uid;
 
+  // 簽章 payload 必須與前端 createGoldenKeySignature(RESET_POSITION, …) 一致：僅 { adRewardToken }。
   verifyGoldenKey(
     "reset_position",
-    { uid, adRewardToken: adRewardToken || null },
+    { adRewardToken: adRewardToken || null },
     { xGoatTimestamp, xGoatSignature },
     { uid }
   );
@@ -519,12 +521,13 @@ async function runSubmitBreakingVote(data, context) {
   if (!eventIdStr || !deviceIdStr) {
     throw new functions.https.HttpsError("invalid-argument", "eventId and deviceId required");
   }
-  const option = typeof optionIndex === "number" ? optionIndex : 0;
+  const option = normalizeBreakingOptionIndex(optionIndex);
 
+  // 簽章 payload 必須與前端 createGoldenKeySignature(SUBMIT_BREAKING_VOTE, …) 完全一致：
+  // 僅 { eventId, deviceId, optionIndex }。若後端多帶 uid，JSON.stringify 不同會永遠 signature-mismatch。
   verifyGoldenKey(
     "submit_breaking_vote",
     {
-      uid: context.auth.uid || null,
       eventId: eventIdStr,
       deviceId: deviceIdStr,
       optionIndex: option,
@@ -534,7 +537,20 @@ async function runSubmitBreakingVote(data, context) {
   );
 
   if (!shouldBypassHardSecurity(context)) {
-    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
+    let recaptchaResult;
+    try {
+      recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
+    } catch (recaptchaErr) {
+      functions.logger.error("[submitBreakingVote][recaptcha-config]", {
+        message: recaptchaErr?.message,
+        uid: context.auth?.uid,
+      });
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "reCAPTCHA verification unavailable",
+        { code: "recaptcha-config-error" }
+      );
+    }
     if (!recaptchaResult.success) {
       throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
         code: "low-score-robot",
@@ -547,63 +563,78 @@ async function runSubmitBreakingVote(data, context) {
   const voteRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventIdStr}/votes/${deviceIdStr}`);
 
   let debug = null;
-  await db.runTransaction(async (tx) => {
-    const eventSnap = await tx.get(eventRef);
-    if (!eventSnap.exists) {
-      throw new functions.https.HttpsError("not-found", "Event not found");
-    }
-    const voteSnap = await tx.get(voteRef);
-    if (voteSnap.exists) {
-      throw new functions.https.HttpsError("failed-precondition", "Already voted on this topic", {
-        code: "breaking-already-voted",
+  try {
+    await db.runTransaction(async (tx) => {
+      const eventSnap = await tx.get(eventRef);
+      if (!eventSnap.exists) {
+        throw new functions.https.HttpsError("not-found", "Event not found");
+      }
+      const voteSnap = await tx.get(voteRef);
+      if (voteSnap.exists) {
+        throw new functions.https.HttpsError("failed-precondition", "Already voted on this topic", {
+          code: "breaking-already-voted",
+        });
+      }
+      const eventData = eventSnap.data();
+      const optionsArr = Array.isArray(eventData?.options) ? eventData.options : [];
+      const optionsLen = optionsArr.length;
+      const optionClamped =
+        optionsLen > 0 ? Math.max(0, Math.min(Math.floor(Number(option)), optionsLen - 1)) : 0;
+      tx.set(voteRef, {
+        optionIndex: optionClamped,
+        createdAt: FieldValue.serverTimestamp(),
       });
-    }
-    const eventData = eventSnap.data();
-    const optionsArr = Array.isArray(eventData?.options) ? eventData.options : [];
-    const optionsLen = optionsArr.length;
-    const optionClamped =
-      optionsLen > 0 ? Math.max(0, Math.min(Math.floor(Number(option)), optionsLen - 1)) : 0;
-    tx.set(voteRef, {
-      optionIndex: optionClamped,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    // 突發戰區 Vote-to-Reveal：同一 Transaction 內更新活動文件的票數統計，供前端投票後顯示結果條
-    const existingVoteCounts = eventSnap.data()?.vote_counts;
-    const voteCountsIsMapLike =
-      existingVoteCounts && typeof existingVoteCounts === "object" && !Array.isArray(existingVoteCounts);
+      // 突發戰區 Vote-to-Reveal：同一 Transaction 內更新活動文件的票數統計，供前端投票後顯示結果條
+      const existingVoteCounts = eventSnap.data()?.vote_counts;
+      const voteCountsIsMapLike =
+        existingVoteCounts && typeof existingVoteCounts === "object" && !Array.isArray(existingVoteCounts);
 
-    // 先用 set(merge) 確保必要結構存在，避免後續 update 因型別不符或缺欄位而失敗。
-    // 設計意圖：我們把「補欄位」與「計數累加」分離，確保無論管理端建立 doc 的初始欄位是否完整，投票都能穩定累加。
-    if (!voteCountsIsMapLike) {
-      tx.set(
-        eventRef,
-        {
-          vote_counts: {},
-          total_votes: 0,
-        },
-        { merge: true }
-      );
-    }
+      // 先用 set(merge) 確保必要結構存在，避免後續 update 因型別不符或缺欄位而失敗。
+      if (!voteCountsIsMapLike) {
+        tx.set(
+          eventRef,
+          {
+            vote_counts: {},
+            total_votes: 0,
+          },
+          { merge: true }
+        );
+      }
 
-    // 這裡用「字串路徑」而非 FieldPath 物件，避免 JS 物件 key 字串化後產生意外 key（例如 \"'0'\"）。
-    // Firestore update 會將帶 '.' 的 key 視為巢狀欄位路徑：vote_counts.<index>
-    const voteCountPath = `vote_counts.${optionClamped}`;
-    tx.update(eventRef, {
-      [voteCountPath]: FieldValue.increment(1),
-      total_votes: FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp(),
+      const voteCountPath = `vote_counts.${optionClamped}`;
+      tx.update(eventRef, {
+        [voteCountPath]: FieldValue.increment(1),
+        total_votes: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      debug = { eventId: eventIdStr, optionClamped, voteCountPath };
     });
 
-    debug = { eventId: eventIdStr, optionClamped, voteCountPath };
-  });
+    // 附帶回傳寫入後的統計（多 1 次 read）
+    const afterSnap = await eventRef.get();
+    const afterData = afterSnap.exists ? afterSnap.data() : null;
+    const totalVotes = typeof afterData?.total_votes === "number" ? afterData.total_votes : 0;
+    const voteCounts =
+      afterData?.vote_counts && typeof afterData.vote_counts === "object" ? afterData.vote_counts : {};
 
-  // 附帶回傳寫入後的統計，方便前端/除錯立即驗證是否真的加總成功（多 1 次 read，僅針對突發戰區投票）。
-  const afterSnap = await eventRef.get();
-  const afterData = afterSnap.exists ? afterSnap.data() : null;
-  const totalVotes = typeof afterData?.total_votes === "number" ? afterData.total_votes : 0;
-  const voteCounts = afterData?.vote_counts && typeof afterData.vote_counts === "object" ? afterData.vote_counts : {};
-
-  return { ok: true, debug, total_votes: totalVotes, vote_counts: voteCounts };
+    return { ok: true, debug, total_votes: totalVotes, vote_counts: voteCounts };
+  } catch (txnErr) {
+    if (txnErr instanceof functions.https.HttpsError) {
+      throw txnErr;
+    }
+    functions.logger.error("[submitBreakingVote][transaction]", {
+      message: txnErr?.message,
+      code: txnErr?.code,
+      eventId: eventIdStr,
+      deviceId: deviceIdStr,
+    });
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Breaking vote transaction failed",
+      { code: "breaking-transaction-failed", detail: txnErr?.message }
+    );
+  }
 }
 
 /**

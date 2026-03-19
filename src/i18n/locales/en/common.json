@@ -114,6 +114,7 @@
   "breakingLoading": "Loading…",
   "breakingVoteSuccess": "Your choice has been recorded",
   "breakingVoteError": "Vote failed. Please try again.",
+  "breakingVoteSignatureError": "Security check failed. Refresh the page and try again.",
   "breakingAlreadyVoted": "You have already voted on this topic",
   "breakingTeaser": "{{count}} have participated — cast your stance to see live results",
   "arenaDeclaration": "The King's Verdict: Define the legacy. Your stance is the final record of history.",

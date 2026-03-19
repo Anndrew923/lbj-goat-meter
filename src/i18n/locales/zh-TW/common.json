@@ -114,6 +114,7 @@
   "breakingLoading": "載入中…",
   "breakingVoteSuccess": "已記錄你的選擇",
   "breakingVoteError": "投票失敗，請稍後再試",
+  "breakingVoteSignatureError": "安全驗證未通過，請重新整理頁面後再試。",
   "breakingAlreadyVoted": "你已在此話題投過票",
   "breakingAdNotice": "本次掃描需消耗情報能源。觀看一段短片以獲取投票授權。",
   "breakingFirstVoteFreeHint": "🛡️ 今日首票：戰區授權免費發放",

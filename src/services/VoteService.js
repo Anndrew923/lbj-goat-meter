@@ -16,6 +16,7 @@ import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from 
 import { isObject } from "../utils/typeUtils";
 import { getRecaptchaToken } from "./RecaptchaService";
 import { createGoldenKeySignature, GOLDEN_KEY_ACTIONS } from "./GoldenKeyService";
+import { normalizeBreakingOptionIndex } from "../utils/normalizeBreakingOptionIndex";
 
 function getFunctionsInstance() {
   if (!app) {
@@ -83,9 +84,10 @@ export async function submitBreakingVote(
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
+  const optionNorm = normalizeBreakingOptionIndex(optionIndex);
   const payload = {
     eventId: eventIdStr,
-    optionIndex: typeof optionIndex === "number" ? optionIndex : 0,
+    optionIndex: optionNorm,
     deviceId: deviceIdStr,
     recaptchaToken: recaptchaToken ?? null,
     adRewardToken: adRewardToken ?? null,
@@ -96,7 +98,7 @@ export async function submitBreakingVote(
     {
       eventId: eventIdStr,
       deviceId: deviceIdStr,
-      optionIndex: payload.optionIndex,
+      optionIndex: optionNorm,
     }
   );
 
@@ -118,6 +120,17 @@ export async function submitBreakingVote(
     }
     if (code === "unauthenticated" || code === "auth-required") {
       throw new Error(getMessage("common:voteError_authRequired"));
+    }
+    if (
+      code === "signature-mismatch" ||
+      code === "signature-missing" ||
+      code === "signature-invalid-timestamp" ||
+      code === "signature-timestamp-skew"
+    ) {
+      throw new Error(getMessage("common:breakingVoteSignatureError"));
+    }
+    if (code === "breaking-transaction-failed" || code === "recaptcha-config-error") {
+      throw new Error(getMessage("common:breakingVoteError"));
     }
     const msg = (err?.message && typeof err.message === "string" && err.message) || getMessage("common:breakingVoteError");
     throw new Error(msg);
