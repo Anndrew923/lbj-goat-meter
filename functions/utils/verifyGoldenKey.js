@@ -8,7 +8,7 @@ function getSecret() {
   let fromConfig = "";
   try {
     const cfg = functions.config();
-    fromConfig = (cfg?.goat && cfg.golden_key_secret) || "";
+    fromConfig = (cfg?.goat?.golden_key_secret && String(cfg.goat.golden_key_secret).trim()) || "";
   } catch (e) {
     functions.logger.warn("[GoldenKey] functions.config() unavailable, using env only", {
       message: e?.message,

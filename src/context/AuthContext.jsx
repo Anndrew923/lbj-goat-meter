@@ -413,6 +413,13 @@ export function AuthProvider({ children }) {
           msg = i18n.t("common:voteError_adNotWatched");
         } else if (backendCode === "reset-internal") {
           msg = i18n.t("common:voteError_resetInternal");
+        } else if (
+          backendCode === "signature-missing" ||
+          backendCode === "signature-mismatch" ||
+          backendCode === "signature-invalid-timestamp" ||
+          backendCode === "signature-timestamp-skew"
+        ) {
+          msg = i18n.t("common:revoteSignatureError");
         } else {
           msg = err?.message ?? i18n.t("common:revoteError");
         }

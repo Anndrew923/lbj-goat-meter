@@ -29,6 +29,7 @@
   "voteError_resetInternal": "System busy. Please try again later.",
   "voteError_voteInternal": "Vote service busy. Please try again later.",
   "revoteError": "Reset failed. Please reload the page.",
+  "revoteSignatureError": "Security check failed. Set VITE_GOAT_GOLDEN_KEY_SECRET to match the backend and rebuild.",
   "reloadPage": "Reload page",
   "retry": "Retry",
   "rankLabel": "Battle report",

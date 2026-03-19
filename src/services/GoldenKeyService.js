@@ -65,8 +65,13 @@ export async function createGoldenKeySignature(action, payloadForHash) {
   const ts = Date.now();
   const secret = getGoldenKeySecret();
 
-  // 若前端未設定密鑰，仍回傳 timestamp，signature 為 null，由後端決定是否放行／記 log。
+  // 若前端未設定密鑰，仍回傳 timestamp，signature 為 null，後端會回傳 403 signature-missing。
   if (!secret) {
+    if (typeof window !== "undefined" && !import.meta.env.DEV) {
+      console.warn(
+        "[GoldenKeyService] VITE_GOAT_GOLDEN_KEY_SECRET 未設定，請求將被後端拒絕（signature-missing）。請在 build 環境變數中設定與後端相同的密鑰。"
+      );
+    }
     return {
       xGoatTimestamp: ts,
       xGoatSignature: null,
