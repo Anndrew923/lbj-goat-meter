@@ -15,6 +15,7 @@ import i18n from "../i18n/config";
 import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
 import { isObject } from "../utils/typeUtils";
 import { getRecaptchaToken } from "./RecaptchaService";
+import { createGoldenKeySignature, GOLDEN_KEY_ACTIONS } from "./GoldenKeyService";
 
 function getFunctionsInstance() {
   if (!app) {
@@ -82,15 +83,30 @@ export async function submitBreakingVote(
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
+  const payload = {
+    eventId: eventIdStr,
+    optionIndex: typeof optionIndex === "number" ? optionIndex : 0,
+    deviceId: deviceIdStr,
+    recaptchaToken: recaptchaToken ?? null,
+    adRewardToken: adRewardToken ?? null,
+  };
+
+  const { xGoatTimestamp, xGoatSignature } = await createGoldenKeySignature(
+    GOLDEN_KEY_ACTIONS.SUBMIT_BREAKING_VOTE,
+    {
+      eventId: eventIdStr,
+      deviceId: deviceIdStr,
+      optionIndex: payload.optionIndex,
+    }
+  );
+
   const functions = getFunctionsInstance();
   const callable = httpsCallable(functions, "submitBreakingVote");
   try {
     await callable({
-      eventId: eventIdStr,
-      optionIndex: typeof optionIndex === "number" ? optionIndex : 0,
-      deviceId: deviceIdStr,
-      recaptchaToken: recaptchaToken ?? null,
-      adRewardToken: adRewardToken ?? null,
+      ...payload,
+      xGoatTimestamp,
+      xGoatSignature,
     });
   } catch (err) {
     const code = err?.details?.code || err?.code;
@@ -122,15 +138,31 @@ export async function submitVote(userId, { selectedStance, selectedReasons, devi
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
-  const functions = getFunctionsInstance();
-  const submitCallable = httpsCallable(functions, "submitVote");
   // 僅在「即將送出」時取得最新 reCAPTCHA token，確保有效期限內。
   const recaptchaToken = await getRecaptchaToken("submit_vote");
 
+  const payload = {
+    voteData: { selectedStance, selectedReasons, deviceId: deviceIdStr },
+    recaptchaToken,
+  };
+
+  const { xGoatTimestamp, xGoatSignature } = await createGoldenKeySignature(
+    GOLDEN_KEY_ACTIONS.SUBMIT_VOTE,
+    {
+      uid: userId,
+      deviceId: deviceIdStr,
+      selectedStance,
+    }
+  );
+
+  const functions = getFunctionsInstance();
+  const submitCallable = httpsCallable(functions, "submitVote");
+
   try {
     const result = await submitCallable({
-      voteData: { selectedStance, selectedReasons, deviceId: deviceIdStr },
-      recaptchaToken,
+      ...payload,
+      xGoatTimestamp,
+      xGoatSignature,
     });
     if (import.meta.env.DEV && result?.data?.recaptchaScore != null) {
       console.log(

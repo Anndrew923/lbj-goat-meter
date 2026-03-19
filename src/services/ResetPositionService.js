@@ -8,6 +8,7 @@
 
 import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "../lib/firebase";
+import { createGoldenKeySignature, GOLDEN_KEY_ACTIONS } from "./GoldenKeyService";
 
 function getFunctionsInstance() {
   if (!app) {
@@ -26,9 +27,20 @@ function getFunctionsInstance() {
  */
 export async function callResetPosition(params) {
   const { adRewardToken, recaptchaToken } = params || {};
+  const payload = { adRewardToken, recaptchaToken };
+
+  const { xGoatTimestamp, xGoatSignature } = await createGoldenKeySignature(
+    GOLDEN_KEY_ACTIONS.RESET_POSITION,
+    { adRewardToken: adRewardToken || null }
+  );
+
   const functions = getFunctionsInstance();
   const callable = httpsCallable(functions, "resetPosition");
-  const result = await callable({ adRewardToken, recaptchaToken });
+  const result = await callable({
+    ...payload,
+    xGoatTimestamp,
+    xGoatSignature,
+  });
 
   const data = result?.data || {};
   const deletedVoteId =

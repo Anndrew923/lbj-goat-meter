@@ -144,3 +144,88 @@ SentimentStats、AnalyticsDashboard、LiveTicker、PulseMap（嚴禁掃描 votes
 ---
 
 *最後更新：極致節流重構 — 聚合文件 + WarzoneDataContext 單一監聽。*
+
+---
+
+## 6. 突發戰區 `global_events` 與未來分片聚合（Sharding Blueprint）
+
+### 6.1 現行結構（單文件聚合）
+
+```text
+global_events/{eventId}
+  - title: { en: string, zh-TW?: string, ... }
+  - description: { en: string, zh-TW?: string, ... }
+  - image_url: string
+  - target_app: string[]        // 目標 App ID 清單
+  - options: LocalizedText[]    // 選項陣列（本地化物件）
+  - vote_counts: map<number, number> // optionIndex -> 票數
+  - total_votes: number
+  - createdAt: Timestamp
+  - updatedAt: Timestamp
+
+global_events/{eventId}/votes/{deviceId}
+  - optionIndex: number
+  - createdAt: Timestamp
+```
+
+- **優點**：實作簡單、前端讀取僅需監聽單一文件即可取得統計。
+- **限制**：若單一 `eventId` 在短時間內承受極大量投票（數萬級以上），`global_events/{eventId}` 會成為「熱點文件」，同一文件的高頻率 `update` 可能影響延遲與失敗率。
+
+### 6.2 未來分片聚合 Blueprint（僅設計，未必需立即實作）
+
+當單一 Event 進入高併發階段（例如每分鐘數千次投票）時，可切換為「分片聚合」模式，結構如下：
+
+```text
+global_events/{eventId}
+  - ...活動基本資訊（同現行）
+  - total_votes: number                 // 可選：保留近即時聚合結果
+  - vote_counts: map<number, number>    // 可選：保留近即時聚合結果
+  - sharding_enabled: boolean           // 是否啟用分片模式
+  - shard_count: number                 // 分片數量（例如 16 或 32）
+
+global_events/{eventId}/shards/{shardId}
+  - vote_counts: map<number, number>    // 該 shard 的部份票數
+  - total_votes: number
+  - updatedAt: Timestamp
+
+global_events/{eventId}/votes/{deviceId}
+  - optionIndex: number
+  - shardId: string                     // 選擇的 shard（例如 "s0"~"s15"）
+  - createdAt: Timestamp
+```
+
+### 6.3 分片更新流程（Cloud Functions 層）
+
+- `submitBreakingVote` 在 Transaction 內：
+  1. 讀取 `global_events/{eventId}` 判斷 `sharding_enabled` 是否為 `true`。
+  2. 若為 `false`（預設）：維持現有邏輯，直接 `update` 主文件的 `vote_counts.X` 與 `total_votes`。
+  3. 若為 `true`：
+     - 根據 `deviceId` 或 `uid` 做簡單 hash，映射到某個 `shardId`（例如 `hash(deviceId) % shard_count`）。
+     - 在 `global_events/{eventId}/shards/{shardId}` 上做：
+       - `vote_counts.{optionIndex}: increment(1)`
+       - `total_votes: increment(1)`
+  4. 投票成功後可選擇：
+     - 由背景 Job 週期性（cron）將 shards 聚合回 `global_events/{eventId}` 主文件；
+     - 或前端直接讀 `shards` 集合並在客戶端加總。
+
+### 6.4 切換策略
+
+- **默認**：所有突發戰區事件皆使用「單文件聚合」，直至某事件的寫入頻率接近熱點風險臨界值（例如每秒數十次以上更新）。
+- **啟用分片**：
+  - 管理後台或維運腳本更新該 `eventId`：
+    - `sharding_enabled: true`
+    - `shard_count: 16`（或其他預設值）
+  - Cloud Functions 根據此旗標自動把後續投票導向 `shards`。
+- **關閉分片**（選擇性）：
+  - 活動結束後，可透過維運腳本：
+    - 將各 `shards` 的票數彙總回主文件；
+    - 視需要刪除或冷凍 `shards` 資料（匯出至 BigQuery / Storage）。
+
+### 6.5 觀測性與 Log 建議
+
+- Cloud Functions 在以下情境須輸出結構化 Log：
+  - `submitBreakingVote` 成功與失敗：
+    - `functions.logger.info("[submitBreakingVote][ok]", { eventId, deviceId, optionIndex, shardId, mode: "single|sharded" })`
+    - `functions.logger.error("[submitBreakingVote][error]", { code, eventId, deviceId, optionIndex, shardId, mode, message })`
+  - 分片彙總作業（若實作）：記錄每次聚合影響的 eventId / shard 數量 / 更新筆數，便於後續成本與性能分析。
+

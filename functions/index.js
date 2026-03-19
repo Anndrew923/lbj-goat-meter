@@ -13,6 +13,7 @@ import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
 import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
 import { signAdRewardToken } from "./utils/adRewardSigning.js";
 import { computeGlobalDeductions } from "./utils/voteAggregation.js";
+import { verifyGoldenKey } from "./utils/verifyGoldenKey.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -22,7 +23,7 @@ const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
 
-const STAR_ID = "lbj";
+const STAR_ID = (process.env.STAR_ID || process.env.GOAT_STAR_ID || "lbj").trim() || "lbj";
 const GLOBAL_SUMMARY_DOC_ID = "global_summary";
 
 /**
@@ -65,7 +66,7 @@ export const submitVote = functions.https.onCall(async (data, context) => {
 });
 
 async function runSubmitVote(data, context) {
-  const { voteData, recaptchaToken } = data || {};
+  const { voteData, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const uid = context.auth.uid;
 
   if (!voteData || typeof voteData !== "object") {
@@ -83,6 +84,18 @@ async function runSubmitVote(data, context) {
   if (!Array.isArray(selectedReasons)) {
     throw new functions.https.HttpsError("invalid-argument", "selectedReasons must be an array");
   }
+
+  // Golden Key：驗證前端簽章，避免未經授權腳本濫發請求。
+  verifyGoldenKey(
+    "submit_vote",
+    {
+      uid,
+      deviceId: deviceIdStr,
+      selectedStance,
+    },
+    { xGoatTimestamp, xGoatSignature },
+    { uid, deviceId: deviceIdStr }
+  );
 
   // 投票才看分數：大量假投票會破壞數據可信度，故正式環境要求 reCAPTCHA 分數 ≥ 0.5
   if (shouldBypassHardSecurity(context)) {
@@ -292,8 +305,15 @@ export const resetPosition = functions.https.onCall(async (data, context) => {
 });
 
 async function runResetPosition(data, context) {
-  const { adRewardToken, recaptchaToken } = data || {};
+  const { adRewardToken, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const uid = context.auth.uid;
+
+  verifyGoldenKey(
+    "reset_position",
+    { uid, adRewardToken: adRewardToken || null },
+    { xGoatTimestamp, xGoatSignature },
+    { uid }
+  );
 
   const bypassSecurity = shouldBypassHardSecurity(context);
   const allowedWebOrigins = (process.env.ALLOWED_WEB_ORIGIN || "https://lbj-goat-meter.netlify.app")
@@ -493,13 +513,25 @@ export const submitBreakingVote = functions.https.onCall(async (data, context) =
 });
 
 async function runSubmitBreakingVote(data, context) {
-  const { eventId, optionIndex, deviceId, recaptchaToken } = data || {};
+  const { eventId, optionIndex, deviceId, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!eventIdStr || !deviceIdStr) {
     throw new functions.https.HttpsError("invalid-argument", "eventId and deviceId required");
   }
   const option = typeof optionIndex === "number" ? optionIndex : 0;
+
+  verifyGoldenKey(
+    "submit_breaking_vote",
+    {
+      uid: context.auth.uid || null,
+      eventId: eventIdStr,
+      deviceId: deviceIdStr,
+      optionIndex: option,
+    },
+    { xGoatTimestamp, xGoatSignature },
+    { uid: context.auth.uid || null, deviceId: deviceIdStr }
+  );
 
   if (!shouldBypassHardSecurity(context)) {
     const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });

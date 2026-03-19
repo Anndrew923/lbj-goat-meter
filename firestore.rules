@@ -19,20 +19,15 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function hasValidAppCheck() {
-      // 若日後 Firebase 後端對 App Check 驗證穩定，再改回 `request.appCheck != null`
-      return true;
-    }
-
     // 1. User Profile：僅本人可讀寫
     match /profiles/{userId} {
       allow read: if isOwner(userId);
-      allow create, update, delete: if isOwner(userId) && hasValidAppCheck();
+      allow create, update, delete: if isOwner(userId);
     }
 
     // 2. 投票記錄：改由 Cloud Functions Admin SDK 寫入，前端一律 read-only
     match /votes/{voteId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update, delete: if false;
     }
 
@@ -50,14 +45,20 @@ service cloud.firestore {
 
     // 5. 專業分析數據
     match /analytics_pro/{cacheKey} {
-      allow read: if true;
-      allow create, update, delete: if isAuthenticated() && hasValidAppCheck();
+      allow read: if isAuthenticated();
+      allow create, update, delete: if false;
     }
 
-    // 6. 突發戰區（global_events）：前端橫幅可讀；已登入可寫（後台發布）
+    // 6. 突發戰區（global_events）：前端與 App 只讀，所有寫入一律走 Cloud Functions Admin SDK
     match /global_events/{eventId} {
       allow read: if true;
-      allow create, update, delete: if isAuthenticated();
+      allow create, update, delete: if false;
+    }
+
+    // 7. 突發戰區子集合 votes：一話題一設備一票，前端不可直接改寫
+    match /global_events/{eventId}/votes/{deviceId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if false;
     }
   }
 }
