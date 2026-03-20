@@ -123,31 +123,142 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     el.style.top = '0'
     el.style.margin = '0'
     el.style.padding = '0'
+
+    // 强制双重 rAF（style 变更之后）
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+    // 强制重排/刷新（黑科技）
+    void el.offsetHeight
+
+    // 若有外部圖片（photoURL），尽可能等 decode/载入完成
+    const imgs = Array.from(el.querySelectorAll('img'))
+    await Promise.all(
+      imgs.map(
+        (img) =>
+          new Promise((res) => {
+            const t = window.setTimeout(res, 450)
+            try {
+              if (typeof img.decode === 'function') {
+                img.decode().finally(() => {
+                  window.clearTimeout(t)
+                  res(true)
+                })
+                return
+              }
+              if (img.complete) {
+                window.clearTimeout(t)
+                res(true)
+                return
+              }
+              img.onload = () => {
+                window.clearTimeout(t)
+                res(true)
+              }
+              img.onerror = () => {
+                window.clearTimeout(t)
+                res(true)
+              }
+            } catch {
+              window.clearTimeout(t)
+              res(true)
+            }
+          }),
+      ),
+    )
+    // 强制把关键视觉样式重新写回 inline，避免 html-to-image clone 使用到旧 computed snapshot
+    const computed = window.getComputedStyle(el)
+    el.style.backgroundImage = computed.backgroundImage
+    el.style.backgroundColor = computed.backgroundColor
+    el.style.backgroundSize = computed.backgroundSize
+    el.style.backgroundPosition = computed.backgroundPosition
+    el.style.backgroundRepeat = computed.backgroundRepeat
+    el.style.filter = computed.filter
+    el.style.boxShadow = computed.boxShadow
+
+    // Phase 8：强制同步子層（laser-cut / reflective-sweeps），避免 html-to-image clone 使用到旧樣式快照
+    const laserEl = el.querySelector('[data-export-role="laser-cut"]')
+    if (laserEl) {
+      const laserCs = window.getComputedStyle(laserEl)
+      laserEl.style.backgroundImage = laserCs.backgroundImage
+      laserEl.style.mixBlendMode = laserCs.mixBlendMode
+      laserEl.style.opacity = laserCs.opacity
+      laserEl.style.filter = laserCs.filter
+    }
+    const reflectEl = el.querySelector('[data-export-role="reflective-sweeps"]')
+    if (reflectEl) {
+      const reflectCs = window.getComputedStyle(reflectEl)
+      reflectEl.style.backgroundImage = reflectCs.backgroundImage
+      reflectEl.style.mixBlendMode = reflectCs.mixBlendMode
+      reflectEl.style.opacity = reflectCs.opacity
+      reflectEl.style.filter = reflectCs.filter
+      reflectEl.style.top = reflectCs.top
+      reflectEl.style.height = reflectCs.height
+    }
+
+    const exportTag =
+      typeof computed.backgroundImage === 'string' && computed.backgroundImage.includes('115deg')
+        ? 'PH8'
+        : 'LEGACY'
+
+    const toPngBaseOpts = {
+      width: CARD_SIZE,
+      height: CARD_SIZE,
+      // Phase 5：統一使用較深的暗部基底，避免壓暗不足導致金屬高光黯淡
+      backgroundColor: '#050505',
+      pixelRatio: 2,
+      cacheBust: true,
+      skipFonts: true, // 避免讀取跨域 CSS（如 Google Fonts）觸發 SecurityError
+    }
+
     try {
-      const dataUrl = await toPng(el, {
-        width: CARD_SIZE,
-        height: CARD_SIZE,
-        // Phase 5：統一使用較深的暗部基底，避免壓暗不足導致金屬高光黯淡
-        backgroundColor: '#050505',
-        pixelRatio: 2,
-        cacheBust: true,
-        skipFonts: true, // 避免讀取跨域 CSS（如 Google Fonts）觸發 SecurityError
-      })
+      let dataUrl = await toPng(el, toPngBaseOpts)
+
       if (Capacitor.isNativePlatform()) {
         const albumIdentifier = await ensureGoatAlbumIdentifier()
         await Media.savePhoto({
           path: dataUrl,
           albumIdentifier: albumIdentifier ?? undefined,
-          fileName: `GOAT-Meter-${Date.now()}`,
+          fileName: `GOAT-Meter-${exportTag}-${Date.now()}`,
         })
       } else {
         const a = document.createElement('a')
         a.href = dataUrl
-        a.download = `GOAT-Meter-${Date.now()}.png`
+        a.download = `GOAT-Meter-${exportTag}-${Date.now()}.png`
         a.click()
       }
     } catch (err) {
-      console.error('[BattleCardContainer] save report failed', err)
+      console.warn('[BattleCardContainer] toPng failed (retry without external IMG)', err)
+      try {
+        const dataUrl = await toPng(el, {
+          ...toPngBaseOpts,
+          filter: (node) => {
+            if (node && node.nodeName === 'IMG') {
+              const src =
+                node.getAttribute('src') || node.currentSrc || node.src || ''
+              if (typeof src === 'string' && /^https?:\/\//i.test(src)) {
+                return false
+              }
+            }
+            return true
+          },
+        })
+
+        if (Capacitor.isNativePlatform()) {
+          const albumIdentifier = await ensureGoatAlbumIdentifier()
+          await Media.savePhoto({
+            path: dataUrl,
+            albumIdentifier: albumIdentifier ?? undefined,
+            fileName: `GOAT-Meter-${exportTag}-${Date.now()}`,
+          })
+        } else {
+          const a = document.createElement('a')
+          a.href = dataUrl
+          a.download = `GOAT-Meter-${exportTag}-${Date.now()}.png`
+          a.click()
+        }
+      } catch (err2) {
+        console.error('[BattleCardContainer] save report failed after retry', err2)
+      }
     } finally {
       el.style.transform = prev.transform
       el.style.transformOrigin = prev.transformOrigin

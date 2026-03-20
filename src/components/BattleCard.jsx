@@ -171,7 +171,7 @@ export default function BattleCard({
 
   /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock === true 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
   const handleDownload = useCallback(
-    (forceUnlock = false) => {
+    async (forceUnlock = false) => {
       const isExplicitUnlock = forceUnlock === true;
       if (!isExportReady && !isExplicitUnlock) {
         if (onRequestRewardAd && onExportUnlock) {
@@ -199,30 +199,132 @@ export default function BattleCard({
       el.style.top = "0";
       el.style.margin = "0";
       el.style.padding = "0";
-      // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
-      toPng(el, {
+
+      // 强制双重 rAF（style 变更之后）：确保完成最新 Phase 8 重绘
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      // 强制重排/刷新（黑科技）
+      void el.offsetHeight;
+
+      // 若有外部圖片（photoURL），尽可能等 decode/载入完成，避免 toPng 抓到未加载资源
+      const imgs = Array.from(el.querySelectorAll("img"));
+      await Promise.all(
+        imgs.map(
+          (img) =>
+            new Promise((res) => {
+              const t = window.setTimeout(res, 450);
+              try {
+                if (typeof img.decode === "function") {
+                  img.decode().finally(() => {
+                    window.clearTimeout(t);
+                    res(true);
+                  });
+                  return;
+                }
+                if (img.complete) {
+                  window.clearTimeout(t);
+                  res(true);
+                  return;
+                }
+                img.onload = () => {
+                  window.clearTimeout(t);
+                  res(true);
+                };
+                img.onerror = () => {
+                  window.clearTimeout(t);
+                  res(true);
+                };
+              } catch {
+                window.clearTimeout(t);
+                res(true);
+              }
+            }),
+        ),
+      );
+      // 强制把关键视觉样式重新写回 inline，避免 html-to-image clone 使用到旧 computed snapshot
+      const computed = window.getComputedStyle(el);
+      el.style.backgroundImage = computed.backgroundImage;
+      el.style.backgroundColor = computed.backgroundColor;
+      el.style.backgroundSize = computed.backgroundSize;
+      el.style.backgroundPosition = computed.backgroundPosition;
+      el.style.backgroundRepeat = computed.backgroundRepeat;
+      el.style.filter = computed.filter;
+      el.style.boxShadow = computed.boxShadow;
+
+      // Phase 8：強制同步子層（laser-cut / reflective-sweeps），避免 html-to-image clone 用到舊樣式快照
+      const laserEl = el.querySelector('[data-export-role="laser-cut"]');
+      if (laserEl) {
+        const laserCs = window.getComputedStyle(laserEl);
+        laserEl.style.backgroundImage = laserCs.backgroundImage;
+        laserEl.style.mixBlendMode = laserCs.mixBlendMode;
+        laserEl.style.opacity = laserCs.opacity;
+        laserEl.style.filter = laserCs.filter;
+      }
+      const reflectEl = el.querySelector('[data-export-role="reflective-sweeps"]');
+      if (reflectEl) {
+        const reflectCs = window.getComputedStyle(reflectEl);
+        reflectEl.style.backgroundImage = reflectCs.backgroundImage;
+        reflectEl.style.mixBlendMode = reflectCs.mixBlendMode;
+        reflectEl.style.opacity = reflectCs.opacity;
+        reflectEl.style.filter = reflectCs.filter;
+        reflectEl.style.top = reflectCs.top;
+        reflectEl.style.height = reflectCs.height;
+      }
+
+      const exportTag =
+        typeof computed.backgroundImage === "string" && computed.backgroundImage.includes("115deg")
+          ? "PH8"
+          : "LEGACY";
+      const toPngBaseOpts = {
+        // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
         width: CARD_SIZE,
         height: CARD_SIZE,
         backgroundColor: "#050505",
         pixelRatio: 2,
         cacheBust: true,
-      })
-        .then((dataUrl) => {
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${Date.now()}.png`;
-          a.click();
-        })
-        .catch((err) => console.error("[BattleCard] toPng failed", err))
-        .finally(() => {
-          el.style.transform = prev.transform;
-          el.style.transformOrigin = prev.transformOrigin;
-          el.style.left = prev.left;
-          el.style.top = prev.top;
-          el.style.margin = prev.margin;
-          el.style.padding = prev.padding;
-          onExportEnd?.();
-        });
+        skipFonts: true, // 避免讀取跨域 CSS（如 Google Fonts）觸發 SecurityError/延遲
+      };
+
+      // Phase 8：避免外部 <img>（跨網域）造成 canvas taint -> 導出直接失敗
+      // 策略：先正常匯出；若失敗，重試時跳過外部圖片節點，確保至少能輸出「最新背景與字牆」。
+      let dataUrl = null;
+      try {
+        dataUrl = await toPng(el, toPngBaseOpts);
+      } catch (err) {
+        console.warn("[BattleCard] toPng failed (retry without external IMG)", err);
+        try {
+          dataUrl = await toPng(el, {
+            ...toPngBaseOpts,
+            filter: (node) => {
+              if (node && node.nodeName === "IMG") {
+                const src =
+                  node.getAttribute("src") || node.currentSrc || node.src || "";
+                if (typeof src === "string" && /^https?:\/\//i.test(src)) {
+                  return false;
+                }
+              }
+              return true;
+            },
+          });
+        } catch (err2) {
+          console.error("[BattleCard] toPng failed after retry", err2);
+        }
+      }
+
+      if (dataUrl) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}-${Date.now()}.png`;
+        a.click();
+      }
+
+      el.style.transform = prev.transform;
+      el.style.transformOrigin = prev.transformOrigin;
+      el.style.left = prev.left;
+      el.style.top = prev.top;
+      el.style.margin = prev.margin;
+      el.style.padding = prev.padding;
+      onExportEnd?.();
     },
     [battleTitle, cardRef, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
   );
@@ -235,8 +337,10 @@ export default function BattleCard({
   const mixedWallWords = useMemo(() => {
     const rand = mulberry32(hashStringToSeed(`${wallText}|${battleTitle}|${teamColors.primary}|${teamColors.secondary}`));
     const sizeClasses = ["text-4xl", "text-5xl", "text-6xl", "text-7xl", "text-8xl", "text-9xl"];
-    const wallCount = 120; // 增加密度：比原本 40 更滿
-    const hollowStrokeColor = hexWithAlpha(teamColors.primary, "FF");
+    const wallCount = 150; // Phase 8：斜向界面需要更高重疊密度
+    // Smart Watermark（Phase 7）：字牆用「中性銀色」讓壓印在上下雙色背景都能清晰浮現
+    const smartSilver = mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#e6e6e6", 0.55);
+    const hollowStrokeColor = hexWithAlpha(smartSilver, "FF");
     const glitchRed = "rgba(255,0,80,0.35)";
     const glitchCyan = "rgba(0,220,255,0.30)";
 
@@ -273,7 +377,7 @@ export default function BattleCard({
                 color: "transparent",
                 WebkitTextStroke: `1px ${hollowStrokeColor}`,
                 opacity: 1,
-                textShadow: `0 0 ${Math.round(18 * glowAlpha)}px ${hexWithAlpha(teamColors.primary, "33")}${glitchShadow}`,
+                textShadow: `0 0 ${Math.round(18 * glowAlpha)}px ${hexWithAlpha(smartSilver, "33")}${glitchShadow}`,
               }}
             >
               {ch}
@@ -288,11 +392,11 @@ export default function BattleCard({
             style={{
               display: "inline-block",
               lineHeight: 1,
-              color: teamColors.primary,
+              color: smartSilver,
               opacity: 1,
-              textShadow: `0 0 ${Math.round(14 * glowAlpha)}px ${hexWithAlpha(teamColors.primary, "44")}, 0 0 ${Math.round(
+              textShadow: `0 0 ${Math.round(14 * glowAlpha)}px ${hexWithAlpha(smartSilver, "44")}, 0 0 ${Math.round(
                 34 * glowAlpha
-              )}px ${hexWithAlpha(teamColors.primary, "18")}${glitchShadow}`,
+              )}px ${hexWithAlpha(smartSilver, "18")}${glitchShadow}`,
             }}
           >
             {ch}
@@ -306,8 +410,9 @@ export default function BattleCard({
           className={`${sizeClass} ${weightClass} italic uppercase select-none whitespace-nowrap`}
           aria-hidden
           style={{
-            mixBlendMode: "vivid-light",
-            filter: "brightness(1.35) saturate(1.25) contrast(1.05)",
+            // Phase 7：在上下雙色背景上都呈現清晰金屬壓印
+            mixBlendMode: "exclusion",
+            filter: "brightness(1.25) saturate(0.9) contrast(1.1)",
           }}
         >
           {chars}
@@ -321,24 +426,46 @@ export default function BattleCard({
   const wallSecondaryGlow = hexWithAlpha(teamColors.secondary, "26"); // ~15% alpha
   if (!open) return null;
 
-  // Polished Chrome Frame：深主色 / 極亮主色 / 中性主色 / 亮主色 / 深主色
-  const deepPrimary = mixHex(teamColors.primary, "#000000", 0.62);
-  const extremePrimary = mixHex(teamColors.primary, "#ffffff", 0.90);
-  const neutralPrimary = mixHex(teamColors.primary, "#bdbdbd", 0.52);
-  const brightPrimary = mixHex(teamColors.primary, "#ffffff", 0.68);
-  // Vibrant Frame：拉高主色高亮比例、縮短灰/銀過渡段
-  const chromeBorderGradient = `linear-gradient(135deg, ${deepPrimary} 0%, ${extremePrimary} 20%, ${extremePrimary} 36%, ${neutralPrimary} 44%, ${brightPrimary} 62%, ${deepPrimary} 100%)`;
-  const chromeBorderImage = `${chromeBorderGradient} 1`;
+  // Polished Chrome Frame（Phase 6：secondary 為結構、高光）
+  const deepSecondary = mixHex(teamColors.secondary, "#000000", 0.62);
+  const extremeSecondary = mixHex(teamColors.secondary, "#ffffff", 0.90);
+  const neutralSecondary = mixHex(teamColors.secondary, "#bdbdbd", 0.52);
+  const brightSecondary = mixHex(teamColors.secondary, "#ffffff", 0.68);
 
-  // Metallic Base：中心金屬光用的主色高亮
-  const metalMidGlow = mixHex(teamColors.primary, "#ffffff", 0.58);
+  // Vibrant Frame：拉高 secondary 高亮比例、縮短灰/銀過渡段
+  const chromeBorderGradient = `linear-gradient(135deg, ${deepSecondary} 0%, ${extremeSecondary} 20%, ${extremeSecondary} 36%, ${neutralSecondary} 44%, ${brightSecondary} 62%, ${deepSecondary} 100%)`;
+  const chromeBorderImage = `${chromeBorderGradient} 1`;
 
   // Reflective Sweeps：全程使用隊色「變體」而非純白，避免紅變粉、黃不夠亮
   const reflectiveTint20 = hexWithAlpha(teamColors.primary, "20");
   const reflectiveTint40 = hexWithAlpha(teamColors.primary, "40");
   const reflectiveTint60 = hexWithAlpha(teamColors.primary, "60");
-  // Dual-Core Specular：極亮核心（仍帶隊色、不用純白）
-  const reflectiveCore = hexWithAlpha(mixHex(teamColors.primary, "#ffffff", 0.98), "65");
+  // Secondary tint（Phase 6：primary -> secondary -> primary iridescence）
+  const reflectiveSecondaryTint20 = hexWithAlpha(teamColors.secondary, "20");
+  const reflectiveSecondaryTint40 = hexWithAlpha(teamColors.secondary, "40");
+  const reflectiveSecondaryTint60 = hexWithAlpha(teamColors.secondary, "60");
+
+  // Phase 7：Cross-Color Reflections（冷白核心，不用純白）
+  const reflectiveCoreCool = hexWithAlpha(
+    mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#ffffff", 0.78),
+    "6F"
+  );
+
+  // Phase 8：115deg 雷射切割線（主/副色混合高亮白，非純白）
+  const laserCutTint = mixHex(
+    mixHex(teamColors.primary, teamColors.secondary, 0.5),
+    "#ffffff",
+    0.35,
+  );
+  const laserCutColor = hexWithAlpha(laserCutTint, "E8");
+
+  // HUD Corners（Phase 7）：互補色高光
+  const { r: pR, g: pG, b: pB } = hexToRgb(teamColors.primary);
+  const { r: sR, g: sG, b: sB } = hexToRgb(teamColors.secondary);
+  const complementPrimary = rgbToHex(255 - pR, 255 - pG, 255 - pB);
+  const complementSecondary = rgbToHex(255 - sR, 255 - sG, 255 - sB);
+  const cornerTopRimAlpha = hexWithAlpha(mixHex(complementPrimary, teamColors.primary, 0.35), "F0");
+  const cornerBottomRimAlpha = hexWithAlpha(mixHex(complementSecondary, teamColors.secondary, 0.35), "F0");
 
   const modalContent = (
     <div
@@ -386,22 +513,37 @@ export default function BattleCard({
                   borderColor: "transparent",
                   borderImage: chromeBorderImage,
                   borderImageSlice: 1,
-                  // 重金屬化：中心加強主色「金屬光」，並提升整體對比
-                  background: `
-                    radial-gradient(circle at 50% 35%, ${hexWithAlpha(metalMidGlow, "70")} 0%, transparent 55%),
-                    radial-gradient(circle at 70% 25%, ${hexWithAlpha(extremePrimary, "40")} 0%, transparent 48%),
-                    linear-gradient(135deg, #050505 0%, #0c0c0c 22%, ${hexWithAlpha(metalMidGlow, "55")} 62%, #151515 86%, ${secondaryWithAlpha} 100%)
+                  // Phase 8：115deg 斜向分色基底（Primary/Secondary + 黑能量縫合）
+                  backgroundImage: `
+                    linear-gradient(
+                      115deg,
+                      ${hexWithAlpha(teamColors.primary, "FF")} 0%,
+                      ${hexWithAlpha(teamColors.primary, "E6")} 45%,
+                      rgba(0,0,0,0.8) 50%,
+                      ${hexWithAlpha(teamColors.secondary, "E6")} 55%,
+                      ${hexWithAlpha(teamColors.secondary, "FF")} 100%
+                    ),
+                    repeating-linear-gradient(
+                      115deg,
+                      ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "12")} 0px,
+                      ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "12")} 1px,
+                      rgba(0,0,0,0) 1px,
+                      rgba(0,0,0,0) 10px
+                    )
                   `,
+                  backgroundSize: "100% 100%, 100% 100%",
+                  backgroundPosition: "0 0, 0 0",
+                  backgroundRepeat: "no-repeat, no-repeat",
                   // Forced Saturation：鎖定主色飽和度，避免高光把紅/黃稀釋
                   backdropFilter: "saturate(1.8) contrast(1.1)",
                   WebkitBackdropFilter: "saturate(1.8) contrast(1.1)",
-                  // Phase 5：極致鏡面拋光亮度推向巔峰
-                  filter: "saturate(1.5) contrast(1.15) brightness(1.05)",
-                  boxShadow: `inset 0 0 100px rgba(0,0,0,0.88), 0 0 22px ${hexWithAlpha(teamColors.primary, "5A")}, inset 0 0 60px ${hexWithAlpha(
-                    extremePrimary,
+                  // Phase 6：色彩/對比微調（保持鏡面，但不壓扁 secondary）
+                  filter: "saturate(1.4) contrast(1.1)",
+                  boxShadow: `inset 0 0 100px rgba(0,0,0,0.88), 0 0 22px ${hexWithAlpha(teamColors.secondary, "5A")}, inset 0 0 60px ${hexWithAlpha(
+                    extremeSecondary,
                     "20"
-                  )}, inset 0 0 2px 1px ${hexWithAlpha(teamColors.primary, "80")}, inset 0 0 1px 0.6px ${hexWithAlpha(
-                    mixHex(teamColors.primary, "#ffffff", 0.97),
+                  )}, inset 0 0 2px 1px ${hexWithAlpha(teamColors.secondary, "80")}, inset 0 0 1px 0.6px ${hexWithAlpha(
+                    mixHex(teamColors.secondary, "#ffffff", 0.97),
                     "E8"
                   )}`,
                 }}
@@ -410,9 +552,9 @@ export default function BattleCard({
                 <style>{`
                   .battlecard-corners-accent{
                     filter:
-                      drop-shadow(0 0 2px rgba(255,255,255,0.92))
-                      drop-shadow(0 0 6px ${teamColors.primary})
-                      drop-shadow(0 0 14px ${hexWithAlpha(teamColors.primary, "55")});
+                      drop-shadow(0 0 2px ${cornerTopRimAlpha})
+                      drop-shadow(0 0 6px ${cornerBottomRimAlpha})
+                      drop-shadow(0 0 14px ${hexWithAlpha(teamColors.secondary, "55")});
                   }
                   .battlecard-corners-accent::before,
                   .battlecard-corners-accent::after{
@@ -429,10 +571,10 @@ export default function BattleCard({
                   /* top-left & top-right */
                   .battlecard-corners-accent::before{
                     background-image:
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95));
+                      linear-gradient(${cornerTopRimAlpha}, ${cornerTopRimAlpha}),
+                      linear-gradient(${cornerTopRimAlpha}, ${cornerTopRimAlpha}),
+                      linear-gradient(${cornerTopRimAlpha}, ${cornerTopRimAlpha}),
+                      linear-gradient(${cornerTopRimAlpha}, ${cornerTopRimAlpha});
                     background-size:
                       20px 1px,
                       1px 20px,
@@ -447,10 +589,10 @@ export default function BattleCard({
                   /* bottom-left & bottom-right */
                   .battlecard-corners-accent::after{
                     background-image:
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95));
+                      linear-gradient(${cornerBottomRimAlpha}, ${cornerBottomRimAlpha}),
+                      linear-gradient(${cornerBottomRimAlpha}, ${cornerBottomRimAlpha}),
+                      linear-gradient(${cornerBottomRimAlpha}, ${cornerBottomRimAlpha}),
+                      linear-gradient(${cornerBottomRimAlpha}, ${cornerBottomRimAlpha});
                     background-size:
                       20px 1px,
                       1px 20px,
@@ -480,23 +622,39 @@ export default function BattleCard({
                     aria-hidden
                   />
 
+                  {/* Phase 8：50% 雷射切割線（115deg，screen 混合，非純白） */}
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    aria-hidden
+                    data-export-role="laser-cut"
+                    style={{
+                      backgroundImage: `linear-gradient(115deg, transparent 49.9%, ${laserCutColor} 50%, transparent 50.1%)`,
+                      mixBlendMode: "screen",
+                      opacity: 0.98,
+                      filter: "contrast(1.35) brightness(1.1) blur(0.1px)",
+                    }}
+                  />
+
                   {/* Reflective Light Sweeps：斜向反射光掃描帶 */}
                   <div
                     className="absolute left-0 right-0 pointer-events-none"
                     aria-hidden
+                    data-export-role="reflective-sweeps"
                     style={{
-                      top: 0,
-                      height: "60%",
+                      top: "-10%",
+                      height: "120%",
                       backgroundImage:
-                        // Dual-Core Specular Sweeps：主色反光帶 + 2% 極亮核心線
-                        `linear-gradient(115deg,
-                          transparent 20%,
-                          ${reflectiveTint20} 24%,
-                          ${reflectiveTint60} 26%,
-                          ${reflectiveCore} 27%,
-                          ${reflectiveCore} 29%,
-                          ${reflectiveTint40} 31%,
-                          transparent 40%)`,
+                        // Phase 7：Cross-Color Reflections（斜向覆蓋全卡 + 雙重核心 2%）
+                        `linear-gradient(145deg,
+                          transparent 18%,
+                          ${reflectiveTint20} 22%,
+                          ${reflectiveTint60} 24%,
+                          ${reflectiveSecondaryTint20} 26%,
+                          ${reflectiveSecondaryTint60} 28%,
+                          ${reflectiveCoreCool} 29%,
+                          ${reflectiveCoreCool} 31%,
+                          ${reflectiveTint40} 33%,
+                          transparent 45%)`,
                       mixBlendMode: "overlay",
                       opacity: 0.95,
                       filter: "contrast(1.2) brightness(1.05)",
@@ -508,8 +666,9 @@ export default function BattleCard({
                     className="absolute inset-0 pointer-events-none"
                     aria-hidden
                     style={{
-                      background: teamColors.primary,
-                      opacity: 0.18,
+                      // Phase 6：讓基底 secondary 主導色彩結構，避免雙色融合後仍被 primary 淹沒
+                      background: mixHex(teamColors.primary, teamColors.secondary, 0.5),
+                      opacity: 0.16,
                       mixBlendMode: "overlay",
                       filter: "saturate(1.25)",
                     }}
@@ -520,15 +679,16 @@ export default function BattleCard({
                     className="absolute inset-0 flex flex-wrap content-start gap-x-4 gap-y-2 p-4"
                     style={{
                       transform: "rotate(-15deg)",
-                      mixBlendMode: "vivid-light",
+                      // Phase 8：斜向分色下保持字牆 exclusion 壓印一致性
+                      mixBlendMode: "exclusion",
                       opacity: 0.92,
                       filter: "brightness(1.25) saturate(1.2) contrast(1.05)",
                       // Radial Alpha Decay：以「球員照片 / Power Stance」區域為中心的透明度黑洞
                       // 注意：mask 只控制可見性 alpha，避免影響字的排版與 toPng 版面。
                       WebkitMaskImage:
-                        "radial-gradient(circle at 50% 48%, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.07) 22%, rgba(0,0,0,0.05) 44%, rgba(0,0,0,0.03) 66%, rgba(0,0,0,0.01) 100%)",
+                        "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.08) 20%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.035) 70%, rgba(0,0,0,0.012) 100%)",
                       maskImage:
-                        "radial-gradient(circle at 50% 48%, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.07) 22%, rgba(0,0,0,0.05) 44%, rgba(0,0,0,0.03) 66%, rgba(0,0,0,0.01) 100%)",
+                        "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.08) 20%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.035) 70%, rgba(0,0,0,0.012) 100%)",
                       WebkitMaskRepeat: "no-repeat",
                       maskRepeat: "no-repeat",
                       WebkitMaskSize: "100% 100%",
@@ -597,7 +757,8 @@ export default function BattleCard({
                       className={`relative text-4xl font-black italic tracking-tighter text-white drop-shadow-lg whitespace-nowrap ${isTitleUppercase ? "uppercase" : "tracking-[0.1em]"}`}
                       style={{
                         color: stanceColor,
-                        textShadow: `0 0 20px ${hexWithAlpha(stanceColor, "60")}, 0 0 40px ${hexWithAlpha(stanceColor, "30")}`,
+                        // Phase 8：斜向光影一致立體感（同時吃到 primary/secondary）
+                        textShadow: `0 0 20px ${hexWithAlpha(stanceColor, "60")}, 0 0 42px ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "45")}, 0 0 60px ${hexWithAlpha(teamColors.secondary, "20")}`,
                       }}
                     >
                       {battleTitle}
@@ -610,6 +771,8 @@ export default function BattleCard({
                       {photoURL ? (
                         <img
                           src={photoURL}
+                          crossOrigin="anonymous"
+                          referrerPolicy="no-referrer"
                           alt=""
                           className="w-full h-full object-cover"
                         />
@@ -743,7 +906,11 @@ export default function BattleCard({
                     className="text-[6px] text-white/40 mt-2 text-center leading-tight tracking-[0.18em] uppercase"
                     aria-hidden
                     style={{
-                      textShadow: `0 0 18px ${hexWithAlpha(teamColors.primary, "1A")}`,
+                      // Bottom-half semantic：secondary 區塊語意
+                      textShadow: `0 0 18px ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "1A")}, 0 0 26px ${hexWithAlpha(
+                        teamColors.secondary,
+                        "14"
+                      )}`,
                     }}
                   >
                     {t("battleCard.meta_footer", {
