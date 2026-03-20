@@ -4,7 +4,7 @@
  * 固定 1:1 (640×640)，scale-to-fit 縮放；640×640 高清下載需 isExportReady（廣告解鎖後自動觸發一次下載）。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useRef, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
@@ -22,7 +22,59 @@ const BUTTON_GROUP_RESERVE = 200;
 
 /** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
 const NOISE_DATA_URL =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill='%23fff'/%3E%3C/svg%3E";
+  // 以更高 baseFrequency + 多一層 octave 產生「更細碎」的顆粒，模擬磨砂金屬質地。
+  // Phase 5：改成「水平拉絲」(X/Y baseFrequency 不同)，並用 soft-light 讓顆粒只在有光區閃爍。
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill='%23d0d0d0'/%3E%3C/svg%3E";
+
+/**
+ * 極致背景字牆需要「隨機但可預期」的視覺輸出：
+ * - preview / toPng 期間不應因 rerender 而變掉
+ * - 因此使用字串 hash + PRNG 生成穩定序列
+ */
+function hashStringToSeed(str) {
+  const s = String(str ?? "");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function rand() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hexToRgb(hex) {
+  const clean = String(hex || "").replace(/^#/, "");
+  if (clean.length !== 6) return { r: 0, g: 0, b: 0 };
+  const n = parseInt(clean, 16);
+  return {
+    r: (n >> 16) & 255,
+    g: (n >> 8) & 255,
+    b: n & 255,
+  };
+}
+
+function rgbToHex(r, g, b) {
+  const to = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+/** mix = 0 => a, mix = 1 => b */
+function mixHex(a, b, mix) {
+  const ma = hexToRgb(a);
+  const mb = hexToRgb(b);
+  const t = Math.max(0, Math.min(1, mix));
+  return rgbToHex(ma.r + (mb.r - ma.r) * t, ma.g + (mb.g - ma.g) * t, ma.b + (mb.b - ma.b) * t);
+}
 
 export default function BattleCard({
   open,
@@ -151,7 +203,7 @@ export default function BattleCard({
       toPng(el, {
         width: CARD_SIZE,
         height: CARD_SIZE,
-        backgroundColor: "#0a0a0a",
+        backgroundColor: "#050505",
         pixelRatio: 2,
         cacheBust: true,
       })
@@ -175,9 +227,118 @@ export default function BattleCard({
     [battleTitle, cardRef, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
   );
 
+  const secondaryWithAlpha = hexWithAlpha(teamColors.secondary, "A0");
+  const stableMetaTimestamp = useRef(Date.now());
+  const wallText = String(voterTeam || "LAL").toUpperCase().trim() || "LAL";
+
+  // Layer 1: 升級文字牆（隨機字級/粗細/空心邊框字），但輸出可預期（seed 固定）
+  const mixedWallWords = useMemo(() => {
+    const rand = mulberry32(hashStringToSeed(`${wallText}|${battleTitle}|${teamColors.primary}|${teamColors.secondary}`));
+    const sizeClasses = ["text-4xl", "text-5xl", "text-6xl", "text-7xl", "text-8xl", "text-9xl"];
+    const wallCount = 120; // 增加密度：比原本 40 更滿
+    const hollowStrokeColor = hexWithAlpha(teamColors.primary, "FF");
+    const glitchRed = "rgba(255,0,80,0.35)";
+    const glitchCyan = "rgba(0,220,255,0.30)";
+
+    return Array.from({ length: wallCount }).map((_, wordIdx) => {
+      const sizeClass = sizeClasses[Math.floor(rand() * sizeClasses.length)];
+      const weightClass = rand() > 0.5 ? "font-black" : "font-thin";
+      // 透明度衰減交由「Radial Alpha Decay」(mask) 控制：字體 span 保持 1，避免疊加導致透明度偏移。
+      const glowAlpha = 0.75 + rand() * 0.35;
+      const glitchHollow = rand() < 0.28;
+      const glitchBold = weightClass === "font-black" && rand() < 0.22;
+
+      // 每個字牆「詞」的內部字母：每 5 個字隨機出現一個空心邊框字
+      const textLen = wallText.length;
+      const hollowIdxByBlock = new Set();
+      for (let start = 0; start < textLen; start += 5) {
+        const end = Math.min(start + 5, textLen);
+        const pick = start + Math.floor(rand() * (end - start));
+        hollowIdxByBlock.add(pick);
+      }
+
+      const chars = wallText.split("").map((ch, charIdx) => {
+        const isHollow = hollowIdxByBlock.has(charIdx);
+        if (isHollow) {
+          const glitchShadow = glitchHollow
+            ? `, -1px 0 0 ${glitchRed}, 1px 0 0 ${glitchCyan}`
+            : "";
+          return (
+            <span
+              // charIdx 在同一個 word span 內穩定，key 用它即可
+              key={`${wordIdx}-${charIdx}`}
+              style={{
+                display: "inline-block",
+                lineHeight: 1,
+                color: "transparent",
+                WebkitTextStroke: `1px ${hollowStrokeColor}`,
+                opacity: 1,
+                textShadow: `0 0 ${Math.round(18 * glowAlpha)}px ${hexWithAlpha(teamColors.primary, "33")}${glitchShadow}`,
+              }}
+            >
+              {ch}
+            </span>
+          );
+        }
+
+        const glitchShadow = glitchBold ? `, -1px 0 0 ${glitchRed}, 1px 0 0 ${glitchCyan}` : "";
+        return (
+          <span
+            key={`${wordIdx}-${charIdx}`}
+            style={{
+              display: "inline-block",
+              lineHeight: 1,
+              color: teamColors.primary,
+              opacity: 1,
+              textShadow: `0 0 ${Math.round(14 * glowAlpha)}px ${hexWithAlpha(teamColors.primary, "44")}, 0 0 ${Math.round(
+                34 * glowAlpha
+              )}px ${hexWithAlpha(teamColors.primary, "18")}${glitchShadow}`,
+            }}
+          >
+            {ch}
+          </span>
+        );
+      });
+
+      return (
+        <span
+          key={`wall-word-${wordIdx}`}
+          className={`${sizeClass} ${weightClass} italic uppercase select-none whitespace-nowrap`}
+          aria-hidden
+          style={{
+            mixBlendMode: "vivid-light",
+            filter: "brightness(1.35) saturate(1.25) contrast(1.05)",
+          }}
+        >
+          {chars}
+          {" "}
+        </span>
+      );
+    });
+  }, [wallText, battleTitle, teamColors.primary, teamColors.secondary]);
+
+  const wallPrimaryGlow = hexWithAlpha(teamColors.primary, "33"); // ~20% alpha
+  const wallSecondaryGlow = hexWithAlpha(teamColors.secondary, "26"); // ~15% alpha
   if (!open) return null;
 
-  const secondaryWithAlpha = hexWithAlpha(teamColors.secondary, "A0");
+  // Polished Chrome Frame：深主色 / 極亮主色 / 中性主色 / 亮主色 / 深主色
+  const deepPrimary = mixHex(teamColors.primary, "#000000", 0.62);
+  const extremePrimary = mixHex(teamColors.primary, "#ffffff", 0.90);
+  const neutralPrimary = mixHex(teamColors.primary, "#bdbdbd", 0.52);
+  const brightPrimary = mixHex(teamColors.primary, "#ffffff", 0.68);
+  // Vibrant Frame：拉高主色高亮比例、縮短灰/銀過渡段
+  const chromeBorderGradient = `linear-gradient(135deg, ${deepPrimary} 0%, ${extremePrimary} 20%, ${extremePrimary} 36%, ${neutralPrimary} 44%, ${brightPrimary} 62%, ${deepPrimary} 100%)`;
+  const chromeBorderImage = `${chromeBorderGradient} 1`;
+
+  // Metallic Base：中心金屬光用的主色高亮
+  const metalMidGlow = mixHex(teamColors.primary, "#ffffff", 0.58);
+
+  // Reflective Sweeps：全程使用隊色「變體」而非純白，避免紅變粉、黃不夠亮
+  const reflectiveTint20 = hexWithAlpha(teamColors.primary, "20");
+  const reflectiveTint40 = hexWithAlpha(teamColors.primary, "40");
+  const reflectiveTint60 = hexWithAlpha(teamColors.primary, "60");
+  // Dual-Core Specular：極亮核心（仍帶隊色、不用純白）
+  const reflectiveCore = hexWithAlpha(mixHex(teamColors.primary, "#ffffff", 0.98), "65");
 
   const modalContent = (
     <div
@@ -217,42 +378,190 @@ export default function BattleCard({
               <div
                 ref={cardRef}
                 data-ref="battle-card-ref"
-                className="absolute left-1/2 top-1/2 flex flex-col bg-black text-white rounded-2xl origin-center border-2"
+                className="absolute left-1/2 top-1/2 flex flex-col bg-black text-white rounded-2xl origin-center border-2 battlecard-corners-accent"
                 style={{
                   width: CARD_SIZE,
                   height: CARD_SIZE,
                   transform: `translate(-50%, -50%) scale(${scale})`,
-                  borderColor: teamColors.primary,
-                  background: `linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, ${secondaryWithAlpha} 100%)`,
-                  boxShadow: `0 0 20px ${teamColors.primary}, 0 0 40px ${hexWithAlpha(teamColors.primary, "30")}`,
+                  borderColor: "transparent",
+                  borderImage: chromeBorderImage,
+                  borderImageSlice: 1,
+                  // 重金屬化：中心加強主色「金屬光」，並提升整體對比
+                  background: `
+                    radial-gradient(circle at 50% 35%, ${hexWithAlpha(metalMidGlow, "70")} 0%, transparent 55%),
+                    radial-gradient(circle at 70% 25%, ${hexWithAlpha(extremePrimary, "40")} 0%, transparent 48%),
+                    linear-gradient(135deg, #050505 0%, #0c0c0c 22%, ${hexWithAlpha(metalMidGlow, "55")} 62%, #151515 86%, ${secondaryWithAlpha} 100%)
+                  `,
+                  // Forced Saturation：鎖定主色飽和度，避免高光把紅/黃稀釋
+                  backdropFilter: "saturate(1.8) contrast(1.1)",
+                  WebkitBackdropFilter: "saturate(1.8) contrast(1.1)",
+                  // Phase 5：極致鏡面拋光亮度推向巔峰
+                  filter: "saturate(1.5) contrast(1.15) brightness(1.05)",
+                  boxShadow: `inset 0 0 100px rgba(0,0,0,0.88), 0 0 22px ${hexWithAlpha(teamColors.primary, "5A")}, inset 0 0 60px ${hexWithAlpha(
+                    extremePrimary,
+                    "20"
+                  )}, inset 0 0 2px 1px ${hexWithAlpha(teamColors.primary, "80")}, inset 0 0 1px 0.6px ${hexWithAlpha(
+                    mixHex(teamColors.primary, "#ffffff", 0.97),
+                    "E8"
+                  )}`,
                 }}
               >
+                {/* Warzone UI：四角瞄準框（用 pseudo 元素繪製，確保 toPng 也能抓到） */}
+                <style>{`
+                  .battlecard-corners-accent{
+                    filter:
+                      drop-shadow(0 0 2px rgba(255,255,255,0.92))
+                      drop-shadow(0 0 6px ${teamColors.primary})
+                      drop-shadow(0 0 14px ${hexWithAlpha(teamColors.primary, "55")});
+                  }
+                  .battlecard-corners-accent::before,
+                  .battlecard-corners-accent::after{
+                    content:"";
+                    position:absolute;
+                    inset:0;
+                    pointer-events:none;
+                    border-radius:0.75rem;
+                    opacity:0.95;
+                    z-index:11;
+                    mix-blend-mode:screen;
+                    background-repeat:no-repeat;
+                  }
+                  /* top-left & top-right */
+                  .battlecard-corners-accent::before{
+                    background-image:
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95));
+                    background-size:
+                      20px 1px,
+                      1px 20px,
+                      20px 1px,
+                      1px 20px;
+                    background-position:
+                      0 0,
+                      0 0,
+                      100% 0,
+                      100% 0;
+                  }
+                  /* bottom-left & bottom-right */
+                  .battlecard-corners-accent::after{
+                    background-image:
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
+                      linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95));
+                    background-size:
+                      20px 1px,
+                      1px 20px,
+                      20px 1px,
+                      1px 20px;
+                    background-position:
+                      0 100%,
+                      0 100%,
+                      100% 100%,
+                      100% 100%;
+                  }
+                `}</style>
+
                 {/* Layer 1: 浮水印 */}
                 <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                  {/* Baked-in Lighting：文字牆後方的兩道強力光影（alpha 20% / 15%） */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backgroundImage: `
+                        radial-gradient(circle at center 30%, ${wallPrimaryGlow} 0%, transparent 62%),
+                        radial-gradient(circle at bottom right, ${wallSecondaryGlow} 0%, transparent 58%)
+                      `,
+                      filter: "saturate(1.2) contrast(1.05)",
+                      opacity: 0.95,
+                    }}
+                    aria-hidden
+                  />
+
+                  {/* Reflective Light Sweeps：斜向反射光掃描帶 */}
+                  <div
+                    className="absolute left-0 right-0 pointer-events-none"
+                    aria-hidden
+                    style={{
+                      top: 0,
+                      height: "60%",
+                      backgroundImage:
+                        // Dual-Core Specular Sweeps：主色反光帶 + 2% 極亮核心線
+                        `linear-gradient(115deg,
+                          transparent 20%,
+                          ${reflectiveTint20} 24%,
+                          ${reflectiveTint60} 26%,
+                          ${reflectiveCore} 27%,
+                          ${reflectiveCore} 29%,
+                          ${reflectiveTint40} 31%,
+                          transparent 40%)`,
+                      mixBlendMode: "overlay",
+                      opacity: 0.95,
+                      filter: "contrast(1.2) brightness(1.05)",
+                    }}
+                  />
+
+                  {/* Color Wash Layer：主色噴鍍（疊在 Layer 1 背景上方） */}
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    aria-hidden
+                    style={{
+                      background: teamColors.primary,
+                      opacity: 0.18,
+                      mixBlendMode: "overlay",
+                      filter: "saturate(1.25)",
+                    }}
+                  />
+
+                  {/* 升級文字牆：動態混合字級/粗細/空心邊框字，並維持 -15deg 但增加密度 */}
                   <div
                     className="absolute inset-0 flex flex-wrap content-start gap-x-4 gap-y-2 p-4"
-                    style={{ transform: "rotate(-15deg)" }}
+                    style={{
+                      transform: "rotate(-15deg)",
+                      mixBlendMode: "vivid-light",
+                      opacity: 0.92,
+                      filter: "brightness(1.25) saturate(1.2) contrast(1.05)",
+                      // Radial Alpha Decay：以「球員照片 / Power Stance」區域為中心的透明度黑洞
+                      // 注意：mask 只控制可見性 alpha，避免影響字的排版與 toPng 版面。
+                      WebkitMaskImage:
+                        "radial-gradient(circle at 50% 48%, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.07) 22%, rgba(0,0,0,0.05) 44%, rgba(0,0,0,0.03) 66%, rgba(0,0,0,0.01) 100%)",
+                      maskImage:
+                        "radial-gradient(circle at 50% 48%, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.07) 22%, rgba(0,0,0,0.05) 44%, rgba(0,0,0,0.03) 66%, rgba(0,0,0,0.01) 100%)",
+                      WebkitMaskRepeat: "no-repeat",
+                      maskRepeat: "no-repeat",
+                      WebkitMaskSize: "100% 100%",
+                      maskSize: "100% 100%",
+                    }}
                     aria-hidden
                   >
-                    {Array.from({ length: 40 }).map((_, i) => (
-                      <span
-                        key={i}
-                        className="text-8xl font-black italic uppercase select-none whitespace-nowrap opacity-[0.02]"
-                        style={{ color: teamColors.primary }}
-                      >
-                        {voterTeam || "LAL"}{" "}
-                      </span>
-                    ))}
+                    {mixedWallWords}
                   </div>
                 </div>
 
                 {/* Layer 1b: 球卡雜訊紋理 (analog noise, mix-blend-overlay) */}
                 <div
-                  className="absolute inset-0 z-0 opacity-[0.15] mix-blend-overlay pointer-events-none rounded-2xl"
+                  className="absolute inset-0 z-0 opacity-[0.18] mix-blend-soft-light pointer-events-none rounded-2xl"
                   aria-hidden
                   style={{
                     backgroundImage: `url("${NOISE_DATA_URL}")`,
                     backgroundRepeat: "repeat",
+                  }}
+                />
+
+                {/* Layer 1b+: 全息戰術遮罩（掃描線 + 20px 點陣網格） */}
+                <div
+                  className="absolute inset-0 z-[1] pointer-events-none rounded-2xl mix-blend-overlay"
+                  aria-hidden
+                  style={{
+                    backgroundImage: `
+                      repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px 1px, transparent 1px 20px),
+                      repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px 1px, transparent 1px 20px),
+                      repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0px 1px, transparent 1px 7px)
+                    `,
+                    filter: "contrast(1.2) brightness(1.05)",
+                    opacity: 1,
                   }}
                 />
 
@@ -332,12 +641,16 @@ export default function BattleCard({
                     <div
                       className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/40 backdrop-blur-xl mix-blend-multiply"
                       aria-hidden
+                    style={{
+                      boxShadow: "0 0 50px rgba(0,0,0,0.5)",
+                    }}
                     />
                     <div
                       className="relative overflow-visible font-black italic uppercase tracking-tighter select-none text-center"
                       style={{
                         color: stanceColor,
-                        filter: `drop-shadow(0 0 30px ${stanceColor}) drop-shadow(0 2px 3px rgba(0,0,0,1))`,
+                      // 白核高光會稀釋隊色飽和度；改為隊色 tinted core 形成 LED 螢光感
+                      filter: `drop-shadow(0 0 30px ${stanceColor}) drop-shadow(0 0 18px ${hexWithAlpha(teamColors.primary, "70")}) drop-shadow(0 0 8px ${reflectiveTint60}) drop-shadow(0 2px 3px rgba(0,0,0,1))`,
                       }}
                     >
                       {powerStanceLong ? (
@@ -425,6 +738,20 @@ export default function BattleCard({
                   </div>
 
                   {/* 免責聲明 */}
+                  {/* Warzone UI：底部極細資訊列（toPng 會一併渲染） */}
+                  <p
+                    className="text-[6px] text-white/40 mt-2 text-center leading-tight tracking-[0.18em] uppercase"
+                    aria-hidden
+                    style={{
+                      textShadow: `0 0 18px ${hexWithAlpha(teamColors.primary, "1A")}`,
+                    }}
+                  >
+                    {t("battleCard.meta_footer", {
+                      timestamp: String(stableMetaTimestamp.current),
+                      status: t("verified_data_status"),
+                    })}
+                  </p>
+
                   <p
                     className="text-[8px] text-white/40 mt-2 text-center leading-tight"
                     aria-hidden

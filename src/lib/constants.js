@@ -17,7 +17,7 @@ export const GENDERS = [
 
 /**
  * 球隊選項：僅存 value（Firestore 用）與 i18n key，不硬編碼任何語系文字。
- * 共 16 項含「其他」；城市與代表色由 teams.<id>.city / teams.<id>.colors 翻譯鍵提供。
+ * 共 30+1 項含「其他」；城市與代表色由 teams.<id>.city / teams.<id>.colors 翻譯鍵提供。
  */
 export const TEAMS = [
   { id: 'lakers', value: 'LAL', cityKey: 'teams.lakers.city', colorKey: 'teams.lakers.colors' },
@@ -35,6 +35,22 @@ export const TEAMS = [
   { id: 'raptors', value: 'TOR', cityKey: 'teams.raptors.city', colorKey: 'teams.raptors.colors' },
   { id: 'spurs', value: 'SAS', cityKey: 'teams.spurs.city', colorKey: 'teams.spurs.colors' },
   { id: 'thunder', value: 'OKC', cityKey: 'teams.thunder.city', colorKey: 'teams.thunder.colors' },
+  // 全聯盟補齊（剩餘 15 隊）
+  { id: 'clippers', value: 'LAC', cityKey: 'teams.clippers.city', colorKey: 'teams.clippers.colors' },
+  { id: 'timberwolves', value: 'MIN', cityKey: 'teams.timberwolves.city', colorKey: 'teams.timberwolves.colors' },
+  { id: 'kings', value: 'SAC', cityKey: 'teams.kings.city', colorKey: 'teams.kings.colors' },
+  { id: 'rockets', value: 'HOU', cityKey: 'teams.rockets.city', colorKey: 'teams.rockets.colors' },
+  { id: 'grizzlies', value: 'MEM', cityKey: 'teams.grizzlies.city', colorKey: 'teams.grizzlies.colors' },
+  { id: 'pelicans', value: 'NOP', cityKey: 'teams.pelicans.city', colorKey: 'teams.pelicans.colors' },
+  { id: 'trailblazers', value: 'POR', cityKey: 'teams.trailblazers.city', colorKey: 'teams.trailblazers.colors' },
+  { id: 'jazz', value: 'UTA', cityKey: 'teams.jazz.city', colorKey: 'teams.jazz.colors' },
+  { id: 'nets', value: 'BKN', cityKey: 'teams.nets.city', colorKey: 'teams.nets.colors' },
+  { id: 'hawks', value: 'ATL', cityKey: 'teams.hawks.city', colorKey: 'teams.hawks.colors' },
+  { id: 'hornets', value: 'CHA', cityKey: 'teams.hornets.city', colorKey: 'teams.hornets.colors' },
+  { id: 'pistons', value: 'DET', cityKey: 'teams.pistons.city', colorKey: 'teams.pistons.colors' },
+  { id: 'pacers', value: 'IND', cityKey: 'teams.pacers.city', colorKey: 'teams.pacers.colors' },
+  { id: 'magic', value: 'ORL', cityKey: 'teams.magic.city', colorKey: 'teams.magic.colors' },
+  { id: 'wizards', value: 'WAS', cityKey: 'teams.wizards.city', colorKey: 'teams.wizards.colors' },
   { id: 'other', value: 'OTHER', cityKey: 'teams.other.city', colorKey: 'teams.other.colors' },
 ]
 
@@ -64,6 +80,22 @@ export const TEAM_COLORS = {
   TOR: { primary: '#CE1141', secondary: '#000000' },
   SAS: { primary: '#C4CED4', secondary: '#000000' },
   OKC: { primary: '#007AC1', secondary: '#EF3B24' },
+  // 全聯盟新增（primary / secondary：高飽和、高亮度 primary 以觸發 Phase 5 反射高光）
+  LAC: { primary: '#C8102E', secondary: '#1D428A' },
+  MIN: { primary: '#78BE20', secondary: '#0C2340' },
+  SAC: { primary: '#FFC72C', secondary: '#5A2D81' },
+  HOU: { primary: '#C8102E', secondary: '#002D62' },
+  MEM: { primary: '#E85D04', secondary: '#5D76A9' },
+  NOP: { primary: '#0EA5E9', secondary: '#0F172A' },
+  POR: { primary: '#E03A3E', secondary: '#000000' },
+  UTA: { primary: '#F9A01B', secondary: '#002B5C' },
+  BKN: { primary: '#0057B8', secondary: '#000000' },
+  ATL: { primary: '#E03A3E', secondary: '#FDB927' },
+  CHA: { primary: '#00788C', secondary: '#1D428A' },
+  DET: { primary: '#ED174C', secondary: '#007DC3' },
+  IND: { primary: '#FDBB30', secondary: '#002D62' },
+  ORL: { primary: '#0077C0', secondary: '#C8102E' },
+  WAS: { primary: '#C8102E', secondary: '#002B5C' },
   OTHER: { primary: '#6B7280', secondary: '#374151' },
 }
 /** 無戰區時使用 LBJ 金與深紅 */

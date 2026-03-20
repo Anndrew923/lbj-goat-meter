@@ -127,7 +127,8 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
       const dataUrl = await toPng(el, {
         width: CARD_SIZE,
         height: CARD_SIZE,
-        backgroundColor: '#0a0a0a',
+        // Phase 5：統一使用較深的暗部基底，避免壓暗不足導致金屬高光黯淡
+        backgroundColor: '#050505',
         pixelRatio: 2,
         cacheBust: true,
         skipFonts: true, // 避免讀取跨域 CSS（如 Google Fonts）觸發 SecurityError
