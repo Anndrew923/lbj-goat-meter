@@ -4,12 +4,14 @@
  * 固定 1:1 (640×640)，scale-to-fit 縮放；640×640 高清下載需 isExportReady（廣告解鎖後自動觸發一次下載）。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
-import { useRef, useCallback, useEffect, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Download, RotateCcw } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { Media } from "@capacitor-community/media";
 import { STANCE_COLORS } from "../lib/constants";
 import crownIcon from "../assets/goat-crown-icon.png";
 import { hexWithAlpha } from "../utils/colorUtils";
@@ -17,6 +19,7 @@ import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 
 const CARD_SIZE = 640;
+const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
 
@@ -25,6 +28,19 @@ const NOISE_DATA_URL =
   // 以更高 baseFrequency + 多一層 octave 產生「更細碎」的顆粒，模擬磨砂金屬質地。
   // Phase 5：改成「水平拉絲」(X/Y baseFrequency 不同)，並用 soft-light 讓顆粒只在有光區閃爍。
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill='%23d0d0d0'/%3E%3C/svg%3E";
+
+/** 取得或建立 GOAT_Warzone 相簿 identifier（原生端用） */
+async function ensureGoatAlbumIdentifier() {
+  const list = (await Media.getAlbums())?.albums ?? [];
+  let album = list.find((a) => a.name === GOAT_ALBUM_NAME);
+  if (!album) {
+    await Media.createAlbum({ name: GOAT_ALBUM_NAME });
+    await new Promise((r) => setTimeout(r, 350));
+    const list2 = (await Media.getAlbums())?.albums ?? [];
+    album = list2.find((a) => a.name === GOAT_ALBUM_NAME);
+  }
+  return album?.identifier;
+}
 
 /**
  * 極致背景字牆需要「隨機但可預期」的視覺輸出：
@@ -76,7 +92,7 @@ function mixHex(a, b, mix) {
   return rgbToHex(ma.r + (mb.r - ma.r) * t, ma.g + (mb.g - ma.g) * t, ma.b + (mb.b - ma.b) * t);
 }
 
-export default function BattleCard({
+const BattleCard = forwardRef(function BattleCard({
   open,
   onClose,
   onRevote,
@@ -108,7 +124,7 @@ export default function BattleCard({
   /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
   onExportStart,
   onExportEnd,
-}) {
+}, ref) {
   const { t } = useTranslation("common");
   const internalCardRef = useRef(null);
   const cardRef = cardRefProp ?? internalCardRef;
@@ -171,7 +187,7 @@ export default function BattleCard({
 
   /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock === true 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
   const handleDownload = useCallback(
-    async (forceUnlock = false) => {
+    async ({ forceUnlock = false, saveOnly = false } = {}) => {
       const isExplicitUnlock = forceUnlock === true;
       if (!isExportReady && !isExplicitUnlock) {
         if (onRequestRewardAd && onExportUnlock) {
@@ -205,6 +221,8 @@ export default function BattleCard({
       await new Promise((resolve) => requestAnimationFrame(() => resolve()));
       // 强制重排/刷新（黑科技）
       void el.offsetHeight;
+      // 硬等待：給瀏覽器足夠「物理時間」完成複雜 115deg/150 字牆渲染
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       // 若有外部圖片（photoURL），尽可能等 decode/载入完成，避免 toPng 抓到未加载资源
       const imgs = Array.from(el.querySelectorAll("img"));
@@ -251,6 +269,17 @@ export default function BattleCard({
       el.style.filter = computed.filter;
       el.style.boxShadow = computed.boxShadow;
 
+      // Phase 8：全子層「暴力樣式鎖定」
+      // 只針對 export-critical 層：鎖 backgroundImage / mixBlendMode / filter / opacity
+      const exportNodes = el.querySelectorAll("[data-export-role]");
+      exportNodes.forEach((node) => {
+        const cs = window.getComputedStyle(node);
+        node.style.backgroundImage = cs.backgroundImage;
+        node.style.mixBlendMode = cs.mixBlendMode;
+        node.style.filter = cs.filter;
+        node.style.opacity = cs.opacity;
+      });
+
       // Phase 8：強制同步子層（laser-cut / reflective-sweeps），避免 html-to-image clone 用到舊樣式快照
       const laserEl = el.querySelector('[data-export-role="laser-cut"]');
       if (laserEl) {
@@ -272,9 +301,13 @@ export default function BattleCard({
       }
 
       const exportTag =
-        typeof computed.backgroundImage === "string" && computed.backgroundImage.includes("115deg")
-          ? "PH8"
-          : "LEGACY";
+        (() => {
+          const bg = String(
+            (typeof computed.backgroundImage === "string" ? computed.backgroundImage : "") ||
+              (typeof el.style.backgroundImage === "string" ? el.style.backgroundImage : ""),
+          );
+          return bg.includes("115deg") ? "PH8" : "LEGACY";
+        })();
       const toPngBaseOpts = {
         // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
         width: CARD_SIZE,
@@ -312,10 +345,23 @@ export default function BattleCard({
       }
 
       if (dataUrl) {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}-${Date.now()}.png`;
-        a.click();
+        if (saveOnly && Capacitor.isNativePlatform()) {
+          try {
+            const albumIdentifier = await ensureGoatAlbumIdentifier();
+            await Media.savePhoto({
+              path: dataUrl,
+              albumIdentifier: albumIdentifier ?? undefined,
+              fileName: `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}-${Date.now()}`,
+            });
+          } catch (saveErr) {
+            console.error("[BattleCard] Media.savePhoto failed", saveErr);
+          }
+        } else {
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}-${Date.now()}.png`;
+          a.click();
+        }
       }
 
       el.style.transform = prev.transform;
@@ -327,6 +373,15 @@ export default function BattleCard({
       onExportEnd?.();
     },
     [battleTitle, cardRef, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      handleDownload,
+      saveToGallery: () => handleDownload({ saveOnly: true, forceUnlock: true }),
+    }),
+    [handleDownload],
   );
 
   const secondaryWithAlpha = hexWithAlpha(teamColors.secondary, "A0");
@@ -1005,4 +1060,6 @@ export default function BattleCard({
   );
 
   return createPortal(modalContent, document.body);
-}
+});
+
+export default BattleCard;
