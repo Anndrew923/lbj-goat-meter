@@ -340,6 +340,7 @@
   "adminDeleted": "已刪除。",
   "breakingResultAria": "投票結果實時統計",
   "breakingPercentLabel": "{{percent}}%",
+  "breakingVoteCountTooltip": "{{count}} 票",
   "liveTag": "實況",
   "goatMeterBrandAria": "The GOAT Meter 品牌標章",
   "adPortalAria": "廣告"

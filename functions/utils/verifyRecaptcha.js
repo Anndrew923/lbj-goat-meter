@@ -12,7 +12,7 @@ const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
  * 推薦做法：在 GCP / Firebase 中將 Secret Manager 綁定到 RECAPTCHA_SECRET 環境變數。
  */
 function getRecaptchaSecret() {
-  const secret = process.env.RECAPTCHA_SECRET;
+  const secret = typeof process.env.RECAPTCHA_SECRET === "string" ? process.env.RECAPTCHA_SECRET.trim() : "";
   if (!secret) {
     throw new Error(
       "[verifyRecaptcha] Missing RECAPTCHA_SECRET. Please bind Secret Manager secret to RECAPTCHA_SECRET env."
@@ -62,11 +62,14 @@ export async function verifyRecaptcha(token, { minScore = 0, remoteIp = null } =
   const score = typeof json?.score === "number" ? json.score : null;
 
   if (!success) {
-    return { success: false, score, action: json?.action, raw: json };
+    // Google 回傳不一定有 `error` 字段，實際錯誤在 `error-codes`。
+    const errorCodes = Array.isArray(json?.["error-codes"]) ? json["error-codes"] : null;
+    return { success: false, score, action: json?.action, raw: json, errorCodes };
   }
 
   if (score != null && score < minScore) {
-    return { success: false, score, action: json?.action, raw: json };
+    const errorCodes = Array.isArray(json?.["error-codes"]) ? json["error-codes"] : null;
+    return { success: false, score, action: json?.action, raw: json, errorCodes };
   }
 
   return { success: true, score, action: json?.action, raw: json };

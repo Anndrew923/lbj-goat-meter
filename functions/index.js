@@ -104,9 +104,11 @@ async function runSubmitVote(data, context) {
   } else {
     const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
     if (!recaptchaResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
-        code: "low-score-robot",
+      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA verification failed", {
+        code: "recaptcha-verify-failed",
         recaptchaScore: recaptchaResult.score,
+        recaptchaError: recaptchaResult.raw?.error ?? null,
+        recaptchaAction: recaptchaResult.action ?? null,
       });
     }
   }
@@ -552,9 +554,17 @@ async function runSubmitBreakingVote(data, context) {
       );
     }
     if (!recaptchaResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA score too low", {
-        code: "low-score-robot",
+      // recaptchaResult.score 可能為 null（例如 invalid-input-secret / invalid-input-response）。
+      // 用 structure 化資訊把根因丟給前端/Log，避免一律被誤判為 low-score-robot。
+      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA verification failed", {
+        code: "recaptcha-verify-failed",
         recaptchaScore: recaptchaResult.score,
+        recaptchaError: recaptchaResult.raw?.error ?? null,
+        // Google 回傳 invalid-input-secret / invalid-input-response 時，錯誤碼在 error-codes
+        recaptchaErrorCode:
+          (Array.isArray(recaptchaResult.raw?.["error-codes"]) ? recaptchaResult.raw["error-codes"][0] : null) ??
+          null,
+        recaptchaAction: recaptchaResult.action ?? null,
       });
     }
   }

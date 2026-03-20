@@ -349,6 +349,7 @@
   "adminDeleted": "Deleted.",
   "breakingResultAria": "Live vote statistics",
   "breakingPercentLabel": "{{percent}}%",
+  "breakingVoteCountTooltip": "{{count}} votes",
   "liveTag": "LIVE",
   "goatMeterBrandAria": "The GOAT Meter brand mark",
   "adPortalAria": "Ad",
