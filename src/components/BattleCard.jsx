@@ -187,8 +187,8 @@ const BattleCard = forwardRef(function BattleCard({
 
   /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock === true 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
   const handleDownload = useCallback(
-    async ({ forceUnlock = false, saveOnly = false } = {}) => {
-      const isExplicitUnlock = forceUnlock === true;
+    async (saveOnly = false) => {
+      const isExplicitUnlock = saveOnly === true;
       if (!isExportReady && !isExplicitUnlock) {
         if (onRequestRewardAd && onExportUnlock) {
           // 廣告結束後僅解鎖；存檔由「偵察完成，是否存檔？」視窗或「下載高解析戰報」按鈕觸發
@@ -217,12 +217,12 @@ const BattleCard = forwardRef(function BattleCard({
       el.style.padding = "0";
 
       // 强制双重 rAF（style 变更之后）：确保完成最新 Phase 8 重绘
-      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
       // 强制重排/刷新（黑科技）
       void el.offsetHeight;
       // 硬等待：給瀏覽器足夠「物理時間」完成複雜 115deg/150 字牆渲染
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((r) => setTimeout(r, 250));
 
       // 若有外部圖片（photoURL），尽可能等 decode/载入完成，避免 toPng 抓到未加载资源
       const imgs = Array.from(el.querySelectorAll("img"));
@@ -300,14 +300,15 @@ const BattleCard = forwardRef(function BattleCard({
         reflectEl.style.height = reflectCs.height;
       }
 
-      const exportTag =
-        (() => {
-          const bg = String(
-            (typeof computed.backgroundImage === "string" ? computed.backgroundImage : "") ||
-              (typeof el.style.backgroundImage === "string" ? el.style.backgroundImage : ""),
-          );
-          return bg.includes("115deg") ? "PH8" : "LEGACY";
-        })();
+      // 版本浮水印：exportTag 內固定含時間戳（避免再出現 LEGACY）
+      const now = Date.now();
+      const exportTag = `PH8-v${now}`;
+      // 仍保留檢測結果用於 console 警告（但檔名不再使用 LEGACY）
+      const bgForDetect = `${el.style.backgroundImage || ""} ${computed.backgroundImage || ""}`;
+      const hasPh8Detect = /115deg/i.test(bgForDetect);
+      if (!hasPh8Detect) {
+        console.warn("[BattleCard] export seam detection missing '115deg' (but filename forced to PH8-v)");
+      }
       const toPngBaseOpts = {
         // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
         width: CARD_SIZE,
@@ -325,22 +326,33 @@ const BattleCard = forwardRef(function BattleCard({
         dataUrl = await toPng(el, toPngBaseOpts);
       } catch (err) {
         console.warn("[BattleCard] toPng failed (retry without external IMG)", err);
+        // 更強保底：直接暫時替換外部圖片 src，避免 html-to-image 在前置階段仍嘗試載入造成 canvas taint
+        const TRANSPARENT_PIXEL =
+          "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+        const imgNodes = Array.from(el.querySelectorAll("img"));
+        const externalImgNodes = imgNodes.filter((img) => {
+          const src =
+            img.getAttribute("src") || img.currentSrc || img.src || "";
+          return typeof src === "string" && /^https?:\/\//i.test(src);
+        });
+        const savedSources = externalImgNodes.map((img) => ({
+          img,
+          src: img.getAttribute("src") || img.currentSrc || img.src || "",
+        }));
+
         try {
-          dataUrl = await toPng(el, {
-            ...toPngBaseOpts,
-            filter: (node) => {
-              if (node && node.nodeName === "IMG") {
-                const src =
-                  node.getAttribute("src") || node.currentSrc || node.src || "";
-                if (typeof src === "string" && /^https?:\/\//i.test(src)) {
-                  return false;
-                }
-              }
-              return true;
-            },
+          externalImgNodes.forEach((img) => {
+            img.setAttribute("src", TRANSPARENT_PIXEL);
           });
+          dataUrl = await toPng(el, toPngBaseOpts);
         } catch (err2) {
           console.error("[BattleCard] toPng failed after retry", err2);
+        } finally {
+          // 還原 src，讓 UI/下一次匯出仍可正常顯示照片
+          savedSources.forEach(({ img, src }) => {
+            if (src) img.setAttribute("src", src);
+            else img.removeAttribute("src");
+          });
         }
       }
 
@@ -351,7 +363,7 @@ const BattleCard = forwardRef(function BattleCard({
             await Media.savePhoto({
               path: dataUrl,
               albumIdentifier: albumIdentifier ?? undefined,
-              fileName: `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}-${Date.now()}`,
+              fileName: `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`,
             });
           } catch (saveErr) {
             console.error("[BattleCard] Media.savePhoto failed", saveErr);
@@ -359,7 +371,7 @@ const BattleCard = forwardRef(function BattleCard({
         } else {
           const a = document.createElement("a");
           a.href = dataUrl;
-          a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}-${Date.now()}.png`;
+          a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}.png`;
           a.click();
         }
       }
@@ -378,8 +390,7 @@ const BattleCard = forwardRef(function BattleCard({
   useImperativeHandle(
     ref,
     () => ({
-      handleDownload,
-      saveToGallery: () => handleDownload({ saveOnly: true, forceUnlock: true }),
+      saveToGallery: () => handleDownload(true),
     }),
     [handleDownload],
   );

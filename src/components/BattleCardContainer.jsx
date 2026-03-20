@@ -88,9 +88,12 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
    * 統一匯出：BattleCard.jsx 內部單一路徑負責縮放/等待/同步/toPng/保存；
    * Container 僅做 delegation（避免雙重 handleDownload 競爭）。
    */
-  const handleDownload = useCallback(() => battleCardComponentRef.current?.saveToGallery?.(), [])
+  const saveToGallery = useCallback(
+    () => battleCardComponentRef.current?.saveToGallery?.(),
+    [],
+  )
 
-  useImperativeHandle(ref, () => ({ saveToGallery: handleDownload }), [handleDownload])
+  useImperativeHandle(ref, () => ({ saveToGallery }), [saveToGallery])
 
   useEffect(() => {
     if (!open || !voterTeam || !db) return
@@ -172,7 +175,7 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
       isExportReady={isExportReady}
       onExportUnlock={onExportUnlock}
       onRequestRewardAd={onRequestRewardAd}
-      onSaveToGallery={handleDownload}
+      onSaveToGallery={saveToGallery}
       onExportStart={onExportStart}
       onExportEnd={onExportEnd}
     />
