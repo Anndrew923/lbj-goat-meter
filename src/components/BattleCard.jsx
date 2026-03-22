@@ -117,17 +117,13 @@ const BattleCard = forwardRef(function BattleCard({
   isExportReady = false,
   onExportUnlock,
   onRequestRewardAd,
-  /** 由 BattleCardContainer 傳入，用於 html-to-image 抓取與存相簿 */
-  cardRef: cardRefProp,
-  /** 解鎖後存檔至相簿（由 Container 的 handleDownload 提供） */
-  onSaveToGallery,
   /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
   onExportStart,
   onExportEnd,
 }, ref) {
   const { t } = useTranslation("common");
-  const internalCardRef = useRef(null);
-  const cardRef = cardRefProp ?? internalCardRef;
+  /** 戰報卡根節點：唯一下載路徑 toPng 目標（不可由 Container 分岔） */
+  const cardRef = useRef(null);
   const overlayRef = useRef(null);
   const [containerSize, setContainerSize] = useState({
     width: 600,
@@ -185,7 +181,7 @@ const BattleCard = forwardRef(function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
-  /** 下載戰報：僅在 isExportReady 或廣告回調傳入的 forceUnlock === true 時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd，無後門。 */
+  /** 下載戰報：僅在 isExportReady 或 saveOnly === true（imperative／高解析按鈕）時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd。 */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
       const isExplicitUnlock = saveOnly === true;
@@ -196,8 +192,6 @@ const BattleCard = forwardRef(function BattleCard({
         }
         return;
       }
-      // 雙重防護：無 isExportReady 且非廣告回調的顯式 true 時絕不執行 toPng（杜絕 Event 等 truthy 誤觸）
-      if (!isExportReady && !isExplicitUnlock) return;
       const el = cardRef.current;
       if (!el) return;
       onExportStart?.();
@@ -216,12 +210,10 @@ const BattleCard = forwardRef(function BattleCard({
       el.style.margin = "0";
       el.style.padding = "0";
 
-      // 强制双重 rAF（style 变更之后）：确保完成最新 Phase 8 重绘
+      // 暴力渲染同步：雙 rAF + 強制 reflow + 物理等待，確保 Phase 8 漸層／字牆畫完再取樣
       await new Promise((r) => requestAnimationFrame(r));
       await new Promise((r) => requestAnimationFrame(r));
-      // 强制重排/刷新（黑科技）
       void el.offsetHeight;
-      // 硬等待：給瀏覽器足夠「物理時間」完成複雜 115deg/150 字牆渲染
       await new Promise((r) => setTimeout(r, 250));
 
       // 若有外部圖片（photoURL），尽可能等 decode/载入完成，避免 toPng 抓到未加载资源
@@ -230,85 +222,57 @@ const BattleCard = forwardRef(function BattleCard({
         imgs.map(
           (img) =>
             new Promise((res) => {
-              const t = window.setTimeout(res, 450);
+              const decodeTimer = window.setTimeout(res, 450);
               try {
                 if (typeof img.decode === "function") {
                   img.decode().finally(() => {
-                    window.clearTimeout(t);
+                    window.clearTimeout(decodeTimer);
                     res(true);
                   });
                   return;
                 }
                 if (img.complete) {
-                  window.clearTimeout(t);
+                  window.clearTimeout(decodeTimer);
                   res(true);
                   return;
                 }
                 img.onload = () => {
-                  window.clearTimeout(t);
+                  window.clearTimeout(decodeTimer);
                   res(true);
                 };
                 img.onerror = () => {
-                  window.clearTimeout(t);
+                  window.clearTimeout(decodeTimer);
                   res(true);
                 };
               } catch {
-                window.clearTimeout(t);
+                window.clearTimeout(decodeTimer);
                 res(true);
               }
             }),
         ),
       );
-      // 强制把关键视觉样式重新写回 inline，避免 html-to-image clone 使用到旧 computed snapshot
-      const computed = window.getComputedStyle(el);
-      el.style.backgroundImage = computed.backgroundImage;
-      el.style.backgroundColor = computed.backgroundColor;
-      el.style.backgroundSize = computed.backgroundSize;
-      el.style.backgroundPosition = computed.backgroundPosition;
-      el.style.backgroundRepeat = computed.backgroundRepeat;
-      el.style.filter = computed.filter;
-      el.style.boxShadow = computed.boxShadow;
 
-      // Phase 8：全子層「暴力樣式鎖定」
-      // 只針對 export-critical 層：鎖 backgroundImage / mixBlendMode / filter / opacity
-      const exportNodes = el.querySelectorAll("[data-export-role]");
-      exportNodes.forEach((node) => {
-        const cs = window.getComputedStyle(node);
-        node.style.backgroundImage = cs.backgroundImage;
-        node.style.mixBlendMode = cs.mixBlendMode;
-        node.style.filter = cs.filter;
-        node.style.opacity = cs.opacity;
-      });
+      const exportTag = `PH8-v${Date.now()}`;
 
-      // Phase 8：強制同步子層（laser-cut / reflective-sweeps），避免 html-to-image clone 用到舊樣式快照
-      const laserEl = el.querySelector('[data-export-role="laser-cut"]');
-      if (laserEl) {
-        const laserCs = window.getComputedStyle(laserEl);
-        laserEl.style.backgroundImage = laserCs.backgroundImage;
-        laserEl.style.mixBlendMode = laserCs.mixBlendMode;
-        laserEl.style.opacity = laserCs.opacity;
-        laserEl.style.filter = laserCs.filter;
-      }
-      const reflectEl = el.querySelector('[data-export-role="reflective-sweeps"]');
-      if (reflectEl) {
-        const reflectCs = window.getComputedStyle(reflectEl);
-        reflectEl.style.backgroundImage = reflectCs.backgroundImage;
-        reflectEl.style.mixBlendMode = reflectCs.mixBlendMode;
-        reflectEl.style.opacity = reflectCs.opacity;
-        reflectEl.style.filter = reflectCs.filter;
-        reflectEl.style.top = reflectCs.top;
-        reflectEl.style.height = reflectCs.height;
-      }
+      /** 每次 toPng 前呼叫：根節點 + [data-export-role] 與瀏覽器 computed 對齊，避免 clone 殘影 */
+      const applyExportSnapshot = () => {
+        const computed = window.getComputedStyle(el);
+        el.style.backgroundImage = computed.backgroundImage;
+        el.style.backgroundColor = computed.backgroundColor;
+        el.style.backgroundSize = computed.backgroundSize;
+        el.style.backgroundPosition = computed.backgroundPosition;
+        el.style.backgroundRepeat = computed.backgroundRepeat;
+        el.style.filter = computed.filter;
+        el.style.boxShadow = computed.boxShadow;
+        el.querySelectorAll("[data-export-role]").forEach((node) => {
+          const cs = window.getComputedStyle(node);
+          node.style.backgroundImage = cs.backgroundImage;
+          node.style.mixBlendMode = cs.mixBlendMode;
+        });
+      };
 
-      // 版本浮水印：exportTag 內固定含時間戳（避免再出現 LEGACY）
-      const now = Date.now();
-      const exportTag = `PH8-v${now}`;
-      // 仍保留檢測結果用於 console 警告（但檔名不再使用 LEGACY）
-      const bgForDetect = `${el.style.backgroundImage || ""} ${computed.backgroundImage || ""}`;
-      const hasPh8Detect = /115deg/i.test(bgForDetect);
-      if (!hasPh8Detect) {
-        console.warn("[BattleCard] export seam detection missing '115deg' (but filename forced to PH8-v)");
-      }
+      applyExportSnapshot();
+
       const toPngBaseOpts = {
         // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
         width: CARD_SIZE,
@@ -344,6 +308,7 @@ const BattleCard = forwardRef(function BattleCard({
           externalImgNodes.forEach((img) => {
             img.setAttribute("src", TRANSPARENT_PIXEL);
           });
+          applyExportSnapshot();
           dataUrl = await toPng(el, toPngBaseOpts);
         } catch (err2) {
           console.error("[BattleCard] toPng failed after retry", err2);
@@ -395,7 +360,6 @@ const BattleCard = forwardRef(function BattleCard({
     [handleDownload],
   );
 
-  const secondaryWithAlpha = hexWithAlpha(teamColors.secondary, "A0");
   const stableMetaTimestamp = useRef(Date.now());
   const wallText = String(voterTeam || "LAL").toUpperCase().trim() || "LAL";
 
@@ -998,12 +962,12 @@ const BattleCard = forwardRef(function BattleCard({
 
           {/* 按鈕組：緊貼卡片下方 (gap-y-6)；解鎖後顯示「下載高解析戰報」存相簿 */}
           <div className="flex-shrink-0 flex flex-col items-center w-full max-w-sm gap-y-4">
-            {isExportReady && onSaveToGallery ? (
+            {isExportReady ? (
               <button
                 type="button"
                 onClick={() => {
                   triggerHapticPattern([10, 30, 10]);
-                  onSaveToGallery();
+                  handleDownload(true);
                 }}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-king-gold bg-king-gold/10 text-king-gold font-bold animate-border-blink"
               >

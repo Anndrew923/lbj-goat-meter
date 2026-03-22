@@ -70,10 +70,8 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
   const [warzoneStats, setWarzoneStats] = useState(null)
   /** 下載權限：預覽頁進入時為 false，看完激勵影片後為 true，解鎖 640×640 高清下載／存相簿 */
   const [isExportReady, setIsExportReady] = useState(false)
-  /** 戰報卡 DOM ref，供 html-to-image 抓取與 Media.savePhoto 存檔 */
+  /** BattleCard imperative ref：唯一下載／存相簿路徑（delegate 至 BattleCard.saveToGallery） */
   const battleCardRef = useRef(null)
-  /** BattleCard 元件 imperative ref（統一匯出/抓圖路徑） */
-  const battleCardComponentRef = useRef(null)
 
   const teamLabel = useMemo(() => getTeamLabel(voterTeam, t), [voterTeam, t])
 
@@ -84,16 +82,14 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
 
   const onExportUnlock = useCallback(() => setIsExportReady(true), [])
 
-  /**
-   * 統一匯出：BattleCard.jsx 內部單一路徑負責縮放/等待/同步/toPng/保存；
-   * Container 僅做 delegation（避免雙重 handleDownload 競爭）。
-   */
-  const saveToGallery = useCallback(
-    () => battleCardComponentRef.current?.saveToGallery?.(),
+  // ref 與 battleCardRef 為穩定引用；對外只轉發子元件 imperative API，避免每次 render 重建 handle 物件
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveToGallery: () => battleCardRef.current?.saveToGallery(),
+    }),
     [],
   )
-
-  useImperativeHandle(ref, () => ({ saveToGallery }), [saveToGallery])
 
   useEffect(() => {
     if (!open || !voterTeam || !db) return
@@ -149,8 +145,7 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
 
   const battleCard = open ? (
     <BattleCard
-      ref={battleCardComponentRef}
-      cardRef={battleCardRef}
+      ref={battleCardRef}
       open={open}
       onClose={onClose}
       onRevote={onRevote}
@@ -175,7 +170,6 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
       isExportReady={isExportReady}
       onExportUnlock={onExportUnlock}
       onRequestRewardAd={onRequestRewardAd}
-      onSaveToGallery={saveToGallery}
       onExportStart={onExportStart}
       onExportEnd={onExportEnd}
     />

@@ -32,3 +32,6 @@ dist-ssr
 android/keystore.properties
 *.jks
 *.keystore
+
+# Gradle：本機／CI 自訂 GRADLE_USER_HOME（內含 wrapper 下載的完整發行版，絕不可進 repo）
+.gradle-user-home/
