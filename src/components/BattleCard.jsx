@@ -5,13 +5,14 @@
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Download, RotateCcw } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Media } from "@capacitor-community/media";
+import { Screenshot } from "capacitor-screenshot";
 import { STANCE_COLORS } from "../lib/constants";
 import crownIcon from "../assets/goat-crown-icon.png";
 import { hexWithAlpha } from "../utils/colorUtils";
@@ -40,6 +41,55 @@ async function ensureGoatAlbumIdentifier() {
     album = list2.find((a) => a.name === GOAT_ALBUM_NAME);
   }
   return album?.identifier;
+}
+
+/**
+ * 原生全畫面截圖（物理像素）→ 依 card 元素在視口中的 CSS 座標裁切。
+ * 使用 clientWidth/Height 對齊 Bitmap 與版面縮放比，避免僅乘 DPR 在 WebView／異形螢下裁切偏移。
+ */
+async function cropNativeScreenshotToElement(fullBase64, el) {
+  const dataUrl = fullBase64.startsWith("data:")
+    ? fullBase64
+    : `data:image/png;base64,${fullBase64}`;
+  const img = new Image();
+  img.decoding = "async";
+  await new Promise((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("[BattleCard] crop: image load failed"));
+    img.src = dataUrl;
+  });
+
+  const rect = el.getBoundingClientRect();
+  const layoutW = document.documentElement.clientWidth || window.innerWidth;
+  const layoutH = document.documentElement.clientHeight || window.innerHeight;
+  if (
+    !layoutW ||
+    !layoutH ||
+    !img.naturalWidth ||
+    !img.naturalHeight
+  ) {
+    throw new Error("[BattleCard] crop: invalid layout or image dimensions");
+  }
+  const scaleX = img.naturalWidth / layoutW;
+  const scaleY = img.naturalHeight / layoutH;
+
+  let sx = Math.floor(rect.left * scaleX);
+  let sy = Math.floor(rect.top * scaleY);
+  let sw = Math.ceil(rect.width * scaleX);
+  let sh = Math.ceil(rect.height * scaleY);
+
+  sx = Math.max(0, Math.min(img.naturalWidth - 1, sx));
+  sy = Math.max(0, Math.min(img.naturalHeight - 1, sy));
+  sw = Math.max(1, Math.min(img.naturalWidth - sx, sw));
+  sh = Math.max(1, Math.min(img.naturalHeight - sy, sh));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("[BattleCard] crop: 2d context unavailable");
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  return canvas.toDataURL("image/png");
 }
 
 /**
@@ -129,6 +179,8 @@ const BattleCard = forwardRef(function BattleCard({
     width: 600,
     height: 600,
   });
+  /** 匯出／原生截圖瞬間隱藏下載與關閉，避免多餘 UI 入鏡（原生裁切前亦降低版面抖動） */
+  const [isExporting, setIsExporting] = useState(false);
   const stanceColor = status
     ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat)
     : STANCE_COLORS.goat;
@@ -181,20 +233,24 @@ const BattleCard = forwardRef(function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
-  /** 下載戰報：僅在 isExportReady 或 saveOnly === true（imperative／高解析按鈕）時執行 640×640 toPng；未解鎖時僅喚起 onRequestRewardAd。 */
+  /** 下載戰報：原生端走 WebView 點陣截圖 + 裁切；Web 端維持 toPng + 飽和度補償。 */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
       const isExplicitUnlock = saveOnly === true;
       if (!isExportReady && !isExplicitUnlock) {
         if (onRequestRewardAd && onExportUnlock) {
-          // 廣告結束後僅解鎖；存檔由「偵察完成，是否存檔？」視窗或「下載高解析戰報」按鈕觸發
           onRequestRewardAd(() => onExportUnlock());
         }
         return;
       }
       const el = cardRef.current;
       if (!el) return;
+
+      flushSync(() => {
+        setIsExporting(true);
+      });
       onExportStart?.();
+
       const prev = {
         transform: el.style.transform,
         transformOrigin: el.style.transformOrigin,
@@ -203,153 +259,242 @@ const BattleCard = forwardRef(function BattleCard({
         margin: el.style.margin,
         padding: el.style.padding,
       };
-      el.style.transform = "scale(1)";
-      el.style.transformOrigin = "top left";
-      el.style.left = "0";
-      el.style.top = "0";
-      el.style.margin = "0";
-      el.style.padding = "0";
 
-      // 暴力渲染同步：雙 rAF + 強制 reflow + 物理等待，確保 Phase 8 漸層／字牆畫完再取樣
-      await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => requestAnimationFrame(r));
-      void el.offsetHeight;
-      await new Promise((r) => setTimeout(r, 250));
+      try {
+        el.style.transform = "scale(1)";
+        el.style.transformOrigin = "top left";
+        el.style.left = "0";
+        el.style.top = "0";
+        el.style.margin = "0";
+        el.style.padding = "0";
 
-      // 若有外部圖片（photoURL），尽可能等 decode/载入完成，避免 toPng 抓到未加载资源
-      const imgs = Array.from(el.querySelectorAll("img"));
-      await Promise.all(
-        imgs.map(
-          (img) =>
-            new Promise((res) => {
-              const decodeTimer = window.setTimeout(res, 450);
-              try {
-                if (typeof img.decode === "function") {
-                  img.decode().finally(() => {
+        await new Promise((r) => requestAnimationFrame(r));
+        await new Promise((r) => requestAnimationFrame(r));
+        void el.offsetHeight;
+        await new Promise((r) => setTimeout(r, 400));
+
+        const imgs = Array.from(el.querySelectorAll("img"));
+        await Promise.all(
+          imgs.map(
+            (img) =>
+              new Promise((res) => {
+                const decodeTimer = window.setTimeout(res, 450);
+                try {
+                  if (typeof img.decode === "function") {
+                    img.decode().finally(() => {
+                      window.clearTimeout(decodeTimer);
+                      res(true);
+                    });
+                    return;
+                  }
+                  if (img.complete) {
                     window.clearTimeout(decodeTimer);
                     res(true);
-                  });
-                  return;
+                    return;
+                  }
+                  img.onload = () => {
+                    window.clearTimeout(decodeTimer);
+                    res(true);
+                  };
+                  img.onerror = () => {
+                    window.clearTimeout(decodeTimer);
+                    res(true);
+                  };
+                } catch {
+                  window.clearTimeout(decodeTimer);
+                  res(true);
                 }
-                if (img.complete) {
-                  window.clearTimeout(decodeTimer);
-                  res(true);
-                  return;
-                }
-                img.onload = () => {
-                  window.clearTimeout(decodeTimer);
-                  res(true);
-                };
-                img.onerror = () => {
-                  window.clearTimeout(decodeTimer);
-                  res(true);
-                };
-              } catch {
-                window.clearTimeout(decodeTimer);
-                res(true);
-              }
-            }),
-        ),
-      );
+              }),
+          ),
+        );
 
-      const exportTag = `PH8-v${Date.now()}`;
+        const exportTag = `PH8-v${Date.now()}`;
+        const fileBase = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`;
 
-      /** 每次 toPng 前呼叫：根節點 + [data-export-role] 與瀏覽器 computed 對齊，避免 clone 殘影 */
-      const applyExportSnapshot = () => {
-        const computed = window.getComputedStyle(el);
-        el.style.backgroundImage = computed.backgroundImage;
-        el.style.backgroundColor = computed.backgroundColor;
-        el.style.backgroundSize = computed.backgroundSize;
-        el.style.backgroundPosition = computed.backgroundPosition;
-        el.style.backgroundRepeat = computed.backgroundRepeat;
-        el.style.filter = computed.filter;
-        el.style.boxShadow = computed.boxShadow;
-        el.querySelectorAll("[data-export-role]").forEach((node) => {
-          const cs = window.getComputedStyle(node);
-          node.style.backgroundImage = cs.backgroundImage;
-          node.style.mixBlendMode = cs.mixBlendMode;
-        });
-      };
+        const isNative = Capacitor.isNativePlatform();
 
-      applyExportSnapshot();
+        if (isNative) {
+          await new Promise((r) => requestAnimationFrame(r));
+          void el.offsetHeight;
 
-      const toPngBaseOpts = {
-        // 下載品質：640×640 還原折行與動態字級，填滿畫布無黑邊；pixelRatio:2 銳利化 drop-shadow/text-shadow
-        width: CARD_SIZE,
-        height: CARD_SIZE,
-        backgroundColor: "#050505",
-        pixelRatio: 2,
-        cacheBust: true,
-        skipFonts: true, // 避免讀取跨域 CSS（如 Google Fonts）觸發 SecurityError/延遲
-      };
-
-      // Phase 8：避免外部 <img>（跨網域）造成 canvas taint -> 導出直接失敗
-      // 策略：先正常匯出；若失敗，重試時跳過外部圖片節點，確保至少能輸出「最新背景與字牆」。
-      let dataUrl = null;
-      try {
-        dataUrl = await toPng(el, toPngBaseOpts);
-      } catch (err) {
-        console.warn("[BattleCard] toPng failed (retry without external IMG)", err);
-        // 更強保底：直接暫時替換外部圖片 src，避免 html-to-image 在前置階段仍嘗試載入造成 canvas taint
-        const TRANSPARENT_PIXEL =
-          "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-        const imgNodes = Array.from(el.querySelectorAll("img"));
-        const externalImgNodes = imgNodes.filter((img) => {
-          const src =
-            img.getAttribute("src") || img.currentSrc || img.src || "";
-          return typeof src === "string" && /^https?:\/\//i.test(src);
-        });
-        const savedSources = externalImgNodes.map((img) => ({
-          img,
-          src: img.getAttribute("src") || img.currentSrc || img.src || "",
-        }));
-
-        try {
-          externalImgNodes.forEach((img) => {
-            img.setAttribute("src", TRANSPARENT_PIXEL);
-          });
-          applyExportSnapshot();
-          dataUrl = await toPng(el, toPngBaseOpts);
-        } catch (err2) {
-          console.error("[BattleCard] toPng failed after retry", err2);
-        } finally {
-          // 還原 src，讓 UI/下一次匯出仍可正常顯示照片
-          savedSources.forEach(({ img, src }) => {
-            if (src) img.setAttribute("src", src);
-            else img.removeAttribute("src");
-          });
-        }
-      }
-
-      if (dataUrl) {
-        if (saveOnly && Capacitor.isNativePlatform()) {
+          let shot;
           try {
-            const albumIdentifier = await ensureGoatAlbumIdentifier();
-            await Media.savePhoto({
-              path: dataUrl,
-              albumIdentifier: albumIdentifier ?? undefined,
-              fileName: `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`,
-            });
-          } catch (saveErr) {
-            console.error("[BattleCard] Media.savePhoto failed", saveErr);
+            shot = await Screenshot.take();
+          } catch (e) {
+            console.error("[BattleCard] Screenshot.take failed", e);
+            return;
           }
-        } else {
+
+          let dataUrl;
+          try {
+            dataUrl = await cropNativeScreenshotToElement(shot.base64, el);
+          } catch (e) {
+            console.error("[BattleCard] cropNativeScreenshotToElement failed", e);
+            return;
+          }
+
+          if (dataUrl) {
+            if (saveOnly) {
+              try {
+                const albumIdentifier = await ensureGoatAlbumIdentifier();
+                await Media.savePhoto({
+                  path: dataUrl,
+                  albumIdentifier: albumIdentifier ?? undefined,
+                  fileName: fileBase,
+                });
+              } catch (saveErr) {
+                console.error("[BattleCard] Media.savePhoto failed", saveErr);
+              }
+            } else {
+              const a = document.createElement("a");
+              a.href = dataUrl;
+              a.download = `${fileBase}.png`;
+              a.click();
+            }
+          }
+          return;
+        }
+
+        /** Web：toPng 前備份／還原 DOM，避免 clone 殘影 */
+        const roleStyleBackup = new Map(
+          Array.from(el.querySelectorAll("[data-export-role]")).map((n) => [n, n.style.cssText]),
+        );
+        const rootPaintBackup = {
+          backgroundImage: el.style.backgroundImage,
+          backgroundColor: el.style.backgroundColor,
+          backgroundSize: el.style.backgroundSize,
+          backgroundPosition: el.style.backgroundPosition,
+          backgroundRepeat: el.style.backgroundRepeat,
+          filter: el.style.filter,
+          boxShadow: el.style.boxShadow,
+          backdropFilter: el.style.getPropertyValue("backdrop-filter"),
+          webkitBackdropFilter: el.style.getPropertyValue("-webkit-backdrop-filter"),
+        };
+
+        /** html-to-image 易吃掉飽和／對比：在 inline 上疊加補償，縮小與原生截圖的觀感落差 */
+        const applyExportSnapshot = () => {
+          const computed = window.getComputedStyle(el);
+          el.style.backgroundImage = computed.backgroundImage;
+          el.style.backgroundColor = computed.backgroundColor;
+          el.style.backgroundSize = computed.backgroundSize;
+          el.style.backgroundPosition = computed.backgroundPosition;
+          el.style.backgroundRepeat = computed.backgroundRepeat;
+          // filter: none 時不可串接，否則整段 filter 會被瀏覽器視為無效
+          const filterBase =
+            computed.filter && computed.filter !== "none" ? computed.filter : "";
+          el.style.filter =
+            `${filterBase} saturate(1.6) contrast(1.1) brightness(1.05)`.trim();
+          el.style.boxShadow = computed.boxShadow;
+          el.style.setProperty("backdrop-filter", computed.getPropertyValue("backdrop-filter"));
+          el.style.setProperty(
+            "-webkit-backdrop-filter",
+            computed.getPropertyValue("-webkit-backdrop-filter"),
+          );
+          el.querySelectorAll("[data-export-role]").forEach((node) => {
+            const cs = window.getComputedStyle(node);
+            const role = node.getAttribute("data-export-role");
+            if (role === "text-wall-container") {
+              node.style.transform = cs.transform;
+              node.style.mixBlendMode = cs.mixBlendMode;
+              node.style.opacity = cs.opacity;
+              node.style.filter = cs.filter;
+              node.style.webkitMaskImage = cs.webkitMaskImage;
+              node.style.maskImage = cs.maskImage;
+              node.style.webkitMaskRepeat = cs.webkitMaskRepeat;
+              node.style.maskRepeat = cs.maskRepeat;
+              node.style.webkitMaskSize = cs.webkitMaskSize;
+              node.style.maskSize = cs.maskSize;
+            } else {
+              // laser-cut / reflective-sweeps 等：同步 filter，避免 html-to-image clone 與實際算繪不一致
+              node.style.backgroundImage = cs.backgroundImage;
+              node.style.mixBlendMode = cs.mixBlendMode;
+              node.style.filter = cs.filter;
+              node.style.opacity = cs.opacity;
+            }
+          });
+        };
+
+        const restoreExportDomStyles = () => {
+          el.style.backgroundImage = rootPaintBackup.backgroundImage;
+          el.style.backgroundColor = rootPaintBackup.backgroundColor;
+          el.style.backgroundSize = rootPaintBackup.backgroundSize;
+          el.style.backgroundPosition = rootPaintBackup.backgroundPosition;
+          el.style.backgroundRepeat = rootPaintBackup.backgroundRepeat;
+          el.style.filter = rootPaintBackup.filter;
+          el.style.boxShadow = rootPaintBackup.boxShadow;
+          el.style.setProperty("backdrop-filter", rootPaintBackup.backdropFilter);
+          el.style.setProperty("-webkit-backdrop-filter", rootPaintBackup.webkitBackdropFilter);
+          roleStyleBackup.forEach((cssText, node) => {
+            if (node.isConnected) node.style.cssText = cssText;
+          });
+        };
+
+        applyExportSnapshot();
+
+        const toPngBaseOpts = {
+          width: CARD_SIZE,
+          height: CARD_SIZE,
+          backgroundColor: "#050505",
+          pixelRatio: 2,
+          cacheBust: true,
+          skipFonts: true,
+        };
+
+        let dataUrl = null;
+        try {
+          dataUrl = await toPng(el, toPngBaseOpts);
+        } catch {
+          const TRANSPARENT_PIXEL =
+            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+          const imgNodes = Array.from(el.querySelectorAll("img"));
+          const externalImgNodes = imgNodes.filter((img) => {
+            const src =
+              img.getAttribute("src") || img.currentSrc || img.src || "";
+            return typeof src === "string" && /^https?:\/\//i.test(src);
+          });
+          const savedSources = externalImgNodes.map((img) => ({
+            img,
+            src: img.getAttribute("src") || img.currentSrc || img.src || "",
+          }));
+
+          try {
+            externalImgNodes.forEach((img) => {
+              img.setAttribute("src", TRANSPARENT_PIXEL);
+            });
+            applyExportSnapshot();
+            dataUrl = await toPng(el, toPngBaseOpts);
+          } catch (err2) {
+            console.error("[BattleCard] toPng failed after retry", err2);
+          } finally {
+            savedSources.forEach(({ img, src }) => {
+              if (src) img.setAttribute("src", src);
+              else img.removeAttribute("src");
+            });
+          }
+        }
+
+        if (dataUrl) {
           const a = document.createElement("a");
           a.href = dataUrl;
-          a.download = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}.png`;
+          a.download = `${fileBase}.png`;
           a.click();
         }
-      }
 
-      el.style.transform = prev.transform;
-      el.style.transformOrigin = prev.transformOrigin;
-      el.style.left = prev.left;
-      el.style.top = prev.top;
-      el.style.margin = prev.margin;
-      el.style.padding = prev.padding;
-      onExportEnd?.();
+        restoreExportDomStyles();
+      } finally {
+        el.style.transform = prev.transform;
+        el.style.transformOrigin = prev.transformOrigin;
+        el.style.left = prev.left;
+        el.style.top = prev.top;
+        el.style.margin = prev.margin;
+        el.style.padding = prev.padding;
+        flushSync(() => {
+          setIsExporting(false);
+        });
+        onExportEnd?.();
+      }
     },
-    [battleTitle, cardRef, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
+    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
   );
 
   useImperativeHandle(
@@ -475,10 +620,10 @@ const BattleCard = forwardRef(function BattleCard({
   const reflectiveSecondaryTint40 = hexWithAlpha(teamColors.secondary, "40");
   const reflectiveSecondaryTint60 = hexWithAlpha(teamColors.secondary, "60");
 
-  // Phase 7：Cross-Color Reflections（冷白核心，不用純白）
+  // Phase 7：Cross-Color Reflections（冷白核心）；Phase 8 Polish：核心 α 提至 ~0.85 呈白熱高光
   const reflectiveCoreCool = hexWithAlpha(
     mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#ffffff", 0.78),
-    "6F"
+    "D9"
   );
 
   // Phase 8：115deg 雷射切割線（主/副色混合高亮白，非純白）
@@ -496,6 +641,9 @@ const BattleCard = forwardRef(function BattleCard({
   const complementSecondary = rgbToHex(255 - sR, 255 - sG, 255 - sB);
   const cornerTopRimAlpha = hexWithAlpha(mixHex(complementPrimary, teamColors.primary, 0.35), "F0");
   const cornerBottomRimAlpha = hexWithAlpha(mixHex(complementSecondary, teamColors.secondary, 0.35), "F0");
+
+  /** Phase 8 Readability：深色隊色描邊，避免小字／標題被 exclusion 或強主色背景吃掉 */
+  const textHudEdgeShadow = `0 1px 2px ${hexWithAlpha(mixHex(teamColors.secondary, "#000000", 0.6), "D0")}`;
 
   const modalContent = (
     <div
@@ -567,8 +715,8 @@ const BattleCard = forwardRef(function BattleCard({
                   // Forced Saturation：鎖定主色飽和度，避免高光把紅/黃稀釋
                   backdropFilter: "saturate(1.8) contrast(1.1)",
                   WebkitBackdropFilter: "saturate(1.8) contrast(1.1)",
-                  // Phase 6：色彩/對比微調（保持鏡面，但不壓扁 secondary）
-                  filter: "saturate(1.4) contrast(1.1)",
+                  // Phase 8 Polish：統一發色數（補 backdrop 在截圖語境的視覺落差）
+                  filter: "saturate(1.4) contrast(1.15) brightness(1.05)",
                   boxShadow: `inset 0 0 100px rgba(0,0,0,0.88), 0 0 22px ${hexWithAlpha(teamColors.secondary, "5A")}, inset 0 0 60px ${hexWithAlpha(
                     extremeSecondary,
                     "20"
@@ -652,16 +800,16 @@ const BattleCard = forwardRef(function BattleCard({
                     aria-hidden
                   />
 
-                  {/* Phase 8：50% 雷射切割線（115deg，screen 混合，非純白） */}
+                  {/* Phase 8 激光化：柔化寬漸層 + 白核 + 雙層霓虹 drop-shadow（消 LED 顆粒／鋸齒） */}
                   <div
                     className="absolute inset-0 pointer-events-none"
                     aria-hidden
                     data-export-role="laser-cut"
                     style={{
-                      backgroundImage: `linear-gradient(115deg, transparent 49.9%, ${laserCutColor} 50%, transparent 50.1%)`,
+                      backgroundImage: `linear-gradient(115deg, transparent 49.6%, ${hexWithAlpha(laserCutColor, "99")} 49.8%, #FFFFFF 50%, ${hexWithAlpha(laserCutColor, "99")} 50.2%, transparent 50.4%)`,
                       mixBlendMode: "screen",
-                      opacity: 0.98,
-                      filter: "contrast(1.35) brightness(1.1) blur(0.1px)",
+                      opacity: 1,
+                      filter: `drop-shadow(0 0 2px #FFFFFF) drop-shadow(0 0 6px ${laserCutColor}) drop-shadow(0 0 15px ${hexWithAlpha(laserCutColor, "A0")}) contrast(1.4) brightness(1.15)`,
                     }}
                   />
 
@@ -706,6 +854,7 @@ const BattleCard = forwardRef(function BattleCard({
 
                   {/* 升級文字牆：動態混合字級/粗細/空心邊框字，並維持 -15deg 但增加密度 */}
                   <div
+                    data-export-role="text-wall-container"
                     className="absolute inset-0 flex flex-wrap content-start gap-x-4 gap-y-2 p-4"
                     style={{
                       transform: "rotate(-15deg)",
@@ -778,7 +927,10 @@ const BattleCard = forwardRef(function BattleCard({
                     </div>
                     <h2
                       className={`relative text-sm tracking-[0.2em] mb-1 font-semibold uppercase ${!isTitleUppercase ? "tracking-[0.1em]" : ""}`}
-                      style={{ color: hexWithAlpha(stanceColor, "CC") }}
+                      style={{
+                        color: hexWithAlpha(stanceColor, "CC"),
+                        textShadow: textHudEdgeShadow,
+                      }}
                     >
                       {battleSubtitle}
                     </h2>
@@ -787,16 +939,23 @@ const BattleCard = forwardRef(function BattleCard({
                       className={`relative text-4xl font-black italic tracking-tighter text-white drop-shadow-lg whitespace-nowrap ${isTitleUppercase ? "uppercase" : "tracking-[0.1em]"}`}
                       style={{
                         color: stanceColor,
-                        // Phase 8：斜向光影一致立體感（同時吃到 primary/secondary）
-                        textShadow: `0 0 20px ${hexWithAlpha(stanceColor, "60")}, 0 0 42px ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "45")}, 0 0 60px ${hexWithAlpha(teamColors.secondary, "20")}`,
+                        // 可讀性護邊優先，再接 Phase 8 斜向光暈
+                        textShadow: `${textHudEdgeShadow}, 0 0 20px ${hexWithAlpha(stanceColor, "60")}, 0 0 42px ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "45")}, 0 0 60px ${hexWithAlpha(teamColors.secondary, "20")}`,
                       }}
                     >
                       {battleTitle}
                     </h1>
                   </div>
 
-                  {/* 身份區：城市＋代表色（去標誌化） */}
-                  <div className="flex items-center gap-3 flex-shrink-0 mb-3">
+                  {/* 身份區：HUD 襯底隔離字牆雜訊，小字可讀 */}
+                  <div
+                    className="flex items-center gap-3 flex-shrink-0 mb-3 rounded-xl p-2"
+                    style={{
+                      background: "rgba(0,0,0,0.3)",
+                      backdropFilter: "blur(2px)",
+                      WebkitBackdropFilter: "blur(2px)",
+                    }}
+                  >
                     <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20 bg-white/10 flex-shrink-0">
                       {photoURL ? (
                         <img
@@ -813,12 +972,18 @@ const BattleCard = forwardRef(function BattleCard({
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-white font-bold truncate text-sm">
+                      <p
+                        className="text-white font-bold truncate text-sm"
+                        style={{ textShadow: textHudEdgeShadow }}
+                      >
                         {displayName || t("anonymousWarrior")}
                       </p>
                       <p
                         className="text-sm truncate"
-                        style={{ color: teamColors.primary }}
+                        style={{
+                          color: teamColors.primary,
+                          textShadow: textHudEdgeShadow,
+                        }}
                         title={t("supporting_team", { team: teamLabel })}
                       >
                         {teamLabel
@@ -834,16 +999,17 @@ const BattleCard = forwardRef(function BattleCard({
                     <div
                       className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/40 backdrop-blur-xl mix-blend-multiply"
                       aria-hidden
-                    style={{
-                      boxShadow: "0 0 50px rgba(0,0,0,0.5)",
-                    }}
+                      style={{
+                        boxShadow: "0 0 50px rgba(0,0,0,0.5)",
+                      }}
                     />
                     <div
                       className="relative overflow-visible font-black italic uppercase tracking-tighter select-none text-center"
                       style={{
                         color: stanceColor,
-                      // 白核高光會稀釋隊色飽和度；改為隊色 tinted core 形成 LED 螢光感
-                      filter: `drop-shadow(0 0 30px ${stanceColor}) drop-shadow(0 0 18px ${hexWithAlpha(teamColors.primary, "70")}) drop-shadow(0 0 8px ${reflectiveTint60}) drop-shadow(0 2px 3px rgba(0,0,0,1))`,
+                        textShadow: textHudEdgeShadow,
+                        // 白核高光會稀釋隊色飽和度；改為隊色 tinted core 形成 LED 螢光感
+                        filter: `drop-shadow(0 0 30px ${stanceColor}) drop-shadow(0 0 18px ${hexWithAlpha(teamColors.primary, "70")}) drop-shadow(0 0 8px ${reflectiveTint60}) drop-shadow(0 2px 3px rgba(0,0,0,1))`,
                       }}
                     >
                       {powerStanceLong ? (
@@ -873,7 +1039,10 @@ const BattleCard = forwardRef(function BattleCard({
                   {/* Evidence Locker：裁決證詞區（加深背景 + 彩色文字硬邊際光） */}
                   {reasonLabels.length > 0 && (
                     <div className="flex-shrink-0 rounded-lg p-3 bg-black/50 backdrop-blur-md border border-white/10 mt-2 mb-3 max-h-[120px] overflow-y-auto overflow-x-hidden">
-                      <p className="text-[10px] text-white/50 uppercase tracking-[0.2em] mb-1.5">
+                      <p
+                        className="text-[10px] text-white/50 uppercase tracking-[0.2em] mb-1.5"
+                        style={{ textShadow: textHudEdgeShadow }}
+                      >
                         {t("battleCard.verdict_evidence")}
                       </p>
                       <p className="text-sm font-medium leading-tight">
@@ -883,7 +1052,7 @@ const BattleCard = forwardRef(function BattleCard({
                             <span
                               style={{
                                 color: stanceColor,
-                                textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                                textShadow: textHudEdgeShadow,
                               }}
                             >
                               {label}
@@ -898,14 +1067,20 @@ const BattleCard = forwardRef(function BattleCard({
                   <div className="mt-auto -mt-5 pt-3 flex flex-wrap items-end justify-between gap-2 border-t border-white/10 px-1">
                     <div className="flex flex-col min-w-0">
                       <span
-                        className="text-white/80 truncate text-xs"
+                        className="truncate text-xs"
                         title={regionText}
+                        style={{
+                          color: teamColors.primary,
+                          filter: "brightness(1.15) saturate(1.2)",
+                          textShadow: textHudEdgeShadow,
+                        }}
                       >
                         {regionText}
                       </span>
                       <span
-                        className="text-white/70 text-xs mt-0.5"
+                        className="text-white/85 text-xs mt-0.5"
                         title={rankLabel ?? t("rankLabel")}
+                        style={{ textShadow: textHudEdgeShadow }}
                       >
                         {rankLabel ?? t("rankLabel")}
                       </span>
@@ -924,6 +1099,7 @@ const BattleCard = forwardRef(function BattleCard({
                       />
                       <span
                         className="text-king-gold text-xs font-secondary tracking-[0.2em] uppercase whitespace-nowrap"
+                        style={{ textShadow: textHudEdgeShadow }}
                       >
                         The GOAT Meter
                       </span>
@@ -936,8 +1112,7 @@ const BattleCard = forwardRef(function BattleCard({
                     className="text-[6px] text-white/40 mt-2 text-center leading-tight tracking-[0.18em] uppercase"
                     aria-hidden
                     style={{
-                      // Bottom-half semantic：secondary 區塊語意
-                      textShadow: `0 0 18px ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "1A")}, 0 0 26px ${hexWithAlpha(
+                      textShadow: `${textHudEdgeShadow}, 0 0 18px ${hexWithAlpha(mixHex(teamColors.primary, teamColors.secondary, 0.5), "1A")}, 0 0 26px ${hexWithAlpha(
                         teamColors.secondary,
                         "14"
                       )}`,
@@ -952,6 +1127,7 @@ const BattleCard = forwardRef(function BattleCard({
                   <p
                     className="text-[8px] text-white/40 mt-2 text-center leading-tight"
                     aria-hidden
+                    style={{ textShadow: textHudEdgeShadow }}
                   >
                     {t("battleCard.disclaimer")}
                   </p>
@@ -962,7 +1138,7 @@ const BattleCard = forwardRef(function BattleCard({
 
           {/* 按鈕組：緊貼卡片下方 (gap-y-6)；解鎖後顯示「下載高解析戰報」存相簿 */}
           <div className="flex-shrink-0 flex flex-col items-center w-full max-w-sm gap-y-4">
-            {isExportReady ? (
+            {!isExporting && isExportReady ? (
               <button
                 type="button"
                 onClick={() => {
@@ -974,7 +1150,8 @@ const BattleCard = forwardRef(function BattleCard({
                 <Download className="w-5 h-5 shrink-0" aria-hidden />
                 {t("downloadHighResReport")}
               </button>
-            ) : (
+            ) : null}
+            {!isExporting && !isExportReady ? (
               <button
                 type="button"
                 onClick={() => handleDownload()}
@@ -983,7 +1160,7 @@ const BattleCard = forwardRef(function BattleCard({
                 <Download className="w-5 h-5 shrink-0" aria-hidden />
                 {t("downloadReport")}
               </button>
-            )}
+            ) : null}
 
             <div className={`flex gap-3 w-full ${onRevote ? "" : "flex-col"}`}>
               {onRevote && (
@@ -999,17 +1176,19 @@ const BattleCard = forwardRef(function BattleCard({
                   {revoking ? t("resettingStance") : t("resetStance")}
                 </motion.button>
               )}
-              <button
-                type="button"
-                onClick={onClose}
-                className={
-                  onRevote
-                    ? "px-4 py-3 rounded-xl border border-villain-purple/50 text-gray-300 hover:text-white shrink-0"
-                    : "w-full py-3 rounded-xl border border-villain-purple/50 text-gray-300 hover:text-white"
-                }
-              >
-                {t("close")}
-              </button>
+              {!isExporting && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={
+                    onRevote
+                      ? "px-4 py-3 rounded-xl border border-villain-purple/50 text-gray-300 hover:text-white shrink-0"
+                      : "w-full py-3 rounded-xl border border-villain-purple/50 text-gray-300 hover:text-white"
+                  }
+                >
+                  {t("close")}
+                </button>
+              )}
             </div>
             {revoteError && (
               <div className="flex flex-col gap-2">

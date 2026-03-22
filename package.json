@@ -24,6 +24,7 @@
     "@capacitor/push-notifications": "^8.0.2",
     "@capgo/capacitor-social-login": "^8.3.2",
     "@headlessui/react": "^2.2.9",
+    "capacitor-screenshot": "^8.0.0",
     "clsx": "^2.1.1",
     "firebase": "^12.9.0",
     "framer-motion": "^11.11.17",
@@ -40,11 +41,11 @@
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
-    "@google-cloud/storage": "^7.14.0",
     "@capacitor/android": "^8.1.0",
     "@capacitor/cli": "^8.1.0",
     "@capacitor/core": "^8.1.0",
     "@eslint/js": "^9.15.0",
+    "@google-cloud/storage": "^7.14.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.15.0",

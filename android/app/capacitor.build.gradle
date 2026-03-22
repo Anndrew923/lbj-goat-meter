@@ -16,6 +16,7 @@ dependencies {
     implementation project(':capacitor-haptics')
     implementation project(':capacitor-push-notifications')
     implementation project(':capgo-capacitor-social-login')
+    implementation project(':capacitor-screenshot')
 
 }
 
