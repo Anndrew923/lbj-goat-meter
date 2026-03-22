@@ -20,6 +20,8 @@ import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 
 const CARD_SIZE = 640;
+/** 原生裁切輸出最小邊長（邏輯 640 × 2x DPR ≈ 1280 物理像素） */
+const NATIVE_EXPORT_MIN_PX = 1280;
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
@@ -44,10 +46,13 @@ async function ensureGoatAlbumIdentifier() {
 }
 
 /**
- * 原生全畫面截圖（物理像素）→ 依 card 元素在視口中的 CSS 座標裁切。
- * 使用 clientWidth/Height 對齊 Bitmap 與版面縮放比，避免僅乘 DPR 在 WebView／異形螢下裁切偏移。
+ * 原生全畫面截圖（物理像素）→ 依 card 在視口中的 CSS 座標裁切為 1:1 正方形。
+ * @param layoutRect 必須與 Screenshot.take() 為同一幀／緊鄰取得的 getBoundingClientRect()，不可在 await 解碼圖片後才讀 DOM（版面會與點陣圖不一致）。
+ * - scaleX/scaleY = Bitmap÷inner：CSS px → 物理像素（標準 WebView 下等同 devicePixelRatio）。
+ * - 強制正方形：邊長 = max(寬, 高) 映射後取整，以元素中心置中裁切。
+ * - Y：chromeOffsetCss = max(0, screen.height - innerHeight) 用於部分裝置全螢截圖與視口的垂直偏移。
  */
-async function cropNativeScreenshotToElement(fullBase64, el) {
+async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
   const dataUrl = fullBase64.startsWith("data:")
     ? fullBase64
     : `data:image/png;base64,${fullBase64}`;
@@ -59,36 +64,57 @@ async function cropNativeScreenshotToElement(fullBase64, el) {
     img.src = dataUrl;
   });
 
-  const rect = el.getBoundingClientRect();
-  const layoutW = document.documentElement.clientWidth || window.innerWidth;
-  const layoutH = document.documentElement.clientHeight || window.innerHeight;
-  if (
-    !layoutW ||
-    !layoutH ||
-    !img.naturalWidth ||
-    !img.naturalHeight
-  ) {
+  const innerW = window.innerWidth;
+  const innerH = window.innerHeight;
+  const IW = img.naturalWidth;
+  const IH = img.naturalHeight;
+
+  if (!innerW || !innerH || !IW || !IH) {
     throw new Error("[BattleCard] crop: invalid layout or image dimensions");
   }
-  const scaleX = img.naturalWidth / layoutW;
-  const scaleY = img.naturalHeight / layoutH;
 
-  let sx = Math.floor(rect.left * scaleX);
-  let sy = Math.floor(rect.top * scaleY);
-  let sw = Math.ceil(rect.width * scaleX);
-  let sh = Math.ceil(rect.height * scaleY);
+  const scaleX = IW / innerW;
+  const scaleY = IH / innerH;
+  const scaleUniform = (scaleX + scaleY) / 2;
+  const useUniform =
+    Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY) < 0.02;
+  const sxScale = useUniform ? scaleUniform : scaleX;
+  const syScale = useUniform ? scaleUniform : scaleY;
 
-  sx = Math.max(0, Math.min(img.naturalWidth - 1, sx));
-  sy = Math.max(0, Math.min(img.naturalHeight - 1, sy));
-  sw = Math.max(1, Math.min(img.naturalWidth - sx, sw));
-  sh = Math.max(1, Math.min(img.naturalHeight - sy, sh));
+  const chromeOffsetCss = Math.max(0, window.screen.height - window.innerHeight);
 
+  const wCss = layoutRect.width;
+  const hCss = layoutRect.height;
+  if (wCss <= 0 || hCss <= 0) {
+    throw new Error("[BattleCard] crop: invalid layoutRect dimensions");
+  }
+
+  const cxCss = layoutRect.left + wCss / 2;
+  const cyCss = layoutRect.top + chromeOffsetCss + hCss / 2;
+
+  const sidePx = Math.max(
+    Math.ceil(wCss * sxScale),
+    Math.ceil(hCss * syScale),
+  );
+
+  let sx = Math.floor(cxCss * sxScale - sidePx / 2);
+  let sy = Math.floor(cyCss * syScale - sidePx / 2);
+  // 置中後將裁切框限制在點陣圖範圍內（上界為 IW - sidePx，不可誤用 IW - 1）
+  sx = Math.max(0, Math.min(sx, IW - sidePx));
+  sy = Math.max(0, Math.min(sy, IH - sidePx));
+
+  let side = Math.min(sidePx, IW - sx, IH - sy);
+  side = Math.max(1, side);
+
+  const out = Math.max(side, NATIVE_EXPORT_MIN_PX);
   const canvas = document.createElement("canvas");
-  canvas.width = sw;
-  canvas.height = sh;
+  canvas.width = out;
+  canvas.height = out;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[BattleCard] crop: 2d context unavailable");
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
   return canvas.toDataURL("image/png");
 }
 
@@ -249,6 +275,8 @@ const BattleCard = forwardRef(function BattleCard({
       flushSync(() => {
         setIsExporting(true);
       });
+      // 給 GPU 完成「隱藏按鈕／卡片放大至 1:1」的合圖，避免殘影入鏡
+      await new Promise((r) => setTimeout(r, 150));
       onExportStart?.();
 
       const prev = {
@@ -317,6 +345,7 @@ const BattleCard = forwardRef(function BattleCard({
           await new Promise((r) => requestAnimationFrame(r));
           void el.offsetHeight;
 
+          const layoutRect = el.getBoundingClientRect();
           let shot;
           try {
             shot = await Screenshot.take();
@@ -327,7 +356,7 @@ const BattleCard = forwardRef(function BattleCard({
 
           let dataUrl;
           try {
-            dataUrl = await cropNativeScreenshotToElement(shot.base64, el);
+            dataUrl = await cropNativeScreenshotToElement(shot.base64, layoutRect);
           } catch (e) {
             console.error("[BattleCard] cropNativeScreenshotToElement failed", e);
             return;
