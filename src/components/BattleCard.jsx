@@ -38,16 +38,40 @@ const EXPORT_IMAGE_POLL_INTERVAL_MS = 50;
 const CROP_SAFETY_INSET_PX = 2;
 /** 截圖寬／高對視窗的縮放比視為「等向」的相對誤差閾值（用於選擇單一 map 或分軸 scale） */
 const CROP_SCALE_AXIS_UNIFORM_EPS = 0.02;
-/** Hammer Lock：以 Canvas 抽樣驗證全螢幕截圖，取代 base64 長度猜測 */
+/** Hammer Lock：將全螢幕截圖縮畫後，僅在戰報卡對應區域抽樣（非全畫面黑底） */
 const HAMMER_LOCK_CANVAS_PX = 1000;
-/** 像素抽樣座標（對 1000×1000 縮放後的截圖） */
-const HAMMER_SAMPLE_POINTS = [
-  [10, 10],
-  [502, 502],
-  [990, 990],
+/** 戰報卡內九宮格：邊緣內縮比例，採樣落於本體而非全螢幕黑底 */
+const HAMMER_CARD_EDGE_INSET = 0.1;
+const HAMMER_FRAC_LO = HAMMER_CARD_EDGE_INSET;
+const HAMMER_FRAC_MID = 0.5;
+const HAMMER_FRAC_HI = 1 - HAMMER_CARD_EDGE_INSET;
+/**
+ * 相對 layoutRect 的 3×3 網格（四角、四邊中點、中心）；列優先，索引 6–8 為底邊三點。
+ */
+const HAMMER_CARD_SAMPLE_REL = [
+  [HAMMER_FRAC_LO, HAMMER_FRAC_LO],
+  [HAMMER_FRAC_MID, HAMMER_FRAC_LO],
+  [HAMMER_FRAC_HI, HAMMER_FRAC_LO],
+  [HAMMER_FRAC_LO, HAMMER_FRAC_MID],
+  [HAMMER_FRAC_MID, HAMMER_FRAC_MID],
+  [HAMMER_FRAC_HI, HAMMER_FRAC_MID],
+  [HAMMER_FRAC_LO, HAMMER_FRAC_HI],
+  [HAMMER_FRAC_MID, HAMMER_FRAC_HI],
+  [HAMMER_FRAC_HI, HAMMER_FRAC_HI],
 ];
-/** 與 HAMMER_SAMPLE_POINTS 對齊：用於 alpha 檢查（畫面中央，避開狀態列／導覽列邊角） */
-const HAMMER_CENTER_SAMPLE_INDEX = 1;
+/** 死像素：RGB 總和嚴格小於此值（規格 <10，含近黑灰階） */
+const HAMMER_DEAD_PIXEL_RGB_SUM_LT = 10;
+/** 超過此死像素數量 → 截圖無效（規格：>3 個點） */
+const HAMMER_MAX_DEAD_PIXELS = 3;
+/** 中央抽樣 alpha 下限；過低代表合成未完成／半圖 */
+const HAMMER_CENTER_ALPHA_MIN = 250;
+/** 與 HAMMER_CARD_SAMPLE_REL 列優先 3×3 對齊：中心點 alpha 檢查 */
+const HAMMER_CENTER_SAMPLE_INDEX = 4;
+/** 底部列三點索引（半圖常見底黑） */
+const HAMMER_BOTTOM_ROW_INDICES = [6, 7, 8];
+const HAMMER_BOTTOM_ROW_INDEX_SET = new Set(HAMMER_BOTTOM_ROW_INDICES);
+/** Shutter Decoupling：setIsCapturing(true) 後等待，讓遮罩卸載與 CSS 變形／重繪落地再快門 */
+const NATIVE_SHUTTER_DOM_WAIT_MS = 250;
 /** 原生截圖「破冰重拍」上限 */
 const NATIVE_HAMMER_MAX_ATTEMPTS = 3;
 /** 第 1 次失敗後等待再拍 */
@@ -67,6 +91,50 @@ function cropScalesAreUniform(scaleX, scaleY) {
   return Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY) < CROP_SCALE_AXIS_UNIFORM_EPS;
 }
 
+/**
+ * 與 cropNativeScreenshotToElement 一致：由截圖點陣 (IW×IH) 與視窗推算 map／scale。
+ * 用於 Hammer 將「戰報卡上的點」映射到點陣座標，避免採到 App 黑底。
+ */
+function getNativeScreenshotPixelMapping(IW, IH) {
+  const innerW = window.innerWidth;
+  const innerH = window.innerHeight;
+  if (!innerW || !innerH || !IW || !IH) return null;
+
+  const dpr = window.devicePixelRatio || 1;
+  const scaleX = IW / innerW;
+  const scaleY = IH / innerH;
+  const expectedW = innerW * dpr;
+  const expectedH = innerH * dpr;
+  const bitmapMatchesDpr =
+    Math.abs(IW - expectedW) <= CROP_BITMAP_MISMATCH_TOLERANCE_PX &&
+    Math.abs(IH - expectedH) <= CROP_BITMAP_MISMATCH_TOLERANCE_PX;
+
+  let map;
+  if (bitmapMatchesDpr) {
+    map = dpr;
+  } else {
+    map = cropScalesAreUniform(scaleX, scaleY) ? (scaleX + scaleY) / 2 : scaleX;
+  }
+
+  const uniform = cropScalesAreUniform(scaleX, scaleY);
+  return { map, scaleX, scaleY, bitmapMatchesDpr, uniform };
+}
+
+/**
+ * 文件座標系下的點（= viewport 座標 + pageX/YOffset，與 crop 的 rect.left+ox 相同語意）→ 點陣像素。
+ */
+function nativeDocPointToBitmapPx(docX, docY, IW, IH, mapping) {
+  let bx = Math.round(docX * mapping.map);
+  let by = Math.round(docY * mapping.map);
+  if (!mapping.bitmapMatchesDpr && !mapping.uniform) {
+    bx = Math.round(docX * mapping.scaleX);
+    by = Math.round(docY * mapping.scaleY);
+  }
+  bx = Math.max(0, Math.min(bx, IW - 1));
+  by = Math.max(0, Math.min(by, IH - 1));
+  return [bx, by];
+}
+
 function loadImageFromDataUrl(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -77,10 +145,21 @@ function loadImageFromDataUrl(dataUrl) {
 }
 
 /**
- * 像素級驗收：將截圖縮畫至 1000×1000 後抽樣；全純黑或透明度異常 → 無效（不依賴 base64 長度）。
+ * 像素級驗收（Dynamic Area Hammer）：依 layoutRect 在戰報卡本體內九宮格採樣（1000×1000 縮圖座標），
+ * 不採全螢幕黑底。死像素 r+g+b<10；>3 個死像素或底邊三點全死 → 失敗；中央 alpha 過低 → 半圖。
  */
-async function validateNativeScreenshotBase64(base64) {
+async function validateNativeScreenshotBase64(base64, layoutRect) {
   if (!base64 || typeof base64 !== "string") return false;
+  if (
+    !layoutRect ||
+    typeof layoutRect.width !== "number" ||
+    typeof layoutRect.height !== "number" ||
+    layoutRect.width <= 0 ||
+    layoutRect.height <= 0
+  ) {
+    return false;
+  }
+
   const dataUrl = base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
   let img;
   try {
@@ -88,6 +167,28 @@ async function validateNativeScreenshotBase64(base64) {
   } catch {
     return false;
   }
+
+  const IW = img.naturalWidth;
+  const IH = img.naturalHeight;
+  const mapping = getNativeScreenshotPixelMapping(IW, IH);
+  if (!mapping) return false;
+
+  const ox = window.pageXOffset;
+  const oy = window.pageYOffset;
+  const maxC = HAMMER_LOCK_CANVAS_PX - 1;
+
+  /** @type {Array<[number, number]>} */
+  const pointsCanvas = [];
+  for (let i = 0; i < HAMMER_CARD_SAMPLE_REL.length; i += 1) {
+    const [fx, fy] = HAMMER_CARD_SAMPLE_REL[i];
+    const docX = layoutRect.left + ox + fx * layoutRect.width;
+    const docY = layoutRect.top + oy + fy * layoutRect.height;
+    const [bx, by] = nativeDocPointToBitmapPx(docX, docY, IW, IH, mapping);
+    const cx = Math.max(0, Math.min(maxC, Math.floor((bx / IW) * HAMMER_LOCK_CANVAS_PX)));
+    const cy = Math.max(0, Math.min(maxC, Math.floor((by / IH) * HAMMER_LOCK_CANVAS_PX)));
+    pointsCanvas.push([cx, cy]);
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = HAMMER_LOCK_CANVAS_PX;
   canvas.height = HAMMER_LOCK_CANVAS_PX;
@@ -99,10 +200,13 @@ async function validateNativeScreenshotBase64(base64) {
     return false;
   }
 
-  let allPureBlack = true;
   let centerAlpha = 255;
-  for (let i = 0; i < HAMMER_SAMPLE_POINTS.length; i += 1) {
-    const [x, y] = HAMMER_SAMPLE_POINTS[i];
+  let deadCount = 0;
+  let bottomDeadCount = 0;
+  const isDeadPixel = (r, g, b) => r + g + b < HAMMER_DEAD_PIXEL_RGB_SUM_LT;
+
+  for (let i = 0; i < pointsCanvas.length; i += 1) {
+    const [x, y] = pointsCanvas[i];
     let d;
     try {
       d = ctx.getImageData(x, y, 1, 1).data;
@@ -113,12 +217,16 @@ async function validateNativeScreenshotBase64(base64) {
     const g = d[1];
     const b = d[2];
     const a = d[3];
-    if (r !== 0 || g !== 0 || b !== 0) allPureBlack = false;
+    if (isDeadPixel(r, g, b)) {
+      deadCount += 1;
+      if (HAMMER_BOTTOM_ROW_INDEX_SET.has(i)) bottomDeadCount += 1;
+    }
     if (i === HAMMER_CENTER_SAMPLE_INDEX) centerAlpha = a;
   }
-  if (allPureBlack) return false;
-  // 畫面中央應為不透明合成；過低 alpha 代表半圖／合成未完成
-  if (centerAlpha < 250) return false;
+
+  if (deadCount > HAMMER_MAX_DEAD_PIXELS) return false;
+  if (bottomDeadCount === HAMMER_BOTTOM_ROW_INDICES.length) return false;
+  if (centerAlpha < HAMMER_CENTER_ALPHA_MIN) return false;
   return true;
 }
 
@@ -138,16 +246,31 @@ function nudgeCardOpacityForGpuSwap(cardEl) {
 }
 
 /**
- * 物理破冰：微調 padding 迫使排版／合成管線刷新，下一幀還原，避免持久位移。
+ * 物理破冰：微調 padding（1px）迫使排版／合成管線刷新，下一幀還原，避免持久位移。
+ * Realme GT Neo 3 / Android 14 WebView 半圖緩解用。
  */
 async function nudgeCardPaddingBottomIcebreak(cardEl) {
   const had = cardEl.style.paddingBottom !== "";
   const prev = cardEl.style.paddingBottom;
-  cardEl.style.paddingBottom = "0.1px";
+  cardEl.style.paddingBottom = "1px";
   void cardEl.offsetHeight;
   await nextAnimationFrames(1);
   if (had) cardEl.style.paddingBottom = prev;
   else cardEl.style.removeProperty("padding-bottom");
+}
+
+/**
+ * 暴力破冰：強制 display 切換迫使 WebView 丟棄 GPU 快取，緩解半圖／失敗粘滯。
+ * 戰報卡根節點為 flex 排版（與 class flex flex-col 一致）。
+ */
+async function aggressiveDisplayIcebreak(cardEl) {
+  cardEl.style.display = "none";
+  void cardEl.offsetHeight;
+  cardEl.style.display = "flex";
+  void cardEl.offsetHeight;
+  await nextAnimationFrames(2);
+  cardEl.style.removeProperty("display");
+  void cardEl.offsetHeight;
 }
 
 async function showNativeExportFailedAlert(title, message) {
@@ -189,6 +312,44 @@ async function waitForCardImagesPaintReady(rootEl, maxWaitMs, onSlow) {
   if (!allReady()) {
     console.warn("[BattleCard] waitForCardImagesPaintReady: timeout, screenshot may be incomplete");
   }
+}
+
+/** 盡力觸發戰報卡根節點內所有 img 的 decode／onload，與 waitForCardImagesPaintReady 搭配使用。 */
+async function decodeBattleCardImages(rootEl) {
+  const imgs = Array.from(rootEl.querySelectorAll("img"));
+  await Promise.all(
+    imgs.map(
+      (img) =>
+        new Promise((res) => {
+          const decodeTimer = window.setTimeout(res, 450);
+          try {
+            if (typeof img.decode === "function") {
+              img.decode().finally(() => {
+                window.clearTimeout(decodeTimer);
+                res(true);
+              });
+              return;
+            }
+            if (img.complete) {
+              window.clearTimeout(decodeTimer);
+              res(true);
+              return;
+            }
+            img.onload = () => {
+              window.clearTimeout(decodeTimer);
+              res(true);
+            };
+            img.onerror = () => {
+              window.clearTimeout(decodeTimer);
+              res(true);
+            };
+          } catch {
+            window.clearTimeout(decodeTimer);
+            res(true);
+          }
+        }),
+    ),
+  );
 }
 
 /** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
@@ -260,31 +421,20 @@ async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
 
   const ox = window.pageXOffset;
   const oy = window.pageYOffset;
-  const dpr = window.devicePixelRatio || 1;
-  const scaleX = IW / innerW;
-  const scaleY = IH / innerH;
 
-  const expectedW = innerW * dpr;
-  const expectedH = innerH * dpr;
-  const bitmapMatchesDpr =
-    Math.abs(IW - expectedW) <= CROP_BITMAP_MISMATCH_TOLERANCE_PX &&
-    Math.abs(IH - expectedH) <= CROP_BITMAP_MISMATCH_TOLERANCE_PX;
-
-  let map;
-  if (bitmapMatchesDpr) {
-    map = dpr;
-  } else {
-    map = cropScalesAreUniform(scaleX, scaleY) ? (scaleX + scaleY) / 2 : scaleX;
+  const mapping = getNativeScreenshotPixelMapping(IW, IH);
+  if (!mapping) {
+    throw new Error("[BattleCard] crop: invalid layout or image dimensions");
   }
 
-  let sx = Math.round((layoutRect.left + ox) * map);
-  let sy = Math.round((layoutRect.top + oy) * map);
-  let side = Math.round(layoutRect.width * map);
+  let sx = Math.round((layoutRect.left + ox) * mapping.map);
+  let sy = Math.round((layoutRect.top + oy) * mapping.map);
+  let side = Math.round(layoutRect.width * mapping.map);
 
-  if (!bitmapMatchesDpr && !cropScalesAreUniform(scaleX, scaleY)) {
-    sx = Math.round((layoutRect.left + ox) * scaleX);
-    sy = Math.round((layoutRect.top + oy) * scaleY);
-    side = Math.round(layoutRect.width * scaleX);
+  if (!mapping.bitmapMatchesDpr && !mapping.uniform) {
+    sx = Math.round((layoutRect.left + ox) * mapping.scaleX);
+    sy = Math.round((layoutRect.top + oy) * mapping.scaleY);
+    side = Math.round(layoutRect.width * mapping.scaleX);
   }
 
   const inset = CROP_SAFETY_INSET_PX;
@@ -453,7 +603,10 @@ const BattleCard = forwardRef(function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
-  /** 下載戰報：原生端走 WebView 點陣截圖 + 裁切；Web 端維持 toPng + 飽和度補償。不可改動卡片 transform，否則截圖座標與畫面脫鉤。 */
+  /**
+   * 下載戰報：原生端走「階梯式」WebView 點陣截圖 + 九宮格驗收；Web 端維持 toPng + 飽和度補償。
+   * 不可改動卡片 transform，否則截圖座標與畫面脫鉤。
+   */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
       const isExplicitUnlock = saveOnly === true;
@@ -466,126 +619,98 @@ const BattleCard = forwardRef(function BattleCard({
       const el = cardRef.current;
       if (!el) return;
 
+      const isNative = Capacitor.isNativePlatform();
+
       flushSync(() => {
         setIsExporting(true);
         setExportSlowResourceCopy(false);
       });
-      await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
-      onExportStart?.();
-
-      const isNative = Capacitor.isNativePlatform();
-      if (isNative) {
-        await nextAnimationFrames(3);
-      }
 
       try {
-        const imgs = Array.from(el.querySelectorAll("img"));
-        await Promise.all(
-          imgs.map(
-            (img) =>
-              new Promise((res) => {
-                const decodeTimer = window.setTimeout(res, 450);
-                try {
-                  if (typeof img.decode === "function") {
-                    img.decode().finally(() => {
-                      window.clearTimeout(decodeTimer);
-                      res(true);
-                    });
-                    return;
-                  }
-                  if (img.complete) {
-                    window.clearTimeout(decodeTimer);
-                    res(true);
-                    return;
-                  }
-                  img.onload = () => {
-                    window.clearTimeout(decodeTimer);
-                    res(true);
-                  };
-                  img.onerror = () => {
-                    window.clearTimeout(decodeTimer);
-                    res(true);
-                  };
-                } catch {
-                  window.clearTimeout(decodeTimer);
-                  res(true);
-                }
-              }),
-          ),
-        );
-
-        await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
-          flushSync(() => {
-            setExportSlowResourceCopy(true);
-          });
-        });
-
-        const exportTag = `PH8-v${Date.now()}`;
-        const fileBase = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`;
-
         if (isNative) {
+          // —— 第一階：環境鎖定（全螢幕「生成中」+ 圖片 100% 讀取／解碼）——
+          onExportStart?.();
+          await nextAnimationFrames(2);
+          await decodeBattleCardImages(el);
+          await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
+            flushSync(() => {
+              setExportSlowResourceCopy(true);
+            });
+          });
+
+          const exportTag = `PH8-v${Date.now()}`;
+          const fileBase = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`;
+
+          // —— 第二階：渲染解耦（隱藏遮罩後死等 NATIVE_SHUTTER_DOM_WAIT_MS，讓 DOM 與合成落地）——
+          flushSync(() => {
+            setIsCapturing(true);
+          });
+          await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_DOM_WAIT_MS));
+
           let layoutRect = null;
           let shot = null;
-          let attempt = 0;
           let hammerOk = false;
 
-          while (attempt < NATIVE_HAMMER_MAX_ATTEMPTS && !hammerOk) {
-            attempt += 1;
-
+          for (let attempt = 1; attempt <= NATIVE_HAMMER_MAX_ATTEMPTS && !hammerOk; attempt += 1) {
+            // —— 第三階：物理喚醒與破冰（非首拍才 display 強制刷新，擊碎 GPU 緩存粘滯）——
             if (attempt === 2) {
               await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL1_MS));
             } else if (attempt === 3) {
               await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL2_MS));
-              await nudgeCardPaddingBottomIcebreak(el);
             }
-
-            await nextAnimationFrames(10);
             nudgeCardOpacityForGpuSwap(el);
+            await nudgeCardPaddingBottomIcebreak(el);
+            if (attempt > 1) {
+              await aggressiveDisplayIcebreak(el);
+            }
+            await nextAnimationFrames(2);
 
-            flushSync(() => {
-              setIsCapturing(true);
-            });
-            try {
-              void el.offsetHeight;
-              layoutRect = el.getBoundingClientRect();
-              if (layoutRect.width <= 0 || layoutRect.height <= 0) {
-                console.error("[BattleCard] Native export: invalid card rect", layoutRect);
-                shot = null;
-              } else {
-                try {
-                  shot = await Screenshot.take();
-                } catch (e) {
-                  console.error("[BattleCard] Screenshot.take failed", e);
-                  shot = null;
-                }
-              }
-            } finally {
-              flushSync(() => {
-                setIsCapturing(false);
-              });
+            // —— 第四階：九宮格驗收（Screenshot.take + validateNativeScreenshotBase64；失敗則回到第三階重試，最多 3 次）——
+            layoutRect = el.getBoundingClientRect();
+            if (layoutRect.width <= 0 || layoutRect.height <= 0) {
+              console.error("[BattleCard] Native export: invalid card rect", layoutRect);
+              shot = null;
+              continue;
             }
 
-            const valid = shot?.base64 && (await validateNativeScreenshotBase64(shot.base64));
+            try {
+              shot = await Screenshot.take();
+            } catch (e) {
+              console.error("[BattleCard] Screenshot.take failed", e);
+              shot = null;
+            }
+
+            const valid =
+              shot?.base64 && (await validateNativeScreenshotBase64(shot.base64, layoutRect));
             if (valid) {
               hammerOk = true;
               break;
             }
-
-            if (attempt === NATIVE_HAMMER_MAX_ATTEMPTS) {
-              await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL3_MS));
-              nudgeCardOpacityForGpuSwap(el);
-              await showNativeExportFailedAlert(t("exportFailedTitle"), t("exportFailedNetworkAdvice"));
-              return;
-            }
           }
 
-          if (!hammerOk || !shot?.base64 || !layoutRect) return;
+          flushSync(() => {
+            setIsCapturing(false);
+          });
+
+          // —— 第五階：結果產出（失敗則誠實建議 Dialog；成功則裁切 → 存相簿 → Toast）——
+          if (!hammerOk || !shot?.base64 || !layoutRect) {
+            await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL3_MS));
+            await showNativeExportFailedAlert(
+              t("exportFailedTitle"),
+              t("exportFailedNativeRenderAnomalyAdvice"),
+            );
+            return;
+          }
 
           let dataUrl;
           try {
             dataUrl = await cropNativeScreenshotToElement(shot.base64, layoutRect);
           } catch (e) {
             console.error("[BattleCard] cropNativeScreenshotToElement failed", e);
+            await showNativeExportFailedAlert(
+              t("exportFailedTitle"),
+              t("exportFailedNativeRenderAnomalyAdvice"),
+            );
             return;
           }
 
@@ -611,6 +736,19 @@ const BattleCard = forwardRef(function BattleCard({
           }
           return;
         }
+
+        // —— Web：維持既有 toPng 路徑（含 EXPORT_PAINT_WAIT_MS 與資源就緒輪詢）——
+        await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
+        onExportStart?.();
+        await decodeBattleCardImages(el);
+        await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
+          flushSync(() => {
+            setExportSlowResourceCopy(true);
+          });
+        });
+
+        const exportTag = `PH8-v${Date.now()}`;
+        const fileBase = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`;
 
         /** Web：toPng 前備份／還原 DOM，避免 clone 殘影 */
         const roleStyleBackup = new Map(

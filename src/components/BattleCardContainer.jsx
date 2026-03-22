@@ -60,6 +60,8 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     exit = { opacity: 0, scale: 0.9 },
     /** 喚起激勵廣告（或模擬廣告），播放完畢後須呼叫 onWatched()；未傳則點擊下載不執行 toPng。 */
     onRequestRewardAd,
+    /** 解鎖完成時額外通知父層（可選，例如同步儀表狀態） */
+    onExportUnlock: onExportUnlockFromParent,
     /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
     onExportStart,
     onExportEnd,
@@ -80,7 +82,10 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     if (open) setIsExportReady(false)
   }, [open])
 
-  const onExportUnlock = useCallback(() => setIsExportReady(true), [])
+  const onExportUnlock = useCallback(() => {
+    setIsExportReady(true)
+    onExportUnlockFromParent?.()
+  }, [onExportUnlockFromParent])
 
   // ref 與 battleCardRef 為穩定引用；對外只轉發子元件 imperative API，避免每次 render 重建 handle 物件
   useImperativeHandle(

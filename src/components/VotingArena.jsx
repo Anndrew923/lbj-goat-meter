@@ -35,7 +35,18 @@ function isAntiStance(stance) {
   );
 }
 
-export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, onExportStart, onExportEnd }) {
+/**
+ * @param {object} props
+ * @param {() => void} [props.onExportUnlock] 廣告解鎖完成時通知父層（可選）
+ */
+export default function VotingArena({
+  userId,
+  currentUser,
+  onOpenWarzoneSelect,
+  onExportStart,
+  onExportEnd,
+  onExportUnlock,
+}) {
   const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
   /** 已登入但未完成 Profile（半登錄）：顯示投票卡，點擊時攔截並引導完成戰區登錄 */
@@ -60,16 +71,31 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   const revoteExitRef = useRef(false);
   const [revoteCompleteKey, setRevoteCompleteKey] = useState(0);
   const [showAdPortal, setShowAdPortal] = useState(false);
-  const [showSaveReportConfirm, setShowSaveReportConfirm] = useState(false);
-  const [saveReportPending, setSaveReportPending] = useState(false);
   const pendingOnWatchedRef = useRef(null);
   const battleCardContainerRef = useRef(null);
   const lastSubmitAtRef = useRef(0);
 
-  /** 廣告解鎖：點擊下載時開啟 AdMobPortal，插頁關閉後執行解鎖並可選擇是否存檔至相簿。 */
+  /** 廣告解鎖：點擊下載時開啟 AdMobPortal；插頁關閉後先直接存相簿，結束後再執行解鎖回調（見 handleInterstitialWatched）。 */
   const onRequestRewardAd = useCallback((onWatched) => {
     pendingOnWatchedRef.current = onWatched;
     setShowAdPortal(true);
+  }, []);
+
+  /**
+   * 插頁關閉：關閉 portal 後「直接」await saveToGallery（無任何中間確認 Modal）；
+   * 解鎖回調僅在存檔流程結束後執行，避免解鎖先觸發重繪與殘留 UI。
+   */
+  const handleInterstitialWatched = useCallback(async () => {
+    const unlock = pendingOnWatchedRef.current;
+    pendingOnWatchedRef.current = null;
+    setShowAdPortal(false);
+    try {
+      await battleCardContainerRef.current?.saveToGallery?.();
+    } catch (err) {
+      console.error("[VotingArena] save to gallery after ad failed", err);
+    } finally {
+      unlock?.();
+    }
   }, []);
 
   const hasVoted = profile?.hasVoted === true || voteSuccess;
@@ -105,15 +131,6 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
   useEffect(() => {
     if (profile?.hasVoted === true && voteSuccess) setVoteSuccess(false);
   }, [profile?.hasVoted, voteSuccess]);
-
-  useEffect(() => {
-    if (!showSaveReportConfirm || saveReportPending) return;
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") setShowSaveReportConfirm(false);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [showSaveReportConfirm, saveReportPending]);
 
   const toggleReason = (value) => {
     if (isProcessing) return;
@@ -489,7 +506,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
         onCompleteWarzone={contentMode === "limbo" ? () => onOpenWarzoneSelect?.() : undefined}
       />
 
-      {/* 已投票流程：戰報卡、廣告解鎖、存檔確認 */}
+      {/* 已投票流程：戰報卡、廣告解鎖後自動存檔 */}
       <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
         {showBattleCard && (
           <BattleCardContainer
@@ -520,6 +537,7 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
             }
             exit={{ opacity: 0, scale: 0.8 }}
             onRequestRewardAd={onRequestRewardAd}
+            onExportUnlock={onExportUnlock}
             onExportStart={onExportStart}
             onExportEnd={onExportEnd}
           />
@@ -527,63 +545,9 @@ export default function VotingArena({ userId, currentUser, onOpenWarzoneSelect, 
       </AnimatePresence>
       <AdMobPortal
         open={showAdPortal}
-        onWatched={() => {
-          pendingOnWatchedRef.current?.();
-          pendingOnWatchedRef.current = null;
-          setShowAdPortal(false);
-          setShowSaveReportConfirm(true);
-        }}
+        onWatched={handleInterstitialWatched}
         onClose={() => setShowAdPortal(false)}
       />
-      {showSaveReportConfirm && (
-        <div
-          className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="save-report-confirm-title"
-          onClick={() => !saveReportPending && setShowSaveReportConfirm(false)}
-        >
-          <motion.div
-            className="rounded-xl border-2 border-king-gold/50 bg-gray-950/90 backdrop-blur-xl p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="save-report-confirm-title" className="text-lg font-bold text-king-gold mb-4">
-              {t("common:saveReportToGalleryPrompt")}
-            </h2>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowSaveReportConfirm(false)}
-                disabled={saveReportPending}
-                className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors disabled:opacity-50"
-              >
-                {t("common:saveReportToGalleryLater")}
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  setSaveReportPending(true);
-                  try {
-                    await battleCardContainerRef.current?.saveToGallery?.();
-                    setShowSaveReportConfirm(false);
-                  } catch (err) {
-                    console.error("[VotingArena] save to gallery failed", err);
-                    setShowSaveReportConfirm(false);
-                  } finally {
-                    setSaveReportPending(false);
-                  }
-                }}
-                disabled={saveReportPending}
-                className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {saveReportPending ? t("common:saveReportToGallerySaving") : t("common:saveReportToGalleryConfirm")}
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
     </>
   );
 }

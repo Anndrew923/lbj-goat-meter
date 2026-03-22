@@ -2,6 +2,7 @@
  * AdMobPortal — 插頁廣告全螢幕流程（取代 SimulatedAdPortal）
  *
  * - 監聽 adDismissed 觸發 PaymentService.grantReconPermission() 並執行 onWatched / onClose。
+ * - onWatched 可為 async（例如 await saveToGallery）；以 Promise.resolve 串接，不應再彈出中間確認層。
  * - 感官同步：廣告準備載入時震動 [30,50,30]ms，關閉並授予許可後震動 [20,40,20]ms。
  * - 登入頁不渲染：路徑為 /login 時不顯示，避免遮罩登入流程。
  */
@@ -41,8 +42,9 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
     const isNative = Capacitor.isNativePlatform()
     if (!isNative) {
       grantReconPermission()
-      onWatchedRef.current?.()
-      onCloseRef.current?.()
+      void Promise.resolve(onWatchedRef.current?.()).finally(() => {
+        onCloseRef.current?.()
+      })
       return
     }
 
@@ -58,8 +60,9 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
       if (removed) return
       triggerHapticPattern(HAPTIC_DISMISSED)
       grantReconPermission()
-      onWatchedRef.current?.()
-      onCloseRef.current?.()
+      void Promise.resolve(onWatchedRef.current?.()).finally(() => {
+        onCloseRef.current?.()
+      })
     }
 
     const handleFailed = () => {
