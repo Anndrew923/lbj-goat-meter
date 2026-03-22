@@ -12,9 +12,11 @@ dependencies {
     implementation project(':capacitor-community-admob')
     implementation project(':capacitor-community-media')
     implementation project(':capacitor-app')
+    implementation project(':capacitor-dialog')
     implementation project(':capacitor-filesystem')
     implementation project(':capacitor-haptics')
     implementation project(':capacitor-push-notifications')
+    implementation project(':capacitor-toast')
     implementation project(':capgo-capacitor-social-login')
     implementation project(':capacitor-screenshot')
 

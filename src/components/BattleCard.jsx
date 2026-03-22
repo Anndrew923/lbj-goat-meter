@@ -1,7 +1,7 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放；640×640 高清下載需 isExportReady（廣告解鎖後自動觸發一次下載）。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；原生高清存相簿需 isExportReady（首次下載經廣告解鎖後由 VotingArena 直接觸發 saveToGallery）。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
@@ -11,6 +11,7 @@ import { motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Download, RotateCcw } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
+import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
 import { Screenshot } from "capacitor-screenshot";
 import { STANCE_COLORS } from "../lib/constants";
@@ -22,9 +23,173 @@ import { triggerHapticPattern } from "../utils/hapticUtils";
 const CARD_SIZE = 640;
 /** 原生裁切輸出最小邊長（邏輯 640 × 2x DPR ≈ 1280 物理像素） */
 const NATIVE_EXPORT_MIN_PX = 1280;
+/** 視窗×dpr 與截圖實際寬高差距超過此像素時，改以 IW/innerWidth 等反推倍率，對齊 Realme／Android 14 等非標準 WebView 截圖 */
+const CROP_BITMAP_MISMATCH_TOLERANCE_PX = 2;
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
+/** 保守派：廣告關閉後給足 GPU 重繪時間，再進入快門隱身；不追求極限快門、追求成功率 */
+const EXPORT_PAINT_WAIT_MS = 1000;
+/** 在基礎等待之後，額外輪詢 img.complete && naturalWidth 的最長時間（弱網） */
+const EXPORT_IMAGE_READY_MAX_WAIT_MS = 2000;
+/** 圖片就緒輪詢間隔，平衡 CPU 與回應速度 */
+const EXPORT_IMAGE_POLL_INTERVAL_MS = 50;
+/** 裁切時在點陣圖上內縮的像素（每邊），避免截到螢幕邊緣黑底／雜訊 */
+const CROP_SAFETY_INSET_PX = 2;
+/** 截圖寬／高對視窗的縮放比視為「等向」的相對誤差閾值（用於選擇單一 map 或分軸 scale） */
+const CROP_SCALE_AXIS_UNIFORM_EPS = 0.02;
+/** Hammer Lock：以 Canvas 抽樣驗證全螢幕截圖，取代 base64 長度猜測 */
+const HAMMER_LOCK_CANVAS_PX = 1000;
+/** 像素抽樣座標（對 1000×1000 縮放後的截圖） */
+const HAMMER_SAMPLE_POINTS = [
+  [10, 10],
+  [502, 502],
+  [990, 990],
+];
+/** 與 HAMMER_SAMPLE_POINTS 對齊：用於 alpha 檢查（畫面中央，避開狀態列／導覽列邊角） */
+const HAMMER_CENTER_SAMPLE_INDEX = 1;
+/** 原生截圖「破冰重拍」上限 */
+const NATIVE_HAMMER_MAX_ATTEMPTS = 3;
+/** 第 1 次失敗後等待再拍 */
+const NATIVE_AFTER_FAIL1_MS = 300;
+/** 第 2 次失敗後等待再拍（並可執行 padding 破冰） */
+const NATIVE_AFTER_FAIL2_MS = 800;
+/** 第 3 次仍失敗：等待後再提示（讓遮罩／合成完全落地） */
+const NATIVE_AFTER_FAIL3_MS = 1200;
+
+async function nextAnimationFrames(count) {
+  for (let i = 0; i < count; i += 1) {
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+}
+
+function cropScalesAreUniform(scaleX, scaleY) {
+  return Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY) < CROP_SCALE_AXIS_UNIFORM_EPS;
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("[BattleCard] image decode failed"));
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * 像素級驗收：將截圖縮畫至 1000×1000 後抽樣；全純黑或透明度異常 → 無效（不依賴 base64 長度）。
+ */
+async function validateNativeScreenshotBase64(base64) {
+  if (!base64 || typeof base64 !== "string") return false;
+  const dataUrl = base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
+  let img;
+  try {
+    img = await loadImageFromDataUrl(dataUrl);
+  } catch {
+    return false;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = HAMMER_LOCK_CANVAS_PX;
+  canvas.height = HAMMER_LOCK_CANVAS_PX;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return false;
+  try {
+    ctx.drawImage(img, 0, 0, HAMMER_LOCK_CANVAS_PX, HAMMER_LOCK_CANVAS_PX);
+  } catch {
+    return false;
+  }
+
+  let allPureBlack = true;
+  let centerAlpha = 255;
+  for (let i = 0; i < HAMMER_SAMPLE_POINTS.length; i += 1) {
+    const [x, y] = HAMMER_SAMPLE_POINTS[i];
+    let d;
+    try {
+      d = ctx.getImageData(x, y, 1, 1).data;
+    } catch {
+      return false;
+    }
+    const r = d[0];
+    const g = d[1];
+    const b = d[2];
+    const a = d[3];
+    if (r !== 0 || g !== 0 || b !== 0) allPureBlack = false;
+    if (i === HAMMER_CENTER_SAMPLE_INDEX) centerAlpha = a;
+  }
+  if (allPureBlack) return false;
+  // 畫面中央應為不透明合成；過低 alpha 代表半圖／合成未完成
+  if (centerAlpha < 250) return false;
+  return true;
+}
+
+/** 微幅改變透明度再還原，促使 HWC／TextureView 走一次合成路徑（GT Neo 3 等黑屏緩解） */
+function nudgeCardOpacityForGpuSwap(cardEl) {
+  const hadInline = cardEl.style.opacity !== "";
+  const prev = cardEl.style.opacity;
+  try {
+    cardEl.style.opacity = "0.99";
+    void cardEl.offsetHeight;
+    cardEl.style.opacity = "1";
+    void cardEl.offsetHeight;
+  } finally {
+    if (hadInline) cardEl.style.opacity = prev;
+    else cardEl.style.removeProperty("opacity");
+  }
+}
+
+/**
+ * 物理破冰：微調 padding 迫使排版／合成管線刷新，下一幀還原，避免持久位移。
+ */
+async function nudgeCardPaddingBottomIcebreak(cardEl) {
+  const had = cardEl.style.paddingBottom !== "";
+  const prev = cardEl.style.paddingBottom;
+  cardEl.style.paddingBottom = "0.1px";
+  void cardEl.offsetHeight;
+  await nextAnimationFrames(1);
+  if (had) cardEl.style.paddingBottom = prev;
+  else cardEl.style.removeProperty("padding-bottom");
+}
+
+async function showNativeExportFailedAlert(title, message) {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await Dialog.alert({ title, message });
+    } catch (e) {
+      console.error("[BattleCard] Dialog.alert failed", e);
+      window.alert(`${title}\n\n${message}`);
+    }
+  } else {
+    window.alert(`${title}\n\n${message}`);
+  }
+}
+
+/**
+ * 截圖前確認 card 內所有 <img> 已解碼且可見（complete + naturalWidth>0）。
+ * 弱網下 decode() 可能仍無像素；額外最多等 EXPORT_IMAGE_READY_MAX_WAIT_MS。
+ * 若首次檢查未就緒則呼叫 onSlow（切換遮罩文案）；逾時仍繼續截圖並 warn。
+ */
+async function waitForCardImagesPaintReady(rootEl, maxWaitMs, onSlow) {
+  const listImgs = () => Array.from(rootEl.querySelectorAll("img"));
+  const allReady = () => {
+    const imgs = listImgs();
+    if (imgs.length === 0) return true;
+    return imgs.every((img) => img.complete && img.naturalWidth > 0);
+  };
+
+  if (allReady()) return;
+
+  onSlow?.();
+
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    if (allReady()) return;
+    await new Promise((r) => setTimeout(r, EXPORT_IMAGE_POLL_INTERVAL_MS));
+  }
+
+  if (!allReady()) {
+    console.warn("[BattleCard] waitForCardImagesPaintReady: timeout, screenshot may be incomplete");
+  }
+}
 
 /** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
 const NOISE_DATA_URL =
@@ -45,12 +210,26 @@ async function ensureGoatAlbumIdentifier() {
   return album?.identifier;
 }
 
+/** 存相簿成功後的原生 Toast；失敗僅記 log，不影響匯出流程。 */
+async function showBattleReportSavedToast(text) {
+  try {
+    const { Toast } = await import("@capacitor/toast");
+    await Toast.show({
+      text,
+      duration: "short",
+      position: "bottom",
+    });
+  } catch (e) {
+    console.error("[BattleCard] Toast.show failed", e);
+  }
+}
+
 /**
- * 原生全畫面截圖（物理像素）→ 依 card 在視口中的 CSS 座標裁切為 1:1 正方形。
- * @param layoutRect 必須與 Screenshot.take() 為同一幀／緊鄰取得的 getBoundingClientRect()，不可在 await 解碼圖片後才讀 DOM（版面會與點陣圖不一致）。
- * - scaleX/scaleY = Bitmap÷inner：CSS px → 物理像素（標準 WebView 下等同 devicePixelRatio）。
- * - 強制正方形：邊長 = max(寬, 高) 映射後取整，以元素中心置中裁切。
- * - Y：chromeOffsetCss = max(0, screen.height - innerHeight) 用於部分裝置全螢截圖與視口的垂直偏移。
+ * 原生全畫面截圖（物理像素）→ 依 card 的 document 對齊座標裁切為 1:1 正方形。
+ * @param layoutRect 須與 Screenshot.take() 緊鄰取得的 getBoundingClientRect()；呼叫前不可改動 transform。
+ * - 核心：sx=(rect.left+pageXOffset)×map、sy=(rect.top+pageYOffset)×map、side=rect.width×map；sw=sh=side。
+ * - map 優先為 devicePixelRatio；若截圖像素與 inner×dpr 不符，改用 (scaleX+scaleY)/2 單一倍率對齊點陣（不依賴 screen.height-innerHeight）。
+ * - Safety Inset：在點陣座標內縮 CROP_SAFETY_INSET_PX，避免邊緣黑帶入鏡。
  */
 async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
   const dataUrl = fullBase64.startsWith("data:")
@@ -73,37 +252,49 @@ async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
     throw new Error("[BattleCard] crop: invalid layout or image dimensions");
   }
 
-  const scaleX = IW / innerW;
-  const scaleY = IH / innerH;
-  const scaleUniform = (scaleX + scaleY) / 2;
-  const useUniform =
-    Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY) < 0.02;
-  const sxScale = useUniform ? scaleUniform : scaleX;
-  const syScale = useUniform ? scaleUniform : scaleY;
-
-  const chromeOffsetCss = Math.max(0, window.screen.height - window.innerHeight);
-
   const wCss = layoutRect.width;
   const hCss = layoutRect.height;
   if (wCss <= 0 || hCss <= 0) {
     throw new Error("[BattleCard] crop: invalid layoutRect dimensions");
   }
 
-  const cxCss = layoutRect.left + wCss / 2;
-  const cyCss = layoutRect.top + chromeOffsetCss + hCss / 2;
+  const ox = window.pageXOffset;
+  const oy = window.pageYOffset;
+  const dpr = window.devicePixelRatio || 1;
+  const scaleX = IW / innerW;
+  const scaleY = IH / innerH;
 
-  const sidePx = Math.max(
-    Math.ceil(wCss * sxScale),
-    Math.ceil(hCss * syScale),
-  );
+  const expectedW = innerW * dpr;
+  const expectedH = innerH * dpr;
+  const bitmapMatchesDpr =
+    Math.abs(IW - expectedW) <= CROP_BITMAP_MISMATCH_TOLERANCE_PX &&
+    Math.abs(IH - expectedH) <= CROP_BITMAP_MISMATCH_TOLERANCE_PX;
 
-  let sx = Math.floor(cxCss * sxScale - sidePx / 2);
-  let sy = Math.floor(cyCss * syScale - sidePx / 2);
-  // 置中後將裁切框限制在點陣圖範圍內（上界為 IW - sidePx，不可誤用 IW - 1）
-  sx = Math.max(0, Math.min(sx, IW - sidePx));
-  sy = Math.max(0, Math.min(sy, IH - sidePx));
+  let map;
+  if (bitmapMatchesDpr) {
+    map = dpr;
+  } else {
+    map = cropScalesAreUniform(scaleX, scaleY) ? (scaleX + scaleY) / 2 : scaleX;
+  }
 
-  let side = Math.min(sidePx, IW - sx, IH - sy);
+  let sx = Math.round((layoutRect.left + ox) * map);
+  let sy = Math.round((layoutRect.top + oy) * map);
+  let side = Math.round(layoutRect.width * map);
+
+  if (!bitmapMatchesDpr && !cropScalesAreUniform(scaleX, scaleY)) {
+    sx = Math.round((layoutRect.left + ox) * scaleX);
+    sy = Math.round((layoutRect.top + oy) * scaleY);
+    side = Math.round(layoutRect.width * scaleX);
+  }
+
+  const inset = CROP_SAFETY_INSET_PX;
+  sx += inset;
+  sy += inset;
+  side = Math.max(1, side - 2 * inset);
+
+  sx = Math.max(0, Math.min(sx, IW - 1));
+  sy = Math.max(0, Math.min(sy, IH - 1));
+  side = Math.min(side, IW - sx, IH - sy);
   side = Math.max(1, side);
 
   const out = Math.max(side, NATIVE_EXPORT_MIN_PX);
@@ -205,8 +396,11 @@ const BattleCard = forwardRef(function BattleCard({
     width: 600,
     height: 600,
   });
-  /** 匯出／原生截圖瞬間隱藏下載與關閉，避免多餘 UI 入鏡（原生裁切前亦降低版面抖動） */
+  /** isExporting：顯示「生成中」全螢幕遮罩；isCapturing：快門前 true 以卸載遮罩 DOM，避免 Screenshot 拍到遮罩 */
   const [isExporting, setIsExporting] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  /** 圖片尚未就緒時改為慢速文案（弱網提示） */
+  const [exportSlowResourceCopy, setExportSlowResourceCopy] = useState(false);
   const stanceColor = status
     ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat)
     : STANCE_COLORS.goat;
@@ -259,7 +453,7 @@ const BattleCard = forwardRef(function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
-  /** 下載戰報：原生端走 WebView 點陣截圖 + 裁切；Web 端維持 toPng + 飽和度補償。 */
+  /** 下載戰報：原生端走 WebView 點陣截圖 + 裁切；Web 端維持 toPng + 飽和度補償。不可改動卡片 transform，否則截圖座標與畫面脫鉤。 */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
       const isExplicitUnlock = saveOnly === true;
@@ -274,33 +468,17 @@ const BattleCard = forwardRef(function BattleCard({
 
       flushSync(() => {
         setIsExporting(true);
+        setExportSlowResourceCopy(false);
       });
-      // 給 GPU 完成「隱藏按鈕／卡片放大至 1:1」的合圖，避免殘影入鏡
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
       onExportStart?.();
 
-      const prev = {
-        transform: el.style.transform,
-        transformOrigin: el.style.transformOrigin,
-        left: el.style.left,
-        top: el.style.top,
-        margin: el.style.margin,
-        padding: el.style.padding,
-      };
+      const isNative = Capacitor.isNativePlatform();
+      if (isNative) {
+        await nextAnimationFrames(3);
+      }
 
       try {
-        el.style.transform = "scale(1)";
-        el.style.transformOrigin = "top left";
-        el.style.left = "0";
-        el.style.top = "0";
-        el.style.margin = "0";
-        el.style.padding = "0";
-
-        await new Promise((r) => requestAnimationFrame(r));
-        await new Promise((r) => requestAnimationFrame(r));
-        void el.offsetHeight;
-        await new Promise((r) => setTimeout(r, 400));
-
         const imgs = Array.from(el.querySelectorAll("img"));
         await Promise.all(
           imgs.map(
@@ -336,23 +514,72 @@ const BattleCard = forwardRef(function BattleCard({
           ),
         );
 
+        await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
+          flushSync(() => {
+            setExportSlowResourceCopy(true);
+          });
+        });
+
         const exportTag = `PH8-v${Date.now()}`;
         const fileBase = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`;
 
-        const isNative = Capacitor.isNativePlatform();
-
         if (isNative) {
-          await new Promise((r) => requestAnimationFrame(r));
-          void el.offsetHeight;
+          let layoutRect = null;
+          let shot = null;
+          let attempt = 0;
+          let hammerOk = false;
 
-          const layoutRect = el.getBoundingClientRect();
-          let shot;
-          try {
-            shot = await Screenshot.take();
-          } catch (e) {
-            console.error("[BattleCard] Screenshot.take failed", e);
-            return;
+          while (attempt < NATIVE_HAMMER_MAX_ATTEMPTS && !hammerOk) {
+            attempt += 1;
+
+            if (attempt === 2) {
+              await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL1_MS));
+            } else if (attempt === 3) {
+              await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL2_MS));
+              await nudgeCardPaddingBottomIcebreak(el);
+            }
+
+            await nextAnimationFrames(10);
+            nudgeCardOpacityForGpuSwap(el);
+
+            flushSync(() => {
+              setIsCapturing(true);
+            });
+            try {
+              void el.offsetHeight;
+              layoutRect = el.getBoundingClientRect();
+              if (layoutRect.width <= 0 || layoutRect.height <= 0) {
+                console.error("[BattleCard] Native export: invalid card rect", layoutRect);
+                shot = null;
+              } else {
+                try {
+                  shot = await Screenshot.take();
+                } catch (e) {
+                  console.error("[BattleCard] Screenshot.take failed", e);
+                  shot = null;
+                }
+              }
+            } finally {
+              flushSync(() => {
+                setIsCapturing(false);
+              });
+            }
+
+            const valid = shot?.base64 && (await validateNativeScreenshotBase64(shot.base64));
+            if (valid) {
+              hammerOk = true;
+              break;
+            }
+
+            if (attempt === NATIVE_HAMMER_MAX_ATTEMPTS) {
+              await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL3_MS));
+              nudgeCardOpacityForGpuSwap(el);
+              await showNativeExportFailedAlert(t("exportFailedTitle"), t("exportFailedNetworkAdvice"));
+              return;
+            }
           }
+
+          if (!hammerOk || !shot?.base64 || !layoutRect) return;
 
           let dataUrl;
           try {
@@ -371,6 +598,7 @@ const BattleCard = forwardRef(function BattleCard({
                   albumIdentifier: albumIdentifier ?? undefined,
                   fileName: fileBase,
                 });
+                await showBattleReportSavedToast(t("battleReportSavedToGallery"));
               } catch (saveErr) {
                 console.error("[BattleCard] Media.savePhoto failed", saveErr);
               }
@@ -458,72 +686,70 @@ const BattleCard = forwardRef(function BattleCard({
           });
         };
 
-        applyExportSnapshot();
-
-        const toPngBaseOpts = {
-          width: CARD_SIZE,
-          height: CARD_SIZE,
-          backgroundColor: "#050505",
-          pixelRatio: 2,
-          cacheBust: true,
-          skipFonts: true,
-        };
-
-        let dataUrl = null;
         try {
-          dataUrl = await toPng(el, toPngBaseOpts);
-        } catch {
-          const TRANSPARENT_PIXEL =
-            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-          const imgNodes = Array.from(el.querySelectorAll("img"));
-          const externalImgNodes = imgNodes.filter((img) => {
-            const src =
-              img.getAttribute("src") || img.currentSrc || img.src || "";
-            return typeof src === "string" && /^https?:\/\//i.test(src);
-          });
-          const savedSources = externalImgNodes.map((img) => ({
-            img,
-            src: img.getAttribute("src") || img.currentSrc || img.src || "",
-          }));
+          applyExportSnapshot();
 
+          const toPngBaseOpts = {
+            width: CARD_SIZE,
+            height: CARD_SIZE,
+            backgroundColor: "#050505",
+            pixelRatio: 2,
+            cacheBust: true,
+            skipFonts: true,
+          };
+
+          let dataUrl = null;
           try {
-            externalImgNodes.forEach((img) => {
-              img.setAttribute("src", TRANSPARENT_PIXEL);
-            });
-            applyExportSnapshot();
             dataUrl = await toPng(el, toPngBaseOpts);
-          } catch (err2) {
-            console.error("[BattleCard] toPng failed after retry", err2);
-          } finally {
-            savedSources.forEach(({ img, src }) => {
-              if (src) img.setAttribute("src", src);
-              else img.removeAttribute("src");
+          } catch {
+            const TRANSPARENT_PIXEL =
+              "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+            const imgNodes = Array.from(el.querySelectorAll("img"));
+            const externalImgNodes = imgNodes.filter((img) => {
+              const src =
+                img.getAttribute("src") || img.currentSrc || img.src || "";
+              return typeof src === "string" && /^https?:\/\//i.test(src);
             });
+            const savedSources = externalImgNodes.map((img) => ({
+              img,
+              src: img.getAttribute("src") || img.currentSrc || img.src || "",
+            }));
+
+            try {
+              externalImgNodes.forEach((img) => {
+                img.setAttribute("src", TRANSPARENT_PIXEL);
+              });
+              applyExportSnapshot();
+              dataUrl = await toPng(el, toPngBaseOpts);
+            } catch (err2) {
+              console.error("[BattleCard] toPng failed after retry", err2);
+            } finally {
+              savedSources.forEach(({ img, src }) => {
+                if (src) img.setAttribute("src", src);
+                else img.removeAttribute("src");
+              });
+            }
           }
-        }
 
-        if (dataUrl) {
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = `${fileBase}.png`;
-          a.click();
+          if (dataUrl) {
+            const a = document.createElement("a");
+            a.href = dataUrl;
+            a.download = `${fileBase}.png`;
+            a.click();
+          }
+        } finally {
+          restoreExportDomStyles();
         }
-
-        restoreExportDomStyles();
       } finally {
-        el.style.transform = prev.transform;
-        el.style.transformOrigin = prev.transformOrigin;
-        el.style.left = prev.left;
-        el.style.top = prev.top;
-        el.style.margin = prev.margin;
-        el.style.padding = prev.padding;
         flushSync(() => {
+          setExportSlowResourceCopy(false);
+          setIsCapturing(false);
           setIsExporting(false);
         });
         onExportEnd?.();
       }
     },
-    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd],
+    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd, t],
   );
 
   useImperativeHandle(
@@ -679,6 +905,18 @@ const BattleCard = forwardRef(function BattleCard({
       className="fixed inset-0 z-[9998] flex flex-col"
       style={{ isolation: "isolate" }}
     >
+      {isExporting && !isCapturing ? (
+        <div
+          className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/80 px-6 backdrop-blur-md pointer-events-auto"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <p className="text-center text-lg font-semibold text-king-gold max-w-sm leading-relaxed">
+            {exportSlowResourceCopy ? t("exportSlowResources") : t("generatingHighResReport")}
+          </p>
+        </div>
+      ) : null}
       <motion.div
         ref={overlayRef}
         className="absolute inset-0 flex flex-col items-center bg-black/90 p-4 backdrop-blur-sm pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
@@ -829,16 +1067,16 @@ const BattleCard = forwardRef(function BattleCard({
                     aria-hidden
                   />
 
-                  {/* Phase 8 激光化：柔化寬漸層 + 白核 + 雙層霓虹 drop-shadow（消 LED 顆粒／鋸齒） */}
+                  {/* Phase 8 激光化：49.6%–50.4% 寬漸層 + 多層 drop-shadow 柔邊（消 LED 鋸齒）；第二層 10px 對齊隊色光暈 */}
                   <div
                     className="absolute inset-0 pointer-events-none"
                     aria-hidden
                     data-export-role="laser-cut"
                     style={{
-                      backgroundImage: `linear-gradient(115deg, transparent 49.6%, ${hexWithAlpha(laserCutColor, "99")} 49.8%, #FFFFFF 50%, ${hexWithAlpha(laserCutColor, "99")} 50.2%, transparent 50.4%)`,
+                      backgroundImage: `linear-gradient(115deg, transparent 49.6%, ${hexWithAlpha(laserCutColor, "99")} 49.75%, #FFFFFF 50%, ${hexWithAlpha(laserCutColor, "99")} 50.25%, transparent 50.4%)`,
                       mixBlendMode: "screen",
                       opacity: 1,
-                      filter: `drop-shadow(0 0 2px #FFFFFF) drop-shadow(0 0 6px ${laserCutColor}) drop-shadow(0 0 15px ${hexWithAlpha(laserCutColor, "A0")}) contrast(1.4) brightness(1.15)`,
+                      filter: `drop-shadow(0 0 2px #FFFFFF) drop-shadow(0 0 10px ${laserCutColor}) drop-shadow(0 0 18px ${hexWithAlpha(laserCutColor, "99")}) contrast(1.4) brightness(1.15)`,
                     }}
                   />
 
@@ -976,49 +1214,53 @@ const BattleCard = forwardRef(function BattleCard({
                     </h1>
                   </div>
 
-                  {/* 身份區：HUD 襯底隔離字牆雜訊，小字可讀 */}
-                  <div
-                    className="flex items-center gap-3 flex-shrink-0 mb-3 rounded-xl p-2"
-                    style={{
-                      background: "rgba(0,0,0,0.3)",
-                      backdropFilter: "blur(2px)",
-                      WebkitBackdropFilter: "blur(2px)",
-                    }}
-                  >
-                    <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20 bg-white/10 flex-shrink-0">
-                      {photoURL ? (
-                        <img
-                          src={photoURL}
-                          crossOrigin="anonymous"
-                          referrerPolicy="no-referrer"
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xl text-white/60">
-                          ?
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className="text-white font-bold truncate text-sm"
-                        style={{ textShadow: textHudEdgeShadow }}
-                      >
-                        {displayName || t("anonymousWarrior")}
-                      </p>
-                      <p
-                        className="text-sm truncate"
-                        style={{
-                          color: teamColors.primary,
-                          textShadow: textHudEdgeShadow,
-                        }}
-                        title={t("supporting_team", { team: teamLabel })}
-                      >
-                        {teamLabel
-                          ? String(teamLabel).toUpperCase()
-                          : t("supporting_team", { team: teamLabel })}
-                      </p>
+                  {/* 身份區：底層半透明 + blur(2px) 保護 HUD，與字牆／激光層解耦 */}
+                  <div className="relative flex items-center gap-3 flex-shrink-0 mb-3 rounded-xl p-2 overflow-hidden">
+                    <div
+                      className="absolute inset-0 rounded-xl pointer-events-none z-0"
+                      aria-hidden
+                      style={{
+                        background: "rgba(0,0,0,0.3)",
+                        backdropFilter: "blur(2px)",
+                        WebkitBackdropFilter: "blur(2px)",
+                      }}
+                    />
+                    <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3">
+                      <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full border-2 border-white/20 bg-white/10">
+                        {photoURL ? (
+                          <img
+                            src={photoURL}
+                            crossOrigin="anonymous"
+                            referrerPolicy="no-referrer"
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xl text-white/60">
+                            ?
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="truncate text-sm font-bold text-white"
+                          style={{ textShadow: textHudEdgeShadow }}
+                        >
+                          {displayName || t("anonymousWarrior")}
+                        </p>
+                        <p
+                          className="truncate text-sm"
+                          style={{
+                            color: teamColors.primary,
+                            textShadow: textHudEdgeShadow,
+                          }}
+                          title={t("supporting_team", { team: teamLabel })}
+                        >
+                          {teamLabel
+                            ? String(teamLabel).toUpperCase()
+                            : t("supporting_team", { team: teamLabel })}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -1165,7 +1407,7 @@ const BattleCard = forwardRef(function BattleCard({
             </div>
           </div>
 
-          {/* 按鈕組：緊貼卡片下方 (gap-y-6)；解鎖後顯示「下載高解析戰報」存相簿 */}
+          {/* 按鈕組：緊貼卡片下方 (gap-y-6)；解鎖後顯示「下載高解析戰報」存相簿；匯出中隱藏全部操作避免誤觸與流程跳轉 */}
           <div className="flex-shrink-0 flex flex-col items-center w-full max-w-sm gap-y-4">
             {!isExporting && isExportReady ? (
               <button
@@ -1192,7 +1434,7 @@ const BattleCard = forwardRef(function BattleCard({
             ) : null}
 
             <div className={`flex gap-3 w-full ${onRevote ? "" : "flex-col"}`}>
-              {onRevote && (
+              {onRevote && !isExporting && (
                 <motion.button
                   type="button"
                   onClick={onRevote}
@@ -1219,7 +1461,7 @@ const BattleCard = forwardRef(function BattleCard({
                 </button>
               )}
             </div>
-            {revoteError && (
+            {revoteError && !isExporting && (
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-red-400" role="alert">
                   {revoteError}
