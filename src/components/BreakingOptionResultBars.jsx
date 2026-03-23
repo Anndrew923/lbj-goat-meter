@@ -5,16 +5,32 @@
  * - 供 UniversalBreakingBanner 與 BreakingHistoryPage 共用，避免重複邏輯。
  * - 依 vote_counts / total_votes 計算百分比，以水平進度條 + 選項文字呈現。
  * - 使用 framer-motion layout 與 animate 提供一致過場。
+ * - 外層依 isLoggedIn 分流：未登入者不掛載含 tooltip／計時器的重邏輯子元件（維持 hooks 規則且減少無謂工作）。
  */
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * @param {{ options: Array<{ label: string }>, voteCounts: Record<string, number>, totalVotes: number, optimisticOptionIndex?: number }} props
- *   optimisticOptionIndex: 剛投完票尚未收到 Firestore 更新時，用於樂觀顯示該選項 +1 票與總數 +1
+ * 未登入：只顯示總參與人數（不掛載進度條／tooltip 相關 state）
  */
-export default function BreakingOptionResultBars({
+function BreakingVoteAnonymousSummary({ totalVotes, optimisticOptionIndex }) {
+  const { t } = useTranslation('common')
+  const hasServerData = totalVotes > 0
+  const displayTotal = hasServerData ? totalVotes : optimisticOptionIndex !== undefined ? 1 : 0
+  return (
+    <div className="rounded-md bg-gray-800/80 px-2 py-2 text-center" role="status">
+      <p className="text-xs text-gray-400">
+        {t('breakingAnonymousResultSummary', { count: displayTotal.toLocaleString() })}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * @param {{ options: Array<{ label: string }>, voteCounts: Record<string, number>, totalVotes: number, optimisticOptionIndex?: number }} props
+ */
+function BreakingVoteResultBarsInner({
   options,
   voteCounts = {},
   totalVotes = 0,
@@ -24,10 +40,6 @@ export default function BreakingOptionResultBars({
   const hasServerData = totalVotes > 0
   const effectiveTotal = hasServerData ? totalVotes : optimisticOptionIndex !== undefined ? 1 : 0
 
-  // Tooltip 顯示需求：
-  // - Desktop：hover 顯示
-  // - Mobile：長按或點擊也要顯示
-  // 這裡用 state 控制顯示狀態，避免只有 CSS :hover 可見。
   const [tooltipIndex, setTooltipIndex] = useState(null)
   const longPressTimerRef = useRef(null)
   const autoHideTimerRef = useRef(null)
@@ -75,7 +87,6 @@ export default function BreakingOptionResultBars({
       {options.map((opt, i) => {
         const label = typeof opt === 'object' && opt !== null ? opt.label : String(opt ?? '')
         if (!label) return null
-        // 後端歷史資料容錯：曾出現 key 被寫成 "'0'"（含引號字面）的狀況，這裡一併兼容讀取，避免 UI 顯示 0%。
         const serverCount = Number(voteCounts[String(i)] ?? voteCounts[`'${i}'`] ?? voteCounts[i] ?? 0)
         const optimisticBonus =
           !hasServerData && i === optimisticOptionIndex ? 1 : 0
@@ -109,7 +120,6 @@ export default function BreakingOptionResultBars({
               }, 450)
             }}
             onTouchMove={() => {
-              // 使用者滑動時取消長按，避免誤觸
               didLongPressRef.current = false
               clearLongPressTimer()
             }}
@@ -120,7 +130,6 @@ export default function BreakingOptionResultBars({
               clearLongPressTimer()
             }}
             onClick={() => {
-              // 若是長按觸發，click 事件通常也會跟著發生，這裡避免 toggle 互相打架
               if (didLongPressRef.current) {
                 didLongPressRef.current = false
                 return
@@ -149,11 +158,6 @@ export default function BreakingOptionResultBars({
               </span>
             </div>
 
-            {/*
-              注意：
-              1) Tooltip 位置絕對定位於進度條容器上方
-              2) 顯示/隱藏不依賴 group-hover，改用 state + 事件處理，確保手機可觸發
-            */}
             <div className="h-1.5 bg-gray-900/80 overflow-hidden select-none">
               <motion.div
                 layout
@@ -177,5 +181,35 @@ export default function BreakingOptionResultBars({
         )
       })}
     </motion.div>
+  )
+}
+
+/**
+ * @param {{ options: Array<{ label: string }>, voteCounts: Record<string, number>, totalVotes: number, optimisticOptionIndex?: number, isLoggedIn?: boolean }} props
+ *   optimisticOptionIndex: 剛投完票尚未收到 Firestore 更新時，用於樂觀顯示該選項 +1 票與總數 +1
+ *   isLoggedIn: 未登入時僅顯示總參與人數（不揭露各選項票數／百分比）
+ */
+export default function BreakingOptionResultBars({
+  options,
+  voteCounts = {},
+  totalVotes = 0,
+  optimisticOptionIndex,
+  isLoggedIn = true,
+}) {
+  if (!isLoggedIn) {
+    return (
+      <BreakingVoteAnonymousSummary
+        totalVotes={totalVotes}
+        optimisticOptionIndex={optimisticOptionIndex}
+      />
+    )
+  }
+  return (
+    <BreakingVoteResultBarsInner
+      options={options}
+      voteCounts={voteCounts}
+      totalVotes={totalVotes}
+      optimisticOptionIndex={optimisticOptionIndex}
+    />
   )
 }

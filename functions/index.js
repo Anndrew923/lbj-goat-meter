@@ -517,6 +517,11 @@ export const submitBreakingVote = functions.https.onCall(async (data, context) =
 });
 
 async function runSubmitBreakingVote(data, context) {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Authentication required", { code: "auth-required" });
+  }
+
   const { eventId, optionIndex, deviceId, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
@@ -571,6 +576,7 @@ async function runSubmitBreakingVote(data, context) {
 
   const eventRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventIdStr}`);
   const voteRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventIdStr}/votes/${deviceIdStr}`);
+  const profileBreakingRef = db.doc(`profiles/${uid}/breaking_votes/${eventIdStr}`);
 
   let debug = null;
   try {
@@ -578,6 +584,12 @@ async function runSubmitBreakingVote(data, context) {
       const eventSnap = await tx.get(eventRef);
       if (!eventSnap.exists) {
         throw new functions.https.HttpsError("not-found", "Event not found");
+      }
+      const profileBreakingSnap = await tx.get(profileBreakingRef);
+      if (profileBreakingSnap.exists) {
+        throw new functions.https.HttpsError("failed-precondition", "Already voted on this topic", {
+          code: "breaking-already-voted",
+        });
       }
       const voteSnap = await tx.get(voteRef);
       if (voteSnap.exists) {
@@ -592,6 +604,12 @@ async function runSubmitBreakingVote(data, context) {
         optionsLen > 0 ? Math.max(0, Math.min(Math.floor(Number(option)), optionsLen - 1)) : 0;
       tx.set(voteRef, {
         optionIndex: optionClamped,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(profileBreakingRef, {
+        optionIndex: optionClamped,
+        deviceId: deviceIdStr,
+        eventId: eventIdStr,
         createdAt: FieldValue.serverTimestamp(),
       });
       // 突發戰區 Vote-to-Reveal：同一 Transaction 內更新活動文件的票數統計，供前端投票後顯示結果條

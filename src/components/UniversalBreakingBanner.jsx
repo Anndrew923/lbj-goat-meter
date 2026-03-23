@@ -13,6 +13,7 @@ import { motion } from 'framer-motion'
 import { Zap } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
 import { useBreakingVote } from '../context/BreakingVoteContext'
+import { useAuth } from '../context/AuthContext'
 import { PROJECT_APP_ID } from '../lib/constants'
 import { getLocalizedText } from '../lib/localeUtils'
 import { getDeviceId } from '../utils/deviceId'
@@ -27,6 +28,8 @@ const ASPECT_RATIO = 16 / 9
 
 export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
+  const { currentUser } = useAuth()
+  const isLoggedIn = !!currentUser
   const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
@@ -174,6 +177,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
                     voteCounts={ev.vote_counts ?? {}}
                     totalVotes={ev.total_votes ?? 0}
                     optimisticOptionIndex={optimisticOptionIndex}
+                    isLoggedIn={isLoggedIn}
                   />
                 ) : (
                   <>

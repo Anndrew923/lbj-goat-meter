@@ -122,6 +122,7 @@
   "breakingAdNotice": "本次掃描需消耗情報能源。觀看一段短片以獲取投票授權。",
   "breakingFirstVoteFreeHint": "🛡️ 今日首票：戰區授權免費發放",
   "breakingTeaser": "{{count}} 人已參與，投下立場以觀看實時戰報",
+  "breakingAnonymousResultSummary": "共 {{count}} 人參與",
   "arenaDeclaration": "王座審判：定義傳奇的最終立場。在此刻，你的選擇即是歷史。",
   "viewAllBreakingHistory": "查看所有歷史話題",
   "breakingCommitmentMessage": "立場即將載入歷史檔案，一旦存證將無法更改。確認投下這一票？",

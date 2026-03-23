@@ -24,7 +24,7 @@ import {
 } from "firebase/firestore";
 import { db, ensureFreshAppCheckToken } from "../lib/firebase";
 import i18n from "../i18n/config";
-import { GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS } from "../lib/constants";
+import { GLOBAL_EVENTS_COLLECTION, GLOBAL_SUMMARY_DOC_ID, STANCE_KEYS } from "../lib/constants";
 import { computeGlobalDeductions, computeWarzoneDeltas } from "./VoteService";
 
 const STAR_ID = "lbj";
@@ -52,7 +52,8 @@ export async function saveFCMToken(uid, token) {
  * 杜絕「刪帳號未扣票」導致用戶可循環開帳號灌票。扣票失敗則整筆 Transaction 回滾，帳號不刪。
  *
  * 禁止在 Transaction 內使用 query()。正確做法：Transaction 外 getDocs(query) 取得 docId 列表，
- * Transaction 內：階段一所有讀取（profile、global_summary、各 vote 文件）→ 階段二扣票寫入 → 刪 votes → 刪 profile。
+ * Transaction 內：階段一所有讀取（profile、global_summary、各 vote、各 global_events 突發話題）→
+ * 階段二扣票寫入 → 突發戰區扣票與存證刪除 → 刪 votes → 刪 profile。
  *
  * @param {string} uid - 要刪除的用戶 UID
  * @returns {Promise<{ deletedProfile: boolean, deletedVoteIds: string[] }>}
@@ -76,6 +77,24 @@ export async function deleteAccountData(uid) {
     .map((d) => d?.id)
     .filter((id) => typeof id === "string" && id.length > 0);
 
+  const breakingVotesQuery = query(collection(db, "profiles", uid, "breaking_votes"), limit(500));
+  const breakingSnap = await getDocs(breakingVotesQuery);
+  const breakingEntries = (breakingSnap?.docs ?? []).map((d) => {
+    const data = d.data() || {};
+    const rawOpt = data.optionIndex;
+    const optionIndex =
+      typeof rawOpt === "number" && Number.isFinite(rawOpt)
+        ? Math.floor(rawOpt)
+        : typeof rawOpt === "string"
+          ? parseInt(rawOpt, 10)
+          : 0;
+    return {
+      eventId: d.id,
+      optionIndex: Number.isFinite(optionIndex) ? optionIndex : 0,
+      deviceId: typeof data.deviceId === "string" ? data.deviceId.trim() : "",
+    };
+  });
+
   const deletedVoteIds = [];
 
   try {
@@ -91,6 +110,13 @@ export async function deleteAccountData(uid) {
         if (voteSnapInner?.exists?.()) {
           voteDataList.push({ id, data: voteSnapInner.data() });
         }
+      }
+
+      const breakingEventReads = [];
+      for (const b of breakingEntries) {
+        const eventRef = doc(db, GLOBAL_EVENTS_COLLECTION, b.eventId);
+        const evSnap = await tx.get(eventRef);
+        breakingEventReads.push({ ...b, eventSnap: evSnap });
       }
 
       // ========== 階段二：扣票（使用 VoteService 內核，與 revokeVote 減法一致） ==========
@@ -109,6 +135,32 @@ export async function deleteAccountData(uid) {
           const deduction = computeGlobalDeductions(globalData, voteDataList);
           tx.set(globalSummaryRef, { ...deduction, updatedAt: serverTimestamp() }, { merge: true });
         }
+      }
+
+      // ========== 階段二b：突發戰區 global_events 扣票與子集合清理（與 submitBreakingVote 寫入對稱） ==========
+      for (const row of breakingEventReads) {
+        const { eventId, optionIndex, deviceId, eventSnap } = row;
+        const breakingProofRef = doc(db, "profiles", uid, "breaking_votes", eventId);
+        if (eventSnap?.exists?.()) {
+          const evData = eventSnap.data() || {};
+          const optionsArr = Array.isArray(evData.options) ? evData.options : [];
+          const optionsLen = optionsArr.length;
+          const rawOi = Number(optionIndex);
+          const clampedOi =
+            optionsLen > 0 && Number.isFinite(rawOi)
+              ? Math.max(0, Math.min(Math.floor(rawOi), optionsLen - 1))
+              : 0;
+          const voteCountPath = `vote_counts.${clampedOi}`;
+          tx.update(doc(db, GLOBAL_EVENTS_COLLECTION, eventId), {
+            total_votes: increment(-1),
+            [voteCountPath]: increment(-1),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        if (deviceId) {
+          tx.delete(doc(db, GLOBAL_EVENTS_COLLECTION, eventId, "votes", deviceId));
+        }
+        tx.delete(breakingProofRef);
       }
 
       // ========== 階段三：刪除 device_locks（與 vote 連動解鎖）、再刪除 votes 文件 ==========
@@ -133,6 +185,9 @@ export async function deleteAccountData(uid) {
       const list = [
         `profiles/${uid} 已刪除`,
         ...deletedVoteIds.map((id) => `votes/${id}`),
+        ...(breakingEntries.length > 0
+          ? [`global_events 突發票已扣減並清除 ${breakingEntries.length} 筆存證`]
+          : []),
         ...(deletedVoteIds.length > 0 ? ["warzoneStats/global_summary 已同步扣票"] : []),
       ];
       console.log("[AccountService] 帳號刪除 — 數據清理清單", list);

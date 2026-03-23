@@ -25,6 +25,12 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(userId);
     }
 
+    // 1b. 突發戰區投票存證（僅 Cloud Functions 寫入；前端只讀同步 votedEventIds）
+    match /profiles/{userId}/breaking_votes/{eventId} {
+      allow read: if isOwner(userId);
+      allow create, update, delete: if false;
+    }
+
     // 2. 投票記錄：改由 Cloud Functions Admin SDK 寫入，前端一律 read-only
     match /votes/{voteId} {
       allow read: if isAuthenticated();
