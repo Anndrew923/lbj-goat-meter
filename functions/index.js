@@ -15,6 +15,7 @@ import { signAdRewardToken } from "./utils/adRewardSigning.js";
 import { computeGlobalDeductions } from "./utils/voteAggregation.js";
 import { verifyGoldenKey } from "./utils/verifyGoldenKey.js";
 import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionIndex.js";
+import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventLocalizedText.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -429,6 +430,159 @@ async function runResetPosition(data, context) {
   return { ok: true, deletedVoteId };
 }
 
+/**
+ * deleteUserAccount — 帳號刪除資料清理（後端全交易執行）。
+ *
+ * 設計意圖：
+ * - 由 Admin SDK 在單一 Transaction 內完成扣票與刪除，避免前端權限不足造成 Permission Denied。
+ * - 確保「統計遞減」與「文件刪除」同生共死，不會留下不一致的中間狀態。
+ */
+export const deleteUserAccount = functions.https.onCall(async (_data, context) => {
+  requireAuth(context);
+  const uid = context.auth.uid;
+
+  const profileRef = db.doc(`profiles/${uid}`);
+  const globalSummaryRef = db.doc(`warzoneStats/${GLOBAL_SUMMARY_DOC_ID}`);
+  const userVotesQuery = db
+    .collection("votes")
+    .where("userId", "==", uid)
+    .where("starId", "==", STAR_ID)
+    .limit(500);
+  const profileBreakingVotesQuery = db.collection(`profiles/${uid}/breaking_votes`).limit(500);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const profileSnap = await tx.get(profileRef);
+      const globalSnap = await tx.get(globalSummaryRef);
+      const userVotesSnap = await tx.get(userVotesQuery);
+      const profileBreakingVotesSnap = await tx.get(profileBreakingVotesQuery);
+
+      // 防禦性門檻：避免 limit 命中時只刪掉前 500 筆造成「部分成功」。
+      // 若資料量超出可安全交易範圍，直接中止並回報，維持資料一致性優先。
+      if (userVotesSnap.size >= 500) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Too many votes to delete safely in a single transaction",
+          { code: "delete-account-too-many-votes", count: userVotesSnap.size }
+        );
+      }
+      if (profileBreakingVotesSnap.size >= 500) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Too many breaking votes to delete safely in a single transaction",
+          { code: "delete-account-too-many-breaking-votes", count: profileBreakingVotesSnap.size }
+        );
+      }
+
+      const userVoteRows = userVotesSnap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+
+      const breakingRows = [];
+      for (const proofDoc of profileBreakingVotesSnap.docs) {
+        const proofData = proofDoc.data() || {};
+        const eventId = proofDoc.id;
+        const eventRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventId}`);
+        const eventSnap = await tx.get(eventRef);
+        breakingRows.push({
+          eventId,
+          proofRef: proofDoc.ref,
+          proofData,
+          eventRef,
+          eventSnap,
+        });
+      }
+
+      // 扣回戰區票數（地方戰區）
+      const warzoneDeltas = new Map();
+      for (const row of userVoteRows) {
+        const vote = row.data || {};
+        if (vote.hadWarzoneStats !== true) continue;
+        const status = typeof vote.status === "string" ? vote.status.trim() : "";
+        const warzoneId = String(vote.warzoneId || vote.voterTeam || "").trim();
+        if (!status || !warzoneId) continue;
+        if (!warzoneDeltas.has(warzoneId)) {
+          warzoneDeltas.set(warzoneId, { totalVotes: 0, stance: {} });
+        }
+        const bucket = warzoneDeltas.get(warzoneId);
+        bucket.totalVotes -= 1;
+        bucket.stance[status] = (bucket.stance[status] || 0) - 1;
+      }
+      for (const [warzoneId, delta] of warzoneDeltas.entries()) {
+        const payload = {
+          totalVotes: FieldValue.increment(delta.totalVotes),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        Object.entries(delta.stance).forEach(([status, count]) => {
+          payload[status] = FieldValue.increment(count);
+        });
+        tx.set(db.doc(`warzoneStats/${warzoneId}`), payload, { merge: true });
+      }
+
+      // 扣回 global_summary（全域戰區）
+      if (globalSnap.exists && userVoteRows.length > 0) {
+        const globalData = globalSnap.data() || {};
+        const deduction = computeGlobalDeductions(globalData, userVoteRows);
+        tx.set(
+          globalSummaryRef,
+          {
+            ...deduction,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+
+      // 扣回突發戰區票數，並刪除 global_events/{eventId}/votes/{deviceId} + profile 存證
+      for (const row of breakingRows) {
+        const { eventId, proofData, eventRef, eventSnap, proofRef } = row;
+        if (eventSnap.exists) {
+          const eventData = eventSnap.data() || {};
+          const options = Array.isArray(eventData.options) ? eventData.options : [];
+          const optionsLen = options.length;
+          const rawOptionIndex = Number(proofData.optionIndex);
+          const clampedOptionIndex =
+            optionsLen > 0 && Number.isFinite(rawOptionIndex)
+              ? Math.max(0, Math.min(Math.floor(rawOptionIndex), optionsLen - 1))
+              : 0;
+          const voteCountPath = `vote_counts.${clampedOptionIndex}`;
+          tx.update(eventRef, {
+            total_votes: FieldValue.increment(-1),
+            [voteCountPath]: FieldValue.increment(-1),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+
+        const deviceId = typeof proofData.deviceId === "string" ? proofData.deviceId.trim() : "";
+        if (deviceId) {
+          tx.delete(db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventId}/votes/${deviceId}`));
+        }
+        tx.delete(proofRef);
+      }
+
+      // 刪除主戰區 votes 與 device_locks
+      for (const row of userVoteRows) {
+        const vote = row.data || {};
+        const deviceId = typeof vote.deviceId === "string" ? vote.deviceId.trim() : "";
+        if (deviceId) {
+          tx.delete(db.doc(`device_locks/${deviceId}`));
+        }
+        tx.delete(db.doc(`votes/${row.id}`));
+      }
+
+      if (profileSnap.exists) {
+        tx.delete(profileRef);
+      }
+    });
+
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    console.error("[deleteUserAccount] Unexpected error:", err?.message);
+    throw new functions.https.HttpsError("internal", "Delete account failed", {
+      code: "delete-account-internal",
+    });
+  }
+});
+
 const FCM_TOPIC_WARZONE = "global_warzone";
 
 /**
@@ -498,6 +652,118 @@ export const onWarzoneLeaderChange = functions.firestore
   });
 
 const GLOBAL_EVENTS_COLLECTION = "global_events";
+
+const BREAKING_PUSH_TITLE_FALLBACK = "🚨 突發戰區：新話題上線！";
+const BREAKING_PUSH_BODY_FALLBACK = "歷史定位由你決定，立即參與即時投票。";
+
+/**
+ * 突發戰區「已發佈」推播：與 onCreate / 從草稿發佈（onUpdate）共用。
+ * 成功發送後寫入 pushSent，避免同一議題重複推播（含觸發器重試與 is_active 來回切換）。
+ *
+ * FCM 與 Firestore update 分開 try：若推播已成功但 update 失敗，不可 rethrow 整段（否則觸發器重試會重複推播）；
+ * 此時僅記錄，必要時依 log 手動補寫 pushSent。
+ *
+ * @param {FirebaseFirestore.DocumentReference} eventRef
+ * @param {string} eventId
+ * @param {Record<string, unknown>} eventData
+ * @param {string} logLabel
+ */
+async function sendBreakingPublishedTopicPush(eventRef, eventId, eventData, logLabel) {
+  if (eventData.pushSent === true) return;
+
+  const title = resolveBreakingEventLocalizedText(eventData.title, BREAKING_PUSH_TITLE_FALLBACK);
+  const body = resolveBreakingEventLocalizedText(eventData.description, BREAKING_PUSH_BODY_FALLBACK);
+
+  const message = {
+    topic: FCM_TOPIC_WARZONE,
+    notification: {
+      title,
+      body,
+    },
+    data: {
+      type: "BREAKING_VOTE",
+      eventId: String(eventId),
+    },
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "breaking_warzone_channel",
+        clickAction: "TOP_LEVEL_SCENE",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          category: "BREAKING_VOTE",
+          sound: "default",
+        },
+      },
+    },
+  };
+
+  try {
+    await admin.messaging().send(message);
+  } catch (error) {
+    functions.logger.error(`[${logLabel}] FCM send failed`, {
+      eventId,
+      message: error?.message,
+    });
+    return;
+  }
+
+  try {
+    await eventRef.update({
+      pushSent: true,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    functions.logger.info(`[${logLabel}] push success`, { eventId });
+  } catch (error) {
+    functions.logger.error(`[${logLabel}] pushSent persist failed (FCM already sent)`, {
+      eventId,
+      message: error?.message,
+    });
+  }
+}
+
+/**
+ * onNewBreakingEvent — 突發戰區發佈通知：新議題建立時推播至 global_warzone topic（與 onWarzoneLeaderChange 主投票通知並存）。
+ *
+ * 設計意圖：data 帶 eventId（字串）供客戶端點擊後深連；略過草稿 status、未啟用 is_active、或空文件，避免洗版。
+ * FCM data payload 值須全為字串；notification title/body 必須為字串（後台欄位為本地化物件時需先解析）。
+ */
+export const onNewBreakingEvent = functions.firestore
+  .document(`${GLOBAL_EVENTS_COLLECTION}/{eventId}`)
+  .onCreate(async (snapshot, context) => {
+    const eventData = snapshot.data();
+    if (!eventData) return;
+    if (eventData.status === "draft") return;
+    // 與 UniversalAdmin 一致：is_active === false 時不推播（略過未定義以相容舊文件）
+    if (eventData.is_active === false) return;
+    if (eventData.pushSent === true) return;
+
+    const eventId = context.params.eventId;
+    await sendBreakingPublishedTopicPush(snapshot.ref, eventId, eventData, "onNewBreakingEvent");
+  });
+
+/**
+ * onBreakingEventUpdate — 草稿發佈通知：監聽 global_events/{eventId} onUpdate。
+ *
+ * 觸發：before.is_active === false && after.is_active === true。
+ * 門禁：after.pushSent === true 或 after.status === 'draft' 不送（與 onCreate 共用 sendBreakingPublishedTopicPush + pushSent）。
+ * 寫入 pushSent 後會再觸發 onUpdate，但因不符合 false→true，不會迴圈推播。
+ */
+export const onBreakingEventUpdate = functions.firestore
+  .document(`${GLOBAL_EVENTS_COLLECTION}/{eventId}`)
+  .onUpdate(async (change, context) => {
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+
+    if (!(before.is_active === false && after.is_active === true)) return;
+    if (after.pushSent === true || after.status === "draft") return;
+
+    const eventId = context.params.eventId;
+    await sendBreakingPublishedTopicPush(change.after.ref, eventId, after, "onBreakingEventUpdate");
+  });
 
 /**
  * submitBreakingVote — 突發戰區投票：一話題一設備一票，寫入 global_events/{eventId}/votes/{deviceId}。

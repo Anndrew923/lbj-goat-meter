@@ -7,6 +7,17 @@ export default [
   // android/app 建置產物與 assets 為 Capacitor 複製的 bundle，非原始碼，避免對 minified 報 react-hooks 誤判
   { ignores: ['dist', 'node_modules', 'android/app/src/main/assets', 'android/app/build'] },
   {
+    files: ['functions/test/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+      },
+    },
+  },
+  {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2022,
