@@ -50,6 +50,7 @@ export default function App() {
   const navigate = useNavigate()
   const [toastMessage, setToastMessage] = useState('')
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
+  const [isAppReady, setIsAppReady] = useState(false)
   const lastBackPressRef = useRef(0)
   const pathnameRef = useRef(location.pathname)
   const exitModalOpenRef = useRef(isExitModalOpen)
@@ -60,6 +61,10 @@ export default function App() {
 
   useEffect(() => {
     initializeAdMob().catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setIsAppReady(true)
   }, [])
 
   const resolveWarzoneIdFromUrl = useCallback((rawUrl) => {
@@ -91,6 +96,14 @@ export default function App() {
     const handleUrl = (url) => {
       const warzoneId = resolveWarzoneIdFromUrl(url)
       if (!warzoneId) return
+      // 冷啟動時 Router 尚未穩定可導頁，先暫存深層連結，待 App ready 後再消化。
+      if (!isAppReady) {
+        pendingWarzoneRef.current = warzoneId
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem(DEEP_LINK_PENDING_KEY, warzoneId)
+        }
+        return
+      }
       if (currentUser?.uid) {
         routeToWarzone(warzoneId)
         return
@@ -109,11 +122,11 @@ export default function App() {
     return () => {
       listenerPromise.then((listener) => listener.remove())
     }
-  }, [currentUser?.uid, resolveWarzoneIdFromUrl, routeToWarzone])
+  }, [currentUser?.uid, isAppReady, resolveWarzoneIdFromUrl, routeToWarzone])
 
   // 使用者登入後消化延遲深層連結，確保廣告點擊後可「所點即所得」進入指定戰區。
   useEffect(() => {
-    if (!currentUser?.uid) return
+    if (!isAppReady || !currentUser?.uid) return
     const memoryPending = pendingWarzoneRef.current
     const storagePending =
       typeof window !== 'undefined'
@@ -126,7 +139,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem(DEEP_LINK_PENDING_KEY)
     }
-  }, [currentUser?.uid, routeToWarzone])
+  }, [currentUser?.uid, isAppReady, routeToWarzone])
 
   // 戰況即時快報：僅在原生平台、已登入且 profile 已存在時請求推播權限並註冊（避免 updateDoc 時 profile 尚未建立）
   useEffect(() => {

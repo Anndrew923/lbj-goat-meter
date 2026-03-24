@@ -46,6 +46,7 @@ export default function VotePage() {
   } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const prevStableUidRef = useRef(currentUser?.uid);
   const [activeWarzone, setActiveWarzone] = useState(
     profile?.voterTeam ?? DEFAULT_WARZONE_ID,
   );
@@ -99,11 +100,17 @@ export default function VotePage() {
     };
   }, [remainingPoints]);
 
-  // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
+  // 帳號定錨：僅在「真換帳號」時重置狀態鎖，忽略 APK rehydrate 的 uid 暫時抖動。
   useEffect(() => {
-    setProfileSetupDismissed(false);
-    setProfileLoadingSettled(false);
-    setHasHandledDismissal(false);
+    const nextUid = currentUser?.uid;
+    const prevUid = prevStableUidRef.current;
+
+    if (nextUid && nextUid !== prevUid) {
+      setProfileSetupDismissed(false);
+      setProfileLoadingSettled(false);
+      setHasHandledDismissal(false);
+      prevStableUidRef.current = nextUid;
+    }
   }, [currentUser?.uid]);
 
   // profileLoading 只要在該 session 首次完成，就鎖定為已穩定，避免後續抖動影響 Modal 顯示判斷。
