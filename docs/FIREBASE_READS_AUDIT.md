@@ -12,7 +12,7 @@
 |------|------|----------|------|
 | **AuthContext.jsx** | `onSnapshot(profiles/{uid})` 單一 Document | ✅ `return () => { profileUnsubscribeRef.current?.(); unsubscribe(); }` | 登出 / uid 變更時會清理；冷卻計時器一併 clearTimeout |
 | **WarzoneDataContext.jsx** | `onSnapshot(warzoneStats/global_summary)` 單一 Document | ✅ `return () => { unsubRef.current?.(); unsubRef.current = null; }` | 投票頁唯一聚合監聽，卸載時徹底 unsubscribe |
-| **useSentimentData.js** | `getDocs(query(votes, ...))` + useBarometerQuery | ✅ 無 Listener；useEffect return 內 `cancelled = true` + clearTimeout(debounceTimerRef) | 單次查詢 + Session 快取，非 onSnapshot |
+| **useSentimentData.js** | `httpsCallable('getFilteredSentimentSummary')` + useBarometerQuery | ✅ 無 Listener；useEffect return 內 `cancelled = true` + clearTimeout(debounceTimerRef) | 有篩選時改走 Callable（Admin 讀 votes），Session 快取 |
 | **LiveTicker.jsx** | 無直接 Firestore 呼叫 | — | 數據來自 **WarzoneDataContext**（recentVotes），不另開 Listener |
 | **BattleCardContainer.jsx** | `getDoc(warzoneStats/{id})` 單次讀取 | ✅ `return () => { cancelled = true }` | 已改為 getDoc + 60 秒記憶體快取，無 onSnapshot |
 

@@ -4,11 +4,11 @@
  * 設計意圖（Cost Efficiency First）：
  * - 將「主要 votes 查詢」集中於此 Context，由單一 Provider 發起一次 useSentimentData。
  * - SentimentStats、AnalyticsDashboard、PulseMap 一律從本 Context 消費，禁止各自呼叫 useSentimentData。
- * - 當三組件同時掛載時，Firebase 僅收到 1 次 votes 相關查詢請求（getDocs + session cache），
+ * - 當三組件同時掛載時，僅 1 次 getFilteredSentimentSummary Callable（+ session cache），
  *   避免重複讀取與多條「Firebase Fetching」log。
  *
  * 與 useSentimentData 的關係：
- * - useSentimentData 內部為 getDocs + useBarometerQuery（debounce + session cache），非 onSnapshot。
+ * - useSentimentData 內部為 Callable + useBarometerQuery（debounce + session cache），非 onSnapshot。
  * - 本 Context 僅在內部呼叫一次 useSentimentData(filters, options)，並將 summary / loading / error 分發給子組件。
  */
 import { createContext, useContext, useMemo } from "react";

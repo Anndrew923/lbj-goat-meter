@@ -4,6 +4,15 @@
       "collectionGroup": "votes",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "warzoneId", "order": "ASCENDING" },
+        { "fieldPath": "fingerprintHash", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "votes",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "starId", "order": "ASCENDING" },
         { "fieldPath": "voterTeam", "order": "ASCENDING" },
         { "fieldPath": "ageGroup", "order": "ASCENDING" },

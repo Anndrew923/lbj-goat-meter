@@ -6,8 +6,8 @@
  * - 僅負責與 Functions 溝通與 DEV 稽查 Log，不做 i18n 映射（交由上層處理）。
  */
 
-import { getFunctions, httpsCallable } from "firebase/functions";
-import app from "../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import app, { getFirebaseFunctions } from "../lib/firebase";
 import { createGoldenKeySignature, GOLDEN_KEY_ACTIONS } from "./GoldenKeyService";
 
 function getFunctionsInstance() {
@@ -16,7 +16,13 @@ function getFunctionsInstance() {
       "[ResetPositionService] Firebase app is not initialized. Check environment variables (.env) before calling resetPosition."
     );
   }
-  return getFunctions(app);
+  const fns = getFirebaseFunctions();
+  if (!fns) {
+    throw new Error(
+      "[ResetPositionService] Firebase Functions 未初始化。請設定 VITE_FIREBASE_FUNCTIONS_REGION 與後端一致。"
+    );
+  }
+  return fns;
 }
 
 /**

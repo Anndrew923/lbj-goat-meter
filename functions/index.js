@@ -4,9 +4,13 @@
  * 設計意圖：
  * - 棄用 client-side App Check 寫入，所有對 votes / device_locks / warzoneStats 的修改一律透過 Admin SDK Transaction。
  * - 在最外層統一處理 reCAPTCHA 與廣告獎勵驗證，將 Firestore Security Rules 收緊為 read-only。
+ * - Callable 已遷移至 Cloud Functions v2（記憶體 / 逾時 / minInstances 由 setGlobalOptions 統一設定）。
  */
 
 import * as functions from "firebase-functions";
+import { defineSecret } from "firebase-functions/params";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { setGlobalOptions } from "firebase-functions/v2/options";
 import admin from "firebase-admin";
 
 import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
@@ -16,10 +20,25 @@ import { computeGlobalDeductions } from "./utils/voteAggregation.js";
 import { verifyGoldenKey } from "./utils/verifyGoldenKey.js";
 import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionIndex.js";
 import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventLocalizedText.js";
+import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
+import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
+
+setGlobalOptions({
+  region: process.env.FUNCTIONS_REGION || "us-central1",
+  memory: "512MiB",
+  timeoutSeconds: 60,
+  minInstances: 0,
+});
+
+/** Gen2 Callable 並發：單一實例可同時處理多個請求，降低尖峰排隊（上限依配額與記憶體調整） */
+const CALLABLE_HTTP_OPTS = { concurrency: 64 };
+
+/** 與 Secret Manager 鍵名一致；submitVote 綁定後執行期由 Firebase 掛載至 secret.value() */
+const goatFingerprintPepperSecret = defineSecret("GOAT_FINGERPRINT_PEPPER");
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -40,51 +59,85 @@ function shouldBypassHardSecurity(context) {
 
 function requireAuth(context) {
   if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Authentication required", {
+    throw new HttpsError("unauthenticated", "Authentication required", {
       code: "auth-required",
     });
   }
 }
 
 /**
+ * 解析指紋用 pepper：優先 Gen2 secret.value()，失敗則 GOAT_FINGERPRINT_PEPPER（Emulator／本機）。
+ * Cloud Run 上若兩者皆空會略過 24h 查重，故在 K_SERVICE 存在時寫 warn 便於營運發現未掛 Secret。
+ */
+function resolveFingerprintPepper(secret) {
+  try {
+    const v = secret.value();
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  } catch {
+    // Emulator 或未解析 secret 時改走環境變數
+  }
+  const fromEnv = process.env.GOAT_FINGERPRINT_PEPPER?.trim();
+  if (fromEnv) return fromEnv;
+  if (process.env.K_SERVICE) {
+    functions.logger.warn(
+      "[submitVote] GOAT_FINGERPRINT_PEPPER 未解析：24h 裝置查重已停用，請確認 Secret 已綁定並部署"
+    );
+  }
+  return "";
+}
+
+/**
  * submitVote — 後端唯一入口：提交一票。
  *
  * 資料一致性與避免 Race Condition 的設計說明：
- * - 使用 Firestore Transaction，同時讀取 profile / device_locks / warzoneStats / global_summary 並一次性寫入。
+ * - 使用 Firestore Transaction：讀取 profile、device_locks、global_summary、選擇性指紋查重；寫入 vote、device_lock、warzoneStats（increment）、global_summary、profile。
  * - 先檢查 profiles.{uid}.hasVoted 與 device_locks.{deviceId}.active，避免同一帳號或同一設備重複投票。
  * - device_locks 採「一設備一票」策略：若鎖存在且 active=true，整個 Transaction 立即失敗。
  * - warzoneStats 與 global_summary 的加總全部落在同一個 Transaction 內完成，保證「統計 + 鎖定狀態」要嘛一起成功、要嘛一起回滾。
  */
-export const submitVote = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+export const submitVote = onCall(
+  { ...CALLABLE_HTTP_OPTS, secrets: [goatFingerprintPepperSecret] },
+  async (request) => {
+    requireAuth(request);
 
-  try {
-    return await runSubmitVote(data, context);
-  } catch (err) {
-    if (err instanceof functions.https.HttpsError) throw err;
-    console.error("[submitVote] Unexpected error:", err?.message);
-    throw new functions.https.HttpsError("internal", "Vote failed", { code: "vote-internal" });
+    const fingerprintPepper = resolveFingerprintPepper(goatFingerprintPepperSecret);
+
+    try {
+      return await runSubmitVote(request.data, {
+        auth: request.auth,
+        rawRequest: request.rawRequest,
+        fingerprintPepper,
+      });
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      console.error("[submitVote] Unexpected error:", err?.message);
+      throw new HttpsError("internal", "Vote failed", { code: "vote-internal" });
+    }
   }
-});
+);
 
+/**
+ * @param {unknown} data - Callable payload
+ * @param {{ auth: { uid: string }; rawRequest?: unknown; fingerprintPepper?: string }} context
+ */
 async function runSubmitVote(data, context) {
   const { voteData, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const uid = context.auth.uid;
 
   if (!voteData || typeof voteData !== "object") {
-    throw new functions.https.HttpsError("invalid-argument", "voteData is required");
+    throw new HttpsError("invalid-argument", "voteData is required");
   }
   const { selectedStance, selectedReasons, deviceId } = voteData;
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
 
   if (!deviceIdStr) {
-    throw new functions.https.HttpsError("invalid-argument", "deviceId is required");
+    throw new HttpsError("invalid-argument", "deviceId is required");
   }
   if (typeof selectedStance !== "string" || !selectedStance) {
-    throw new functions.https.HttpsError("invalid-argument", "selectedStance is required");
+    throw new HttpsError("invalid-argument", "selectedStance is required");
   }
   if (!Array.isArray(selectedReasons)) {
-    throw new functions.https.HttpsError("invalid-argument", "selectedReasons must be an array");
+    throw new HttpsError("invalid-argument", "selectedReasons must be an array");
   }
 
   // Golden Key：驗證前端簽章，避免未經授權腳本濫發請求。
@@ -105,7 +158,7 @@ async function runSubmitVote(data, context) {
   } else {
     const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
     if (!recaptchaResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA verification failed", {
+      throw new HttpsError("failed-precondition", "reCAPTCHA verification failed", {
         code: "recaptcha-verify-failed",
         recaptchaScore: recaptchaResult.score,
         recaptchaError: recaptchaResult.raw?.error ?? null,
@@ -130,25 +183,46 @@ async function runSubmitVote(data, context) {
   await db.runTransaction(async (tx) => {
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap.exists) {
-      throw new functions.https.HttpsError("failed-precondition", "Profile not found");
+      throw new HttpsError("failed-precondition", "Profile not found");
     }
     const profile = profileSnap.data() || {};
     if (profile.hasVoted === true) {
-      throw new functions.https.HttpsError("failed-precondition", "Already voted");
+      throw new HttpsError("failed-precondition", "Already voted");
     }
 
     const warzoneId = String(profile.warzoneId ?? profile.voterTeam ?? "").trim();
     if (!warzoneId) {
-      throw new functions.https.HttpsError("failed-precondition", "warzone required");
+      throw new HttpsError("failed-precondition", "warzone required");
     }
 
     const deviceLockSnap = await tx.get(deviceLockRef);
     if (deviceLockSnap.exists) {
       const lockData = deviceLockSnap.data() || {};
       if (lockData.active === true) {
-        throw new functions.https.HttpsError("failed-precondition", "Device already voted", {
+        throw new HttpsError("failed-precondition", "Device already voted", {
           code: "device-already-voted",
         });
+      }
+    }
+
+    const fingerprintHash = hashDeviceFingerprintMaterial(deviceIdStr, context.fingerprintPepper);
+    if (fingerprintHash) {
+      const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+      const cutoff = Timestamp.fromMillis(cutoffMs);
+      const dupQ = db
+        .collection("votes")
+        .where("warzoneId", "==", warzoneId)
+        .where("fingerprintHash", "==", fingerprintHash)
+        .where("createdAt", ">=", cutoff)
+        .limit(8);
+      const dupSnap = await tx.get(dupQ);
+      for (const d of dupSnap.docs) {
+        const otherUid = d.data()?.userId;
+        if (otherUid && otherUid !== uid) {
+          throw new HttpsError("permission-denied", "Device recently voted in this warzone", {
+            code: "fingerprint-recent-vote",
+          });
+        }
       }
     }
 
@@ -191,6 +265,7 @@ async function runSubmitVote(data, context) {
       starId: STAR_ID,
       userId: uid,
       deviceId: deviceIdStr,
+      ...(fingerprintHash ? { fingerprintHash } : {}),
       status: selectedStance,
       reasons: selectedReasons,
       warzoneId,
@@ -296,15 +371,18 @@ async function runSubmitVote(data, context) {
  *   - warzoneStats 與 global_summary 依現有投票資料做「減法」，確保統計與實際票數對齊。
  * - 所有操作要嘛一起成功，要嘛全部回滾，不會出現「設備已解鎖但統計未扣回」的中間狀態。
  */
-export const resetPosition = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+export const resetPosition = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+  requireAuth(request);
 
   try {
-    return await runResetPosition(data, context);
+    return await runResetPosition(request.data, {
+      auth: request.auth,
+      rawRequest: request.rawRequest,
+    });
   } catch (err) {
-    if (err instanceof functions.https.HttpsError) throw err;
+    if (err instanceof HttpsError) throw err;
     console.error("[resetPosition] Unexpected error:", err?.message);
-    throw new functions.https.HttpsError("internal", "Reset failed", { code: "reset-internal" });
+    throw new HttpsError("internal", "Reset failed", { code: "reset-internal" });
   }
 });
 
@@ -339,14 +417,14 @@ async function runResetPosition(data, context) {
     // 重置立場不看 reCAPTCHA 分數：僅以廣告／origin 為門檻；即便被繞過也只是撤一票，不影響整體數據可信度
     const adResult = await verifyAdRewardToken(adRewardToken);
     if (!adResult.success) {
-      throw new functions.https.HttpsError("failed-precondition", "Ad reward not verified", {
+      throw new HttpsError("failed-precondition", "Ad reward not verified", {
         code: "ad-not-watched",
       });
     }
     // 自簽 Token 必須為當前使用者簽發，防止 Token 被轉用
     const tokenUid = adResult.raw?.payload?.uid;
     if (typeof tokenUid === "string" && tokenUid !== uid) {
-      throw new functions.https.HttpsError("failed-precondition", "Ad reward token user mismatch", {
+      throw new HttpsError("failed-precondition", "Ad reward token user mismatch", {
         code: "ad-not-watched",
       });
     }
@@ -360,7 +438,7 @@ async function runResetPosition(data, context) {
   await db.runTransaction(async (tx) => {
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap.exists) {
-      throw new functions.https.HttpsError("failed-precondition", "Profile not found");
+      throw new HttpsError("failed-precondition", "Profile not found");
     }
     const profileData = profileSnap.data() || {};
     if (profileData.hasVoted !== true) {
@@ -378,6 +456,17 @@ async function runResetPosition(data, context) {
       const voteSnap = await tx.get(voteRef);
       voteData = voteSnap.exists ? voteSnap.data() : null;
       globalSnap = await tx.get(globalSummaryRef);
+    }
+
+    /** 必須於任何 write 前先讀取 warzone（Firestore Transaction 規則） */
+    let warzoneRead = null;
+    if (voteDocId && voteData && voteData.hadWarzoneStats === true) {
+      const wid = (voteData.warzoneId || voteData.voterTeam || "").trim();
+      const st = typeof voteData.status === "string" ? voteData.status.trim() : "";
+      if (wid && st) {
+        const wzRef = db.doc(`warzoneStats/${wid}`);
+        warzoneRead = { ref: wzRef, snap: await tx.get(wzRef), stance: st };
+      }
     }
 
     const updatePayload = {
@@ -398,18 +487,20 @@ async function runResetPosition(data, context) {
       deletedVoteId = voteDocId;
 
       const status = voteData.status;
-      if (voteData.hadWarzoneStats === true) {
-        const wid = (voteData.warzoneId || voteData.voterTeam || "").trim();
-        if (wid && status) {
-          tx.set(
-            db.doc(`warzoneStats/${wid}`),
-            {
-              totalVotes: FieldValue.increment(-1),
-              [status]: FieldValue.increment(-1),
-            },
-            { merge: true }
-          );
-        }
+      if (warzoneRead) {
+        const w = warzoneRead.snap.exists ? warzoneRead.snap.data() || {} : {};
+        const st = warzoneRead.stance;
+        const curTotal = typeof w.totalVotes === "number" ? w.totalVotes : 0;
+        const curStance = typeof w[st] === "number" ? w[st] : 0;
+        tx.set(
+          warzoneRead.ref,
+          {
+            totalVotes: Math.max(0, curTotal - 1),
+            [st]: Math.max(0, curStance - 1),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
       }
 
       if (globalSnap?.exists && status) {
@@ -437,9 +528,9 @@ async function runResetPosition(data, context) {
  * - 由 Admin SDK 在單一 Transaction 內完成扣票與刪除，避免前端權限不足造成 Permission Denied。
  * - 確保「統計遞減」與「文件刪除」同生共死，不會留下不一致的中間狀態。
  */
-export const deleteUserAccount = functions.https.onCall(async (_data, context) => {
-  requireAuth(context);
-  const uid = context.auth.uid;
+export const deleteUserAccount = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+  requireAuth(request);
+  const uid = request.auth.uid;
 
   const profileRef = db.doc(`profiles/${uid}`);
   const globalSummaryRef = db.doc(`warzoneStats/${GLOBAL_SUMMARY_DOC_ID}`);
@@ -460,14 +551,14 @@ export const deleteUserAccount = functions.https.onCall(async (_data, context) =
       // 防禦性門檻：避免 limit 命中時只刪掉前 500 筆造成「部分成功」。
       // 若資料量超出可安全交易範圍，直接中止並回報，維持資料一致性優先。
       if (userVotesSnap.size >= 500) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           "failed-precondition",
           "Too many votes to delete safely in a single transaction",
           { code: "delete-account-too-many-votes", count: userVotesSnap.size }
         );
       }
       if (profileBreakingVotesSnap.size >= 500) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           "failed-precondition",
           "Too many breaking votes to delete safely in a single transaction",
           { code: "delete-account-too-many-breaking-votes", count: profileBreakingVotesSnap.size }
@@ -506,15 +597,25 @@ export const deleteUserAccount = functions.https.onCall(async (_data, context) =
         bucket.totalVotes -= 1;
         bucket.stance[status] = (bucket.stance[status] || 0) - 1;
       }
+      const warzoneSnapById = new Map();
+      for (const warzoneId of warzoneDeltas.keys()) {
+        warzoneSnapById.set(warzoneId, await tx.get(db.doc(`warzoneStats/${warzoneId}`)));
+      }
       for (const [warzoneId, delta] of warzoneDeltas.entries()) {
+        const warzoneRef = db.doc(`warzoneStats/${warzoneId}`);
+        const wzSnap = warzoneSnapById.get(warzoneId);
+        const w = wzSnap?.exists ? wzSnap.data() || {} : {};
+        const curTotal = typeof w.totalVotes === "number" ? w.totalVotes : 0;
+        const newTotal = Math.max(0, curTotal + delta.totalVotes);
         const payload = {
-          totalVotes: FieldValue.increment(delta.totalVotes),
+          totalVotes: newTotal,
           updatedAt: FieldValue.serverTimestamp(),
         };
         Object.entries(delta.stance).forEach(([status, count]) => {
-          payload[status] = FieldValue.increment(count);
+          const cur = typeof w[status] === "number" ? w[status] : 0;
+          payload[status] = Math.max(0, cur + count);
         });
-        tx.set(db.doc(`warzoneStats/${warzoneId}`), payload, { merge: true });
+        tx.set(warzoneRef, payload, { merge: true });
       }
 
       // 扣回 global_summary（全域戰區）
@@ -575,9 +676,9 @@ export const deleteUserAccount = functions.https.onCall(async (_data, context) =
 
     return { ok: true };
   } catch (err) {
-    if (err instanceof functions.https.HttpsError) throw err;
+    if (err instanceof HttpsError) throw err;
     console.error("[deleteUserAccount] Unexpected error:", err?.message);
-    throw new functions.https.HttpsError("internal", "Delete account failed", {
+    throw new HttpsError("internal", "Delete account failed", {
       code: "delete-account-internal",
     });
   }
@@ -768,15 +869,18 @@ export const onBreakingEventUpdate = functions.firestore
 /**
  * submitBreakingVote — 突發戰區投票：一話題一設備一票，寫入 global_events/{eventId}/votes/{deviceId}。
  */
-export const submitBreakingVote = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+export const submitBreakingVote = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+  requireAuth(request);
 
   try {
-    return await runSubmitBreakingVote(data, context);
+    return await runSubmitBreakingVote(request.data, {
+      auth: request.auth,
+      rawRequest: request.rawRequest,
+    });
   } catch (err) {
-    if (err instanceof functions.https.HttpsError) throw err;
+    if (err instanceof HttpsError) throw err;
     console.error("[submitBreakingVote]", err?.message);
-    throw new functions.https.HttpsError("internal", "Breaking vote failed", {
+    throw new HttpsError("internal", "Breaking vote failed", {
       code: "breaking-vote-internal",
     });
   }
@@ -785,14 +889,14 @@ export const submitBreakingVote = functions.https.onCall(async (data, context) =
 async function runSubmitBreakingVote(data, context) {
   const uid = context.auth?.uid;
   if (!uid) {
-    throw new functions.https.HttpsError("unauthenticated", "Authentication required", { code: "auth-required" });
+    throw new HttpsError("unauthenticated", "Authentication required", { code: "auth-required" });
   }
 
   const { eventId, optionIndex, deviceId, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
   if (!eventIdStr || !deviceIdStr) {
-    throw new functions.https.HttpsError("invalid-argument", "eventId and deviceId required");
+    throw new HttpsError("invalid-argument", "eventId and deviceId required");
   }
   const option = normalizeBreakingOptionIndex(optionIndex);
 
@@ -818,7 +922,7 @@ async function runSubmitBreakingVote(data, context) {
         message: recaptchaErr?.message,
         uid: context.auth?.uid,
       });
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         "failed-precondition",
         "reCAPTCHA verification unavailable",
         { code: "recaptcha-config-error" }
@@ -827,7 +931,7 @@ async function runSubmitBreakingVote(data, context) {
     if (!recaptchaResult.success) {
       // recaptchaResult.score 可能為 null（例如 invalid-input-secret / invalid-input-response）。
       // 用 structure 化資訊把根因丟給前端/Log，避免一律被誤判為 low-score-robot。
-      throw new functions.https.HttpsError("failed-precondition", "reCAPTCHA verification failed", {
+      throw new HttpsError("failed-precondition", "reCAPTCHA verification failed", {
         code: "recaptcha-verify-failed",
         recaptchaScore: recaptchaResult.score,
         recaptchaError: recaptchaResult.raw?.error ?? null,
@@ -849,17 +953,17 @@ async function runSubmitBreakingVote(data, context) {
     await db.runTransaction(async (tx) => {
       const eventSnap = await tx.get(eventRef);
       if (!eventSnap.exists) {
-        throw new functions.https.HttpsError("not-found", "Event not found");
+        throw new HttpsError("not-found", "Event not found");
       }
       const profileBreakingSnap = await tx.get(profileBreakingRef);
       if (profileBreakingSnap.exists) {
-        throw new functions.https.HttpsError("failed-precondition", "Already voted on this topic", {
+        throw new HttpsError("failed-precondition", "Already voted on this topic", {
           code: "breaking-already-voted",
         });
       }
       const voteSnap = await tx.get(voteRef);
       if (voteSnap.exists) {
-        throw new functions.https.HttpsError("failed-precondition", "Already voted on this topic", {
+        throw new HttpsError("failed-precondition", "Already voted on this topic", {
           code: "breaking-already-voted",
         });
       }
@@ -914,7 +1018,7 @@ async function runSubmitBreakingVote(data, context) {
 
     return { ok: true, debug, total_votes: totalVotes, vote_counts: voteCounts };
   } catch (txnErr) {
-    if (txnErr instanceof functions.https.HttpsError) {
+    if (txnErr instanceof HttpsError) {
       throw txnErr;
     }
     functions.logger.error("[submitBreakingVote][transaction]", {
@@ -923,7 +1027,7 @@ async function runSubmitBreakingVote(data, context) {
       eventId: eventIdStr,
       deviceId: deviceIdStr,
     });
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "Breaking vote transaction failed",
       { code: "breaking-transaction-failed", detail: txnErr?.message }
@@ -937,22 +1041,78 @@ async function runSubmitBreakingVote(data, context) {
  * 設計意圖：當未使用 AD_REWARD_VERIFY_ENDPOINT 時，改由後端以 AD_REWARD_SIGNING_SECRET 簽發短期 Token，
  * 前端於「廣告觀看完成」後呼叫此函式取得 Token，再傳入 resetPosition。僅限已登入使用者，且 Token 5 分鐘有效。
  */
-export const issueAdRewardToken = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+export const issueAdRewardToken = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+  requireAuth(request);
 
-  const placement = typeof data?.placement === "string" ? data.placement.trim() : "reset_position";
+  const placement =
+    typeof request.data?.placement === "string" ? request.data.placement.trim() : "reset_position";
 
   try {
     const token = signAdRewardToken({
       placement,
-      uid: context.auth.uid,
+      uid: request.auth.uid,
     });
     return { token };
   } catch (err) {
     // 不將內部錯誤訊息（如 Secret 未設定）回傳給客戶端，避免資訊洩漏
     console.error("[issueAdRewardToken]", err?.message);
-    throw new functions.https.HttpsError("internal", "Failed to issue ad reward token", {
+    throw new HttpsError("internal", "Failed to issue ad reward token", {
       code: "ad-reward-issue-failed",
+    });
+  }
+});
+
+/**
+ * getFilteredSentimentSummary — 漏斗篩選後之情緒聚合（Admin 讀 votes，客戶端 Rules 已禁止掃描）。
+ * 與原 useSentimentData 查詢語意對齊：starId + 可選 team/ageGroup/gender/country/city。
+ */
+export const getFilteredSentimentSummary = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+  requireAuth(request);
+
+  const payload = request.data || {};
+  const starIdRaw = typeof payload.starId === "string" ? payload.starId.trim() : "";
+  const starId = starIdRaw || STAR_ID;
+
+  let pageSize = Number(payload.pageSize);
+  if (!Number.isFinite(pageSize) || pageSize < 1) pageSize = 200;
+  pageSize = Math.min(Math.floor(pageSize), 500);
+
+  const filters = payload.filters && typeof payload.filters === "object" ? payload.filters : {};
+  const fieldMap = {
+    team: "voterTeam",
+    ageGroup: "ageGroup",
+    gender: "gender",
+    country: "country",
+    city: "city",
+  };
+
+  let q = db.collection("votes").where("starId", "==", starId);
+  for (const [key, fieldName] of Object.entries(fieldMap)) {
+    const v = filters[key];
+    if (v != null && String(v).trim() !== "") {
+      q = q.where(fieldName, "==", String(v).trim());
+    }
+  }
+  q = q.limit(pageSize);
+
+  try {
+    const snap = await q.get();
+    const rows = snap.docs.map((d) => {
+      const row = d.data() || {};
+      return { id: d.id, ...row };
+    });
+    const summary = computeSentimentSummaryFromRows(rows);
+    return {
+      ok: true,
+      summary,
+      rows,
+      rowCount: rows.length,
+      truncated: snap.size >= pageSize,
+    };
+  } catch (err) {
+    console.error("[getFilteredSentimentSummary]", err?.message);
+    throw new HttpsError("internal", "Filtered sentiment query failed", {
+      code: "filtered-sentiment-internal",
     });
   }
 });

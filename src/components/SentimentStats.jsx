@@ -112,6 +112,14 @@ export default function SentimentStats({ filters = {} }) {
   const isLoading = hasFilters ? sentimentLoading : loading;
   const loadError = hasFilters ? sentimentError : error;
 
+  const loadErrorMessage = useMemo(() => {
+    if (!loadError) return null;
+    const msg = loadError?.message ?? "";
+    if (msg === "AUTH_REQUIRED") return t("sentimentError_authRequired");
+    if (msg === "FUNCTIONS_NOT_READY") return t("sentimentError_functionsNotReady");
+    return t("loadErrorTryAgain");
+  }, [loadError, t]);
+
   if (loading && !hasFilters) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
@@ -126,7 +134,7 @@ export default function SentimentStats({ filters = {} }) {
     return (
       <div className="rounded-xl border border-villain-purple/30 bg-gray-900/80 p-6">
         <p className="text-red-400" role="alert">
-          {t("loadErrorTryAgain")}
+          {loadErrorMessage ?? t("loadErrorTryAgain")}
         </p>
       </div>
     );

@@ -23,6 +23,10 @@
  * 潛在影響：多專案（Multi-tenancy）時需改為 getApp(name) 或工廠模式；缺必要變數時不初始化，
  *           由呼叫端依 isFirebaseReady 決定是否使用 Auth/Firestore。
  * 備註：Production Android 環境未來需切換或並行 PlayIntegrityProvider。
+ *
+ * Cloud Functions 區域：
+ * - 後端 v2 預設 FUNCTIONS_REGION（見 functions/index.js setGlobalOptions）。
+ * - 前端若部署區非 us-central1，請設定 VITE_FIREBASE_FUNCTIONS_REGION 與後端一致，否則 Callable 會 NOT_FOUND。
  */
 import { initializeApp } from 'firebase/app'
 import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
@@ -112,6 +116,8 @@ let auth = null
 let db = null
 let storage = null
 let googleProvider = null
+/** 與 getFunctions(app[, region]) 單例一致；供所有 httpsCallable 共用（含 Emulator 連線）。 */
+let firebaseFunctions = null
 /** App Check 是否已成功啟用；用於 UI 顯示「數據經實時驗證」等公信力標籤的防禦性邏輯。 */
 let appCheckEnabled = false
 /** App Check 實例：用於 Transaction 前強制刷新 Token，確保 100% 嚴謹模式通過規則。 */
@@ -153,11 +159,15 @@ if (config) {
     }
     googleProvider = new GoogleAuthProvider()
 
-    // 本地開發：可選使用 Functions Emulator 避免 localhost → Cloud 的 CORS 阻擋（突發戰區 submitBreakingVote 等）
-    if (typeof window !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
-      const functions = getFunctions(app)
-      connectFunctionsEmulator(functions, 'localhost', 5001)
-      console.log('[Firebase] Functions 使用本機 Emulator (localhost:5001)，避免 CORS')
+    if (typeof window !== 'undefined') {
+      const fnRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim()
+      firebaseFunctions = fnRegion ? getFunctions(app, fnRegion) : getFunctions(app)
+      if (import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
+        connectFunctionsEmulator(firebaseFunctions, 'localhost', 5001)
+        console.log('[Firebase] Functions Emulator localhost:5001（與後端 Callable 同單例）')
+      } else if (import.meta.env.DEV && fnRegion) {
+        console.log('[Firebase] Functions 區域:', fnRegion)
+      }
     }
   } catch (err) {
     if (import.meta.env.DEV) {
@@ -168,6 +178,11 @@ if (config) {
 
 /** 是否已成功初始化；未設定或初始化失敗時為 false，呼叫端應避免使用 auth/db */
 export const isFirebaseReady = Boolean(auth && db)
+
+/** 取得 Firebase Functions 單例（已套用 VITE_FIREBASE_FUNCTIONS_REGION 與可選 Emulator） */
+export function getFirebaseFunctions() {
+  return firebaseFunctions
+}
 
 /** 是否已啟用 App Check（獨立設備與正版應用驗證）；異常時 UI 可隱藏或灰化「數據經實時驗證」等標籤。 */
 export function hasValidAppCheck() {

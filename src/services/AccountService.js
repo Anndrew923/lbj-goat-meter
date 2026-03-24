@@ -10,8 +10,8 @@
  */
 
 import { arrayUnion, doc, updateDoc } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import app, { db } from "../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import app, { db, getFirebaseFunctions } from "../lib/firebase";
 
 /**
  * 儲存 FCM Token 至 profile，供後端「戰況即時快報」推播鎖定發送對象。
@@ -44,7 +44,8 @@ export async function saveFCMToken(uid, token) {
  */
 export async function deleteAccountData(uid) {
   if (!uid) throw new Error("uid is required");
-  const functions = getFunctions(app);
+  const functions = getFirebaseFunctions();
+  if (!functions) throw new Error("Firebase Functions not initialized");
   const deleteCallable = httpsCallable(functions, "deleteUserAccount");
   try {
     await deleteCallable();

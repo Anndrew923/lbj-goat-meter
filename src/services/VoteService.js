@@ -9,8 +9,8 @@
  */
 
 import { Timestamp } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import app from "../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import app, { getFirebaseFunctions } from "../lib/firebase";
 import i18n from "../i18n/config";
 import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
 import { isObject } from "../utils/typeUtils";
@@ -24,12 +24,18 @@ function getFunctionsInstance() {
       "[VoteService] Firebase app is not initialized. Check environment variables (.env) before submitting votes."
     );
   }
-  return getFunctions(app);
+  const fns = getFirebaseFunctions();
+  if (!fns) {
+    throw new Error(
+      "[VoteService] Firebase Functions 未初始化。請確認於瀏覽器環境執行，且 VITE_FIREBASE_FUNCTIONS_REGION 與後端部署區一致。"
+    );
+  }
+  return fns;
 }
 const STAR_ID = "lbj";
 
 function getVoteFunctionErrorMessage(err, getMessage) {
-  const backendCode = err?.details?.code || err?.code;
+  const backendCode = err?.details?.code ?? err?.customData?.code;
 
   if (backendCode === "auth-required") {
     return getMessage("common:voteError_authRequired");
@@ -46,6 +52,9 @@ function getVoteFunctionErrorMessage(err, getMessage) {
   }
   if (backendCode === "device-already-voted") {
     return getMessage("common:voteError_deviceAlreadyVoted");
+  }
+  if (backendCode === "fingerprint-recent-vote") {
+    return getMessage("common:voteError_fingerprintRecentVote");
   }
   if (backendCode === "ad-not-watched") {
     return getMessage("common:voteError_adNotWatched");

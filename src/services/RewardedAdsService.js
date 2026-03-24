@@ -9,8 +9,8 @@
 
 import { Capacitor } from "@capacitor/core";
 import { AdMob } from "@capacitor-community/admob";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import app from "../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import app, { getFirebaseFunctions } from "../lib/firebase";
 
 const PLACEMENT_RESET_POSITION = "reset_position";
 const PLACEMENT_BREAKING_VOTE = "breaking_vote";
@@ -49,7 +49,14 @@ async function fetchAdRewardTokenFromBackend(placement = PLACEMENT_RESET_POSITIO
     err.code = "firebase-not-ready";
     throw err;
   }
-  const functions = getFunctions(app);
+  const functions = getFirebaseFunctions();
+  if (!functions) {
+    const err = new Error(
+      "[RewardedAdsService] Firebase Functions 未初始化，無法請求廣告獎勵 Token。"
+    );
+    err.code = "firebase-functions-not-ready";
+    throw err;
+  }
   const callable = httpsCallable(functions, "issueAdRewardToken");
   const result = await callable({ placement });
   const token = result?.data?.token;

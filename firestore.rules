@@ -4,8 +4,9 @@ rules_version = '2';
 // =============================================================================
 // 設計要點：
 // 1. 不在規則內使用 resource（尤其 delete），避免 Transaction 403。
-// 2. 寫入條件：isAuthenticated() + hasValidAppCheck()；profiles 僅 isOwner 可寫。
-// 3. App Check 不強制：先要求「登入 + 帳號/設備綁定」，未通過 App Check 也可寫入。
+// 2. profiles 僅 isOwner 可寫；votes / warzoneStats 客戶端一律不可寫（僅 Cloud Functions Admin SDK）。
+// 3. 方案 B（刪帳撤票）與投票、重置立場之統計異動：僅後端 Callable + Admin Transaction，繞過本規則。
+// 4. votes 讀取：僅允許讀取 userId 為本人之文件；漏斗篩選統計改走 Callable getFilteredSentimentSummary。
 // =============================================================================
 
 service cloud.firestore {
@@ -31,9 +32,9 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // 2. 投票記錄：改由 Cloud Functions Admin SDK 寫入，前端一律 read-only
+    // 2. 投票記錄：Admin SDK 寫入；客戶端僅可讀「本人」文件（禁止掃描全集合做統計）
     match /votes/{voteId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create, update, delete: if false;
     }
 
@@ -43,7 +44,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // 4. 戰區統計：改由後端 Transaction 管理統計一致性，前端 read-only
+    // 4. 戰區統計：後端 Transaction 維護；客戶端僅可讀、不可寫
     match /warzoneStats/{statsId} {
       allow read: if true;
       allow create, update, delete: if false;
