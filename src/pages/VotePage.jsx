@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
@@ -54,6 +54,7 @@ export default function VotePage() {
   const hasHandledDeepLinkRef = useRef(false);
   const [profileSetupDismissed, setProfileSetupDismissed] = useState(false);
   const [profileLoadingSettled, setProfileLoadingSettled] = useState(false);
+  const [hasHandledDismissal, setHasHandledDismissal] = useState(false);
   const [filters, setFilters] = useState({});
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -102,6 +103,7 @@ export default function VotePage() {
   useEffect(() => {
     setProfileSetupDismissed(false);
     setProfileLoadingSettled(false);
+    setHasHandledDismissal(false);
   }, [currentUser?.uid]);
 
   // profileLoading 只要在該 session 首次完成，就鎖定為已穩定，避免後續抖動影響 Modal 顯示判斷。
@@ -146,13 +148,33 @@ export default function VotePage() {
   }, [isGuest]);
 
   // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
-  const needProfileSetup =
-    Boolean(currentUser?.uid) && profileLoadingSettled && !hasProfile;
-  const showProfileSetup = useMemo(() => {
+  const shouldShowSetup = useMemo(() => {
+    // A. 手動強制開啟（最高優先級）
     if (showWarzoneClaimModal) return true;
-    if (profileSetupDismissed) return false;
-    return needProfileSetup;
-  }, [needProfileSetup, profileSetupDismissed, showWarzoneClaimModal]);
+    // B. 本次 Session 已處理關閉，或仍在 Guest Bootstrap：一律不顯示
+    if (hasHandledDismissal || isGuestBootstrapLoading) return false;
+    // C. 自動觸發：登入且載入穩定、無 profile、且未手動關閉
+    const autoTrigger =
+      Boolean(currentUser?.uid) &&
+      profileLoadingSettled &&
+      !hasProfile &&
+      !profileSetupDismissed;
+    return autoTrigger;
+  }, [
+    hasHandledDismissal,
+    isGuestBootstrapLoading,
+    showWarzoneClaimModal,
+    currentUser?.uid,
+    profileLoadingSettled,
+    hasProfile,
+    profileSetupDismissed,
+  ]);
+
+  const handleCloseModal = useCallback(() => {
+    setHasHandledDismissal(true);
+    setProfileSetupDismissed(true);
+    setShowWarzoneClaimModal(false);
+  }, []);
 
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
@@ -339,14 +361,13 @@ export default function VotePage() {
       </WarzoneDataProvider>
 
       <AnimatePresence>
-        {currentUser?.uid && showProfileSetup && (
+        {currentUser?.uid && shouldShowSetup && (
           <UserProfileSetup
-            open={showProfileSetup}
-            onClose={() => {
-              setProfileSetupDismissed(true);
-              setShowWarzoneClaimModal(false);
-            }}
+            key="profile-setup-modal"
+            open={shouldShowSetup}
+            onClose={handleCloseModal}
             onSaved={() => {
+              setHasHandledDismissal(true);
               setProfileSetupDismissed(true);
               setShowWarzoneClaimModal(false);
             }}
