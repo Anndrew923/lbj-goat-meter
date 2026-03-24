@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import { WarzoneDataProvider } from "../context/WarzoneDataContext";
@@ -26,6 +26,27 @@ import {
   Info,
   Archive,
 } from "lucide-react";
+import { TEAMS } from "../lib/constants";
+import { getTeamCityKey } from "../lib/constants";
+
+const DEFAULT_WARZONE_ID = TEAMS[0]?.value ?? "LAL";
+
+function resolveWarzoneId(rawWarzoneId) {
+  const value = typeof rawWarzoneId === "string" ? rawWarzoneId.trim() : "";
+  if (!value) return "";
+  const upper = value.toUpperCase();
+  const byCode = TEAMS.find((team) => team.value === upper);
+  if (byCode) return byCode.value;
+  const lower = value.toLowerCase();
+  const byId = TEAMS.find((team) => team.id === lower);
+  if (byId) return byId.value;
+
+  // 深連結可能使用球員話題別名（例如 adebayo），在此做單點映射以保持投放鏈路「所點即所得」。
+  const aliasMap = {
+    adebayo: "MIA",
+  };
+  return aliasMap[lower] ?? "";
+}
 
 export default function VotePage() {
   const { t, i18n } = useTranslation("common");
@@ -43,6 +64,12 @@ export default function VotePage() {
     revote,
   } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [activeWarzone, setActiveWarzone] = useState(
+    profile?.voterTeam ?? DEFAULT_WARZONE_ID,
+  );
+  const [sessionOverride, setSessionOverride] = useState(false);
+  const [deepLinkNotice, setDeepLinkNotice] = useState("");
   const [profileSetupDismissed, setProfileSetupDismissed] = useState(false);
   const [filters, setFilters] = useState({});
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
@@ -91,6 +118,39 @@ export default function VotePage() {
   useEffect(() => {
     setProfileSetupDismissed(false);
   }, [currentUser?.uid]);
+
+  // Deep Link 消費：由 URL warzoneId 設定 activeWarzone；若找不到對應戰區則回退預設戰區，避免流程卡死。
+  useEffect(() => {
+    const warzoneFromUrl = searchParams.get("warzoneId");
+    if (!warzoneFromUrl) {
+      setSessionOverride(false);
+      setActiveWarzone((prev) => prev || profile?.voterTeam || DEFAULT_WARZONE_ID);
+      return;
+    }
+    const resolved = resolveWarzoneId(warzoneFromUrl) || DEFAULT_WARZONE_ID;
+    setSessionOverride(true);
+    setActiveWarzone(resolved);
+    const warzoneLabel = t(getTeamCityKey(resolved));
+    setDeepLinkNotice(t("deepLinkWarzoneSwitched", { warzone: warzoneLabel }));
+    // 僅在 profile 載入完成且確定未選戰區時才打開登錄 Modal，避免每次登入都被誤觸發。
+    if (!profileLoading && !profile?.voterTeam) {
+      setProfileSetupDismissed(false);
+      setShowWarzoneClaimModal(true);
+    }
+  }, [searchParams, profile?.voterTeam, profileLoading, t]);
+
+  // 若已存在戰區（含重新登入後 profile 回補），強制關閉戰區登錄 Modal，避免干擾已完成用戶。
+  useEffect(() => {
+    if (profile?.voterTeam) {
+      setShowWarzoneClaimModal(false);
+    }
+  }, [profile?.voterTeam]);
+
+  useEffect(() => {
+    if (!deepLinkNotice) return;
+    const timer = window.setTimeout(() => setDeepLinkNotice(""), 2600);
+    return () => window.clearTimeout(timer);
+  }, [deepLinkNotice]);
 
   // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
   const needProfileSetup =
@@ -173,10 +233,17 @@ export default function VotePage() {
           <VotingArena
             userId={currentUser?.uid}
             currentUser={currentUser}
+            activeWarzoneId={activeWarzone}
+            sessionOverride={sessionOverride}
             onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
             onExportStart={() => setTickerPausedForExport(true)}
             onExportEnd={() => setTickerPausedForExport(false)}
           />
+          {deepLinkNotice && (
+            <div className="fixed top-[calc(env(safe-area-inset-top,0px)+64px)] left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-full text-xs bg-black/80 border border-king-gold/40 text-king-gold shadow-lg">
+              {deepLinkNotice}
+            </div>
+          )}
           <div className="space-y-2">
             <UniversalBreakingBanner />
             <div className="flex justify-end">
@@ -281,7 +348,11 @@ export default function VotePage() {
           }}
           userId={currentUser?.uid}
           initialStep={1}
-          initialProfile={showWarzoneClaimModal ? profile : undefined}
+          initialProfile={
+            showWarzoneClaimModal
+              ? { ...(profile ?? {}), voterTeam: activeWarzone }
+              : undefined
+          }
         />
       )}
 

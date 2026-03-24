@@ -29,5 +29,8 @@ project(':capacitor-toast').projectDir = new File('../node_modules/@capacitor/to
 include ':capgo-capacitor-social-login'
 project(':capgo-capacitor-social-login').projectDir = new File('../node_modules/@capgo/capacitor-social-login/android')
 
+include ':jonit-dev-capacitor-plugin-facebook-analytics'
+project(':jonit-dev-capacitor-plugin-facebook-analytics').projectDir = new File('../node_modules/@jonit-dev/capacitor-plugin-facebook-analytics/android')
+
 include ':capacitor-screenshot'
 project(':capacitor-screenshot').projectDir = new File('../node_modules/capacitor-screenshot/android')

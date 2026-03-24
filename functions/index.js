@@ -31,11 +31,11 @@ setGlobalOptions({
   region: process.env.FUNCTIONS_REGION || "us-central1",
   memory: "512MiB",
   timeoutSeconds: 60,
-  minInstances: 0,
+  minInstances: 1,
 });
 
 /** Gen2 Callable 並發：單一實例可同時處理多個請求，降低尖峰排隊（上限依配額與記憶體調整） */
-const CALLABLE_HTTP_OPTS = { concurrency: 64 };
+const CALLABLE_HTTP_OPTS = { concurrency: 80 };
 
 /** 與 Secret Manager 鍵名一致；submitVote 綁定後執行期由 Firebase 掛載至 secret.value() */
 const goatFingerprintPepperSecret = defineSecret("GOAT_FINGERPRINT_PEPPER");

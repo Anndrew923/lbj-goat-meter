@@ -46,14 +46,24 @@ export default function VotingArena({
   onExportStart,
   onExportEnd,
   onExportUnlock,
+  activeWarzoneId,
+  sessionOverride = false,
 }) {
   const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
   /** 已登入但未完成 Profile（半登錄）：顯示投票卡，點擊時攔截並引導完成戰區登錄 */
   const isLimboUser = Boolean(userId) && !isGuest && !hasProfile;
-  /** 是否已選擇戰區：profile 存在且 voterTeam 非空，投票必歸屬 16 戰區之一 */
+  /** Deep Link Session 覆蓋優先於 profile，確保「所點即所得」能即時反映在 UI。 */
+  const effectiveWarzoneId =
+    (sessionOverride && typeof activeWarzoneId === "string" && activeWarzoneId.trim()) ||
+    (typeof profile?.voterTeam === "string" && profile.voterTeam.trim()) ||
+    "";
+  /**
+   * 是否已選擇戰區（可提交門檻）：
+   * 仍以 profile.voterTeam 為準，避免僅靠 session 覆蓋就觸發提交，導致後端 transaction 回傳 warzone required。
+   */
   const hasSelectedWarzone = Boolean(
-    profile?.voterTeam && String(profile.voterTeam).trim() !== ""
+    typeof profile?.voterTeam === "string" && profile.voterTeam.trim()
   );
   const [selectedStance, setSelectedStance] = useState(null);
   const [selectedReasons, setSelectedReasons] = useState([]);
@@ -520,7 +530,7 @@ export default function VotingArena({
             onRevoteReload={handleRevoteRetry}
             photoURL={currentUser?.photoURL}
             displayName={currentUser?.displayName ?? currentUser?.email}
-            voterTeam={profile?.voterTeam}
+            voterTeam={effectiveWarzoneId}
             status={profile?.currentStance ?? selectedStance}
             reasonLabels={getReasonLabels(
               profile?.currentStance ?? selectedStance,

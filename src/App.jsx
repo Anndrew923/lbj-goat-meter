@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Capacitor } from '@capacitor/core'
@@ -22,6 +22,7 @@ import { initializeAdMob } from './services/AdMobService'
 
 const TOAST_DURATION_MS = 2500
 const DOUBLE_BACK_WINDOW_MS = 2000
+const DEEP_LINK_PENDING_KEY = 'pending_warzone_id'
 
 const toastStyle = {
   position: 'fixed',
@@ -51,6 +52,7 @@ export default function App() {
   const lastBackPressRef = useRef(0)
   const pathnameRef = useRef(location.pathname)
   const exitModalOpenRef = useRef(isExitModalOpen)
+  const pendingWarzoneRef = useRef(null)
 
   pathnameRef.current = location.pathname
   exitModalOpenRef.current = isExitModalOpen
@@ -58,6 +60,70 @@ export default function App() {
   useEffect(() => {
     initializeAdMob().catch(() => {})
   }, [])
+
+  const resolveWarzoneIdFromUrl = useCallback((rawUrl) => {
+    if (typeof rawUrl !== 'string' || !rawUrl.trim()) return ''
+    try {
+      const parsed = new URL(rawUrl)
+      const warzoneId = (parsed.searchParams.get('warzoneId') || '').trim()
+      return warzoneId
+    } catch {
+      return ''
+    }
+  }, [])
+
+  const routeToWarzone = useCallback(
+    (warzoneId) => {
+      const normalized = typeof warzoneId === 'string' ? warzoneId.trim() : ''
+      if (!normalized) return
+      navigate(`/vote?warzoneId=${encodeURIComponent(normalized)}`, { replace: true })
+    },
+    [navigate]
+  )
+
+  // Deferred Deep Link：監聽 appUrlOpen 與冷啟動 URL，萃取 warzoneId 後導向戰區頁。
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+
+    const handleUrl = (url) => {
+      const warzoneId = resolveWarzoneIdFromUrl(url)
+      if (!warzoneId) return
+      if (currentUser?.uid) {
+        routeToWarzone(warzoneId)
+        return
+      }
+      pendingWarzoneRef.current = warzoneId
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(DEEP_LINK_PENDING_KEY, warzoneId)
+      }
+    }
+
+    CapApp.getLaunchUrl()
+      .then((launchData) => handleUrl(launchData?.url))
+      .catch(() => {})
+
+    const listenerPromise = CapApp.addListener('appUrlOpen', ({ url }) => handleUrl(url))
+    return () => {
+      listenerPromise.then((listener) => listener.remove())
+    }
+  }, [currentUser?.uid, resolveWarzoneIdFromUrl, routeToWarzone])
+
+  // 使用者登入後消化延遲深層連結，確保廣告點擊後可「所點即所得」進入指定戰區。
+  useEffect(() => {
+    if (!currentUser?.uid) return
+    const memoryPending = pendingWarzoneRef.current
+    const storagePending =
+      typeof window !== 'undefined'
+        ? window.sessionStorage.getItem(DEEP_LINK_PENDING_KEY) || ''
+        : ''
+    const pendingWarzoneId = (memoryPending || storagePending || '').trim()
+    if (!pendingWarzoneId) return
+    routeToWarzone(pendingWarzoneId)
+    pendingWarzoneRef.current = null
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(DEEP_LINK_PENDING_KEY)
+    }
+  }, [currentUser?.uid, routeToWarzone])
 
   // 戰況即時快報：僅在原生平台、已登入且 profile 已存在時請求推播權限並註冊（避免 updateDoc 時 profile 尚未建立）
   useEffect(() => {

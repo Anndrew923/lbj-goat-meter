@@ -17,6 +17,7 @@ import { isObject } from "../utils/typeUtils";
 import { getRecaptchaToken } from "./RecaptchaService";
 import { createGoldenKeySignature, GOLDEN_KEY_ACTIONS } from "./GoldenKeyService";
 import { normalizeBreakingOptionIndex } from "../utils/normalizeBreakingOptionIndex";
+import { trackSubmitVote } from "./MetaAnalyticsService";
 
 function getFunctionsInstance() {
   if (!app) {
@@ -192,6 +193,11 @@ export async function submitVote(userId, { selectedStance, selectedReasons, devi
         result.data.recaptchaScore
       );
     }
+    await trackSubmitVote({
+      stance: selectedStance,
+      warzoneId: result?.data?.warzoneId ?? null,
+      reasonCount: Array.isArray(selectedReasons) ? selectedReasons.length : 0,
+    });
   } catch (err) {
     const message = getVoteFunctionErrorMessage(err, getMessage);
     throw new Error(message);

@@ -26,6 +26,7 @@
     "@capacitor/toast": "^8.0.1",
     "@capgo/capacitor-social-login": "^8.3.2",
     "@headlessui/react": "^2.2.9",
+    "@jonit-dev/capacitor-plugin-facebook-analytics": "^1.0.6",
     "capacitor-screenshot": "^8.0.0",
     "clsx": "^2.1.1",
     "firebase": "^12.9.0",

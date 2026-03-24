@@ -40,6 +40,7 @@ import { deleteAccountData } from "../services/AccountService";
 import { requestResetAdRewardToken } from "../services/RewardedAdsService";
 import { callResetPosition } from "../services/ResetPositionService";
 import { getRecaptchaToken } from "../services/RecaptchaService";
+import { trackCompleteRegistration } from "../services/MetaAnalyticsService";
 import { triggerHaptic } from "../utils/hapticUtils";
 import i18n from "../i18n/config";
 
@@ -175,6 +176,26 @@ export function AuthProvider({ children }) {
       setLoading(false);
       setProfile(null);
       setProfileLoading(true);
+      const isFirstRegistration =
+        user?.metadata?.creationTime &&
+        user?.metadata?.lastSignInTime &&
+        user.metadata.creationTime === user.metadata.lastSignInTime;
+      if (isFirstRegistration) {
+        const trackedKey = `meta_complete_registration_${user.uid}`;
+        const trackedBefore =
+          typeof window !== "undefined" &&
+          window.localStorage.getItem(trackedKey) === "1";
+        if (!trackedBefore) {
+          trackCompleteRegistration({
+            registrationMethod: "google",
+            userId: user.uid,
+          }).then((tracked) => {
+            if (tracked && typeof window !== "undefined") {
+              window.localStorage.setItem(trackedKey, "1");
+            }
+          });
+        }
+      }
 
       if (!db) {
         setProfileLoading(false);
