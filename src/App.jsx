@@ -23,6 +23,7 @@ import { initializeAdMob } from './services/AdMobService'
 const TOAST_DURATION_MS = 2500
 const DOUBLE_BACK_WINDOW_MS = 2000
 const DEEP_LINK_PENDING_KEY = 'pending_warzone_id'
+const LBJ_WARZONE_ID = 'LAL'
 
 const toastStyle = {
   position: 'fixed',
@@ -65,8 +66,10 @@ export default function App() {
     if (typeof rawUrl !== 'string' || !rawUrl.trim()) return ''
     try {
       const parsed = new URL(rawUrl)
-      const warzoneId = (parsed.searchParams.get('warzoneId') || '').trim()
-      return warzoneId
+      // 主菜導流：不論外部帶入何種戰區參數，一律收斂至 LBJ 主戰區。
+      if (parsed.protocol !== 'lbj-goat-meter:') return ''
+      if (parsed.hostname !== 'vote') return ''
+      return LBJ_WARZONE_ID
     } catch {
       return ''
     }

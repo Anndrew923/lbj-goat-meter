@@ -26,27 +26,8 @@ import {
   Info,
   Archive,
 } from "lucide-react";
-import { TEAMS } from "../lib/constants";
-import { getTeamCityKey } from "../lib/constants";
 
-const DEFAULT_WARZONE_ID = TEAMS[0]?.value ?? "LAL";
-
-function resolveWarzoneId(rawWarzoneId) {
-  const value = typeof rawWarzoneId === "string" ? rawWarzoneId.trim() : "";
-  if (!value) return "";
-  const upper = value.toUpperCase();
-  const byCode = TEAMS.find((team) => team.value === upper);
-  if (byCode) return byCode.value;
-  const lower = value.toLowerCase();
-  const byId = TEAMS.find((team) => team.id === lower);
-  if (byId) return byId.value;
-
-  // 深連結可能使用球員話題別名（例如 adebayo），在此做單點映射以保持投放鏈路「所點即所得」。
-  const aliasMap = {
-    adebayo: "MIA",
-  };
-  return aliasMap[lower] ?? "";
-}
+const DEFAULT_WARZONE_ID = "LAL";
 
 export default function VotePage() {
   const { t, i18n } = useTranslation("common");
@@ -70,7 +51,9 @@ export default function VotePage() {
   );
   const [sessionOverride, setSessionOverride] = useState(false);
   const [deepLinkNotice, setDeepLinkNotice] = useState("");
+  const hasHandledDeepLinkRef = useRef(false);
   const [profileSetupDismissed, setProfileSetupDismissed] = useState(false);
+  const [profileLoadingSettled, setProfileLoadingSettled] = useState(false);
   const [filters, setFilters] = useState({});
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -81,6 +64,7 @@ export default function VotePage() {
   const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
   const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
   const [tickerPausedForExport, setTickerPausedForExport] = useState(false);
+  const [isGuestBootstrapLoading, setIsGuestBootstrapLoading] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
   const {
     isAnalystAuthorized,
@@ -117,9 +101,16 @@ export default function VotePage() {
   // 換帳號或重新登入時重置「已關閉」狀態，讓新使用者有機會看到戰區登錄 Modal
   useEffect(() => {
     setProfileSetupDismissed(false);
+    setProfileLoadingSettled(false);
   }, [currentUser?.uid]);
 
-  // Deep Link 消費：由 URL warzoneId 設定 activeWarzone；若找不到對應戰區則回退預設戰區，避免流程卡死。
+  // profileLoading 只要在該 session 首次完成，就鎖定為已穩定，避免後續抖動影響 Modal 顯示判斷。
+  useEffect(() => {
+    if (!currentUser?.uid || profileLoading) return;
+    setProfileLoadingSettled(true);
+  }, [currentUser?.uid, profileLoading]);
+
+  // Deep Link 消費：若存在任何 warzoneId 參數，一律收斂至 LBJ 主戰區（LAL）。
   useEffect(() => {
     const warzoneFromUrl = searchParams.get("warzoneId");
     if (!warzoneFromUrl) {
@@ -127,14 +118,15 @@ export default function VotePage() {
       setActiveWarzone((prev) => prev || profile?.voterTeam || DEFAULT_WARZONE_ID);
       return;
     }
-    const resolved = resolveWarzoneId(warzoneFromUrl) || DEFAULT_WARZONE_ID;
     setSessionOverride(true);
-    setActiveWarzone(resolved);
-    const warzoneLabel = t(getTeamCityKey(resolved));
-    setDeepLinkNotice(t("deepLinkWarzoneSwitched", { warzone: warzoneLabel }));
+    setActiveWarzone(DEFAULT_WARZONE_ID);
+    if (!hasHandledDeepLinkRef.current) {
+      hasHandledDeepLinkRef.current = true;
+      setDeepLinkNotice(t("deepLinkWarzoneSwitchedLbj"));
+    }
     // 注意：深連結只更新 session 戰區，不直接觸發 Modal。
     // Modal 只由 needProfileSetup（自動）或使用者手動點擊開啟，避免重複開關造成閃動。
-  }, [searchParams, t]);
+  }, [searchParams, profile?.voterTeam, t]);
 
   useEffect(() => {
     if (!deepLinkNotice) return;
@@ -142,11 +134,25 @@ export default function VotePage() {
     return () => window.clearTimeout(timer);
   }, [deepLinkNotice]);
 
+  // 匿名觀察者冷啟動：先給出穩定 skeleton，降低初次進場白屏感與版面跳動。
+  useEffect(() => {
+    if (!isGuest) {
+      setIsGuestBootstrapLoading(false);
+      return;
+    }
+    setIsGuestBootstrapLoading(true);
+    const timer = window.setTimeout(() => setIsGuestBootstrapLoading(false), 380);
+    return () => window.clearTimeout(timer);
+  }, [isGuest]);
+
   // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
   const needProfileSetup =
-    Boolean(currentUser?.uid) && !profileLoading && !hasProfile;
-  const showProfileSetup =
-    (needProfileSetup && !profileSetupDismissed) || showWarzoneClaimModal;
+    Boolean(currentUser?.uid) && profileLoadingSettled && !hasProfile;
+  const showProfileSetup = useMemo(() => {
+    if (showWarzoneClaimModal) return true;
+    if (profileSetupDismissed) return false;
+    return needProfileSetup;
+  }, [needProfileSetup, profileSetupDismissed, showWarzoneClaimModal]);
 
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
@@ -220,6 +226,13 @@ export default function VotePage() {
           transition={{ delay: 0.1 }}
           className="mt-8 space-y-8"
         >
+          {isGuestBootstrapLoading && (
+            <div className="rounded-xl border border-villain-purple/20 bg-gray-900/60 p-5 animate-pulse">
+              <div className="h-4 w-28 bg-white/10 rounded mb-3" />
+              <div className="h-3 w-full bg-white/10 rounded mb-2" />
+              <div className="h-3 w-4/5 bg-white/10 rounded" />
+            </div>
+          )}
           <VotingArena
             userId={currentUser?.uid}
             currentUser={currentUser}
@@ -325,26 +338,24 @@ export default function VotePage() {
         </motion.main>
       </WarzoneDataProvider>
 
-      {currentUser?.uid && (
-        <UserProfileSetup
-          open={showProfileSetup}
-          onClose={() => {
-            setProfileSetupDismissed(true);
-            setShowWarzoneClaimModal(false);
-          }}
-          onSaved={() => {
-            setProfileSetupDismissed(true);
-            setShowWarzoneClaimModal(false);
-          }}
-          userId={currentUser?.uid}
-          initialStep={1}
-          initialProfile={
-            showProfileSetup
-              ? { ...(profile ?? {}), voterTeam: activeWarzone }
-              : undefined
-          }
-        />
-      )}
+      <AnimatePresence>
+        {currentUser?.uid && showProfileSetup && (
+          <UserProfileSetup
+            open={showProfileSetup}
+            onClose={() => {
+              setProfileSetupDismissed(true);
+              setShowWarzoneClaimModal(false);
+            }}
+            onSaved={() => {
+              setProfileSetupDismissed(true);
+              setShowWarzoneClaimModal(false);
+            }}
+            userId={currentUser?.uid}
+            initialStep={1}
+            initialProfile={{ ...(profile ?? {}), voterTeam: activeWarzone }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* 使用者設定區：底部為 Danger Zone（帳號刪除），符合 Google Play 合規與資料隱私透明度 */}
       <AnimatePresence>

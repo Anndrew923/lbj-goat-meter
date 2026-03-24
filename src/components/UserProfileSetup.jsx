@@ -43,9 +43,8 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved, initi
   const [geoLoading, setGeoLoading] = useState(true)
   const [locationSource, setLocationSource] = useState(null) // 'geolocation' | 'ip' | null
 
-  // 僅在 open 變為 true 時初始化 step/form，避免 initialProfile 參考變動時重置表單；有 initialProfile 時預填全部欄位
+  // 由父層控制掛載生命週期；每次掛載時初始化 step/form，避免外部狀態抖動造成中途重置。
   useEffect(() => {
-    if (!open) return
     const stepVal = initialStep ?? 1
     setStep(stepVal)
     const base = { ...INITIAL_FORM }
@@ -71,8 +70,8 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved, initi
         }
       })
       .finally(() => setGeoLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 僅在 open 時初始化，避免 profile 參考變動重置表單
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 僅在掛載時初始化，避免 profile 參考變動重置表單
+  }, [])
 
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
@@ -118,13 +117,12 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved, initi
   }
 
   useEffect(() => {
-    if (!open) return
     const onKeyDown = (e) => {
       if (e.key === 'Escape') onClose?.()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, onClose])
+  }, [onClose])
 
   const getCountryOptionKey = useCallback((v) => getOptionKey('country', v), [])
 
@@ -139,10 +137,11 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved, initi
     return list
   }, [form.country, t, i18n.language])
 
-  if (!open) return null
-
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
       role="dialog"
       aria-modal="true"
@@ -326,6 +325,6 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved, initi
           )}
         </div>
       </motion.div>
-    </div>
+    </motion.div>
   )
 }

@@ -9,6 +9,7 @@
   "claimYourWarzoneDesc": "選擇你的戰區後即可投下神聖一票，並納入戰報統計。",
   "openWarzoneSelect": "選擇戰區",
   "deepLinkWarzoneSwitched": "已根據連結為您切換至：{{warzone}}",
+  "deepLinkWarzoneSwitchedLbj": "已根據連結為您切換至：LBJ 主戰區",
   "error_warzoneRequired": "請先完成戰區登錄（選擇效忠球隊），再提交投票。",
   "alreadyVoted": "您已投過票",
   "thanksVoted": "感謝您的立場，數據將納入全球統計。",

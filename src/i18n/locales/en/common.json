@@ -9,6 +9,7 @@
   "claimYourWarzoneDesc": "Choose your warzone to cast your vote and join the battle report.",
   "openWarzoneSelect": "Select your warzone",
   "deepLinkWarzoneSwitched": "Switched to {{warzone}} based on your link.",
+  "deepLinkWarzoneSwitchedLbj": "Switched to the LBJ main warzone based on your link.",
   "error_warzoneRequired": "Warzone (team) is required. Complete profile setup first.",
   "alreadyVoted": "You have already voted",
   "thanksVoted": "Thanks for your stance. Data will be included in global stats.",

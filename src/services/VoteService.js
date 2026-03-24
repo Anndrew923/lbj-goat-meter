@@ -194,6 +194,7 @@ export async function submitVote(userId, { selectedStance, selectedReasons, devi
       );
     }
     await trackSubmitVote({
+      starId: STAR_ID,
       stance: selectedStance,
       warzoneId: result?.data?.warzoneId ?? null,
       reasonCount: Array.isArray(selectedReasons) ? selectedReasons.length : 0,

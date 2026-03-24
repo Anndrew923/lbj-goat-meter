@@ -43,15 +43,19 @@ export async function trackCompleteRegistration({
 }
 
 export async function trackSubmitVote({
+  starId = "lbj",
   stance,
   warzoneId,
   reasonCount,
 } = {}) {
+  // 僅追蹤 LBJ 議題票券，避免演算法被其他主題噪音稀釋。
+  if (String(starId).toLowerCase() !== "lbj") return false;
   return safeTrack(
     () =>
       FacebookAnalytics.logEvent({
         event: "SubmitVote",
         params: {
+          star_id: "lbj",
           stance: stance ?? "",
           warzone_id: warzoneId ?? "",
           reason_count: Number.isFinite(reasonCount) ? reasonCount : 0,
