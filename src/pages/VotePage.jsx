@@ -132,19 +132,9 @@ export default function VotePage() {
     setActiveWarzone(resolved);
     const warzoneLabel = t(getTeamCityKey(resolved));
     setDeepLinkNotice(t("deepLinkWarzoneSwitched", { warzone: warzoneLabel }));
-    // 僅在 profile 載入完成且確定未選戰區時才打開登錄 Modal，避免每次登入都被誤觸發。
-    if (!profileLoading && !profile?.voterTeam) {
-      setProfileSetupDismissed(false);
-      setShowWarzoneClaimModal(true);
-    }
-  }, [searchParams, profile?.voterTeam, profileLoading, t]);
-
-  // 若已存在戰區（含重新登入後 profile 回補），強制關閉戰區登錄 Modal，避免干擾已完成用戶。
-  useEffect(() => {
-    if (profile?.voterTeam) {
-      setShowWarzoneClaimModal(false);
-    }
-  }, [profile?.voterTeam]);
+    // 注意：深連結只更新 session 戰區，不直接觸發 Modal。
+    // Modal 只由 needProfileSetup（自動）或使用者手動點擊開啟，避免重複開關造成閃動。
+  }, [searchParams, t]);
 
   useEffect(() => {
     if (!deepLinkNotice) return;
@@ -349,7 +339,7 @@ export default function VotePage() {
           userId={currentUser?.uid}
           initialStep={1}
           initialProfile={
-            showWarzoneClaimModal
+            showProfileSetup
               ? { ...(profile ?? {}), voterTeam: activeWarzone }
               : undefined
           }
