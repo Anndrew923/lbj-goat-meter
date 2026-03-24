@@ -3,18 +3,9 @@ import * as functions from "firebase-functions";
 
 const DEFAULT_MAX_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
-function getSecret() {
+function getSecret(secretOverride = "") {
   const fromEnv = process.env.GOLDEN_KEY_SECRET || process.env.GOAT_GOLDEN_KEY_SECRET || "";
-  let fromConfig = "";
-  try {
-    const cfg = functions.config();
-    fromConfig = (cfg?.goat?.golden_key_secret && String(cfg.goat.golden_key_secret).trim()) || "";
-  } catch (e) {
-    functions.logger.warn("[GoldenKey] functions.config() unavailable, using env only", {
-      message: e?.message,
-    });
-  }
-  const raw = fromEnv || fromConfig;
+  const raw = secretOverride || fromEnv;
   const v = String(raw).trim();
   if (!v) {
     functions.logger.warn("[GoldenKey] Secret not configured. Verification will always fail as strict mode.");
@@ -47,9 +38,10 @@ function safeJsonStringify(obj) {
  * @param {unknown} payloadForHash - 與前端簽章時使用的 payloadSub 同結構
  * @param {{ xGoatTimestamp?: unknown, xGoatSignature?: unknown }} goldenFields
  * @param {{ uid?: string, deviceId?: string, extra?: Record<string, unknown> }} meta
+ * @param {string} [secretOverride] - 由 firebase-functions/params defineSecret 注入的密鑰字串
  */
-export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {}) {
-  const secret = getSecret();
+export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {}, secretOverride = "") {
+  const secret = getSecret(secretOverride);
   const { xGoatTimestamp, xGoatSignature } = goldenFields || {};
   const ts = Number(xGoatTimestamp);
   const sig = typeof xGoatSignature === "string" ? xGoatSignature : "";

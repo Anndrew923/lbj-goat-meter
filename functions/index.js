@@ -39,6 +39,8 @@ const CALLABLE_HTTP_OPTS = { concurrency: 64 };
 
 /** 與 Secret Manager 鍵名一致；submitVote 綁定後執行期由 Firebase 掛載至 secret.value() */
 const goatFingerprintPepperSecret = defineSecret("GOAT_FINGERPRINT_PEPPER");
+/** 與 Secret Manager 鍵名一致；供 Golden Key HMAC 驗證使用，取代已棄用的 functions.config()。 */
+const goatGoldenKeySecret = defineSecret("GOAT_GOLDEN_KEY_SECRET");
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -87,6 +89,25 @@ function resolveFingerprintPepper(secret) {
 }
 
 /**
+ * 解析 Golden Key：優先讀取 Gen2 Secret Manager，失敗時回退環境變數（Emulator / 本機）。
+ * 設計意圖：移除對 functions.config() 的依賴，避免 v2 服務在 Runtime Config 停用時失效。
+ */
+function resolveGoldenKeySecret(secret) {
+  try {
+    const v = secret.value();
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  } catch {
+    // Emulator 或未解析 secret 時改走環境變數
+  }
+  const fromEnv = (process.env.GOLDEN_KEY_SECRET || process.env.GOAT_GOLDEN_KEY_SECRET || "").trim();
+  if (fromEnv) return fromEnv;
+  if (process.env.K_SERVICE) {
+    functions.logger.warn("[GoldenKey] GOAT_GOLDEN_KEY_SECRET 未解析，簽章驗證將失敗。請確認 Secret 已綁定並部署。");
+  }
+  return "";
+}
+
+/**
  * submitVote — 後端唯一入口：提交一票。
  *
  * 資料一致性與避免 Race Condition 的設計說明：
@@ -96,17 +117,19 @@ function resolveFingerprintPepper(secret) {
  * - warzoneStats 與 global_summary 的加總全部落在同一個 Transaction 內完成，保證「統計 + 鎖定狀態」要嘛一起成功、要嘛一起回滾。
  */
 export const submitVote = onCall(
-  { ...CALLABLE_HTTP_OPTS, secrets: [goatFingerprintPepperSecret] },
+  { ...CALLABLE_HTTP_OPTS, secrets: [goatFingerprintPepperSecret, goatGoldenKeySecret] },
   async (request) => {
     requireAuth(request);
 
     const fingerprintPepper = resolveFingerprintPepper(goatFingerprintPepperSecret);
+    const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
 
     try {
       return await runSubmitVote(request.data, {
         auth: request.auth,
         rawRequest: request.rawRequest,
         fingerprintPepper,
+        goldenKeySecret,
       });
     } catch (err) {
       if (err instanceof HttpsError) throw err;
@@ -118,7 +141,7 @@ export const submitVote = onCall(
 
 /**
  * @param {unknown} data - Callable payload
- * @param {{ auth: { uid: string }; rawRequest?: unknown; fingerprintPepper?: string }} context
+ * @param {{ auth: { uid: string }; rawRequest?: unknown; fingerprintPepper?: string; goldenKeySecret?: string }} context
  */
 async function runSubmitVote(data, context) {
   const { voteData, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
@@ -149,7 +172,8 @@ async function runSubmitVote(data, context) {
       selectedStance,
     },
     { xGoatTimestamp, xGoatSignature },
-    { uid, deviceId: deviceIdStr }
+    { uid, deviceId: deviceIdStr },
+    context.goldenKeySecret || ""
   );
 
   // 投票才看分數：大量假投票會破壞數據可信度，故正式環境要求 reCAPTCHA 分數 ≥ 0.5
@@ -371,20 +395,26 @@ async function runSubmitVote(data, context) {
  *   - warzoneStats 與 global_summary 依現有投票資料做「減法」，確保統計與實際票數對齊。
  * - 所有操作要嘛一起成功，要嘛全部回滾，不會出現「設備已解鎖但統計未扣回」的中間狀態。
  */
-export const resetPosition = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+export const resetPosition = onCall(
+  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret] },
+  async (request) => {
   requireAuth(request);
+
+  const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
 
   try {
     return await runResetPosition(request.data, {
       auth: request.auth,
       rawRequest: request.rawRequest,
+      goldenKeySecret,
     });
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     console.error("[resetPosition] Unexpected error:", err?.message);
     throw new HttpsError("internal", "Reset failed", { code: "reset-internal" });
   }
-});
+}
+);
 
 async function runResetPosition(data, context) {
   const { adRewardToken, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
@@ -395,7 +425,8 @@ async function runResetPosition(data, context) {
     "reset_position",
     { adRewardToken: adRewardToken || null },
     { xGoatTimestamp, xGoatSignature },
-    { uid }
+    { uid },
+    context.goldenKeySecret || ""
   );
 
   const bypassSecurity = shouldBypassHardSecurity(context);
@@ -869,13 +900,18 @@ export const onBreakingEventUpdate = functions.firestore
 /**
  * submitBreakingVote — 突發戰區投票：一話題一設備一票，寫入 global_events/{eventId}/votes/{deviceId}。
  */
-export const submitBreakingVote = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+export const submitBreakingVote = onCall(
+  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret] },
+  async (request) => {
   requireAuth(request);
+
+  const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
 
   try {
     return await runSubmitBreakingVote(request.data, {
       auth: request.auth,
       rawRequest: request.rawRequest,
+      goldenKeySecret,
     });
   } catch (err) {
     if (err instanceof HttpsError) throw err;
@@ -884,7 +920,8 @@ export const submitBreakingVote = onCall(CALLABLE_HTTP_OPTS, async (request) => 
       code: "breaking-vote-internal",
     });
   }
-});
+}
+);
 
 async function runSubmitBreakingVote(data, context) {
   const uid = context.auth?.uid;
@@ -910,7 +947,8 @@ async function runSubmitBreakingVote(data, context) {
       optionIndex: option,
     },
     { xGoatTimestamp, xGoatSignature },
-    { uid: context.auth.uid || null, deviceId: deviceIdStr }
+    { uid: context.auth.uid || null, deviceId: deviceIdStr },
+    context.goldenKeySecret || ""
   );
 
   if (!shouldBypassHardSecurity(context)) {
