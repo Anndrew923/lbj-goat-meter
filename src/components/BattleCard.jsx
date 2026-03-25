@@ -29,7 +29,7 @@ const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
 /** 保守派：廣告關閉後給足 GPU 重繪時間，再進入快門隱身；不追求極限快門、追求成功率 */
-const EXPORT_PAINT_WAIT_MS = 1000;
+const EXPORT_PAINT_WAIT_MS = 1500;
 /** 在基礎等待之後，額外輪詢 img.complete && naturalWidth 的最長時間（弱網） */
 const EXPORT_IMAGE_READY_MAX_WAIT_MS = 2000;
 /** 圖片就緒輪詢間隔，平衡 CPU 與回應速度 */
@@ -388,7 +388,7 @@ async function showBattleReportSavedToast(text) {
 /**
  * 原生全畫面截圖（物理像素）→ 依 card 的 document 對齊座標裁切為 1:1 正方形。
  * @param layoutRect 須與 Screenshot.take() 緊鄰取得的 getBoundingClientRect()；呼叫前不可改動 transform。
- * - 核心：sx=(rect.left+pageXOffset)×map、sy=(rect.top+pageYOffset)×map、side=rect.width×map；sw=sh=side。
+ * - 核心：sx/sy 分別依 X/Y 軸對齊；sourceWidth/sourceHeight（sw/sh）分開計算以避免非等比縮放時的裁切偏移。
  * - map 優先為 devicePixelRatio；若截圖像素與 inner×dpr 不符，改用 (scaleX+scaleY)/2 單一倍率對齊點陣（不依賴 screen.height-innerHeight）。
  * - Safety Inset：在點陣座標內縮 CROP_SAFETY_INSET_PX，避免邊緣黑帶入鏡。
  */
@@ -427,26 +427,35 @@ async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
     throw new Error("[BattleCard] crop: invalid layout or image dimensions");
   }
 
+  // 先用 mapping.map（等向假設）生成初值；在非等比縮放（bitmap 非 dpr 且 scaleX!=scaleY 且縮放非等向）時再改用 scaleX/scaleY。
   let sx = Math.round((layoutRect.left + ox) * mapping.map);
   let sy = Math.round((layoutRect.top + oy) * mapping.map);
-  let side = Math.round(layoutRect.width * mapping.map);
+  let sw = Math.round(layoutRect.width * mapping.map);
+  let sh = Math.round(layoutRect.height * mapping.map);
 
   if (!mapping.bitmapMatchesDpr && !mapping.uniform) {
     sx = Math.round((layoutRect.left + ox) * mapping.scaleX);
     sy = Math.round((layoutRect.top + oy) * mapping.scaleY);
-    side = Math.round(layoutRect.width * mapping.scaleX);
+    sw = Math.round(layoutRect.width * mapping.scaleX);
+    sh = Math.round(layoutRect.height * mapping.scaleY);
   }
 
   const inset = CROP_SAFETY_INSET_PX;
   sx += inset;
   sy += inset;
-  side = Math.max(1, side - 2 * inset);
+  sw = Math.max(1, sw - 2 * inset);
+  sh = Math.max(1, sh - 2 * inset);
 
   sx = Math.max(0, Math.min(sx, IW - 1));
   sy = Math.max(0, Math.min(sy, IH - 1));
-  side = Math.min(side, IW - sx, IH - sy);
-  side = Math.max(1, side);
+  sw = Math.max(1, Math.min(sw, IW - sx));
+  sh = Math.max(1, Math.min(sh, IH - sy));
 
+  // 目標輸出仍維持正方形：先用 sw/sh 分軸計算得到可用裁切範圍，
+  // 再取最小邊長讓來源區塊保持正方形，避免非等比縮放造成畫面拉伸。
+  const side = Math.max(1, Math.min(sw, sh));
+  sw = side;
+  sh = side;
   const out = Math.max(side, NATIVE_EXPORT_MIN_PX);
   const canvas = document.createElement("canvas");
   canvas.width = out;
@@ -455,7 +464,7 @@ async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
   if (!ctx) throw new Error("[BattleCard] crop: 2d context unavailable");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, out, out);
   return canvas.toDataURL("image/png");
 }
 
@@ -1090,7 +1099,7 @@ const BattleCard = forwardRef(function BattleCard({
               <div
                 ref={cardRef}
                 data-ref="battle-card-ref"
-                className="absolute left-1/2 top-1/2 flex flex-col bg-black text-white rounded-2xl origin-center border-2 battlecard-corners-accent"
+                className="absolute left-1/2 top-1/2 flex flex-col shrink-0 bg-black text-white rounded-2xl origin-center border-2 battlecard-corners-accent"
                 style={{
                   width: CARD_SIZE,
                   height: CARD_SIZE,
