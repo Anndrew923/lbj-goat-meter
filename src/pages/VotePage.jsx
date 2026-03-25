@@ -100,7 +100,8 @@ export default function VotePage() {
     };
   }, [remainingPoints]);
 
-  // 帳號定錨：僅在「真換帳號」或「徹底登出」時重置狀態鎖，忽略 APK rehydrate 的 uid 暫時抖動。
+  // 帳號定錨（極致防抖）：僅當「下一個有效 UID」出現且與錨點不同時才重置。
+  // 不處理變為 null/undefined（多為 APK WebView rehydrate 噪訊）；真登出後換帳會由下一個有效 UID 觸發重置。
   useEffect(() => {
     const nextUid = currentUser?.uid;
     const prevUid = lastStableUidRef.current;
@@ -110,13 +111,6 @@ export default function VotePage() {
       setProfileLoadingSettled(false);
       setHasHandledDismissal(false);
       lastStableUidRef.current = nextUid;
-    }
-
-    if (prevUid && !nextUid) {
-      setProfileSetupDismissed(false);
-      setProfileLoadingSettled(false);
-      setHasHandledDismissal(false);
-      lastStableUidRef.current = null;
     }
   }, [currentUser?.uid]);
 
