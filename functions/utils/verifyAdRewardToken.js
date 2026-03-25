@@ -14,9 +14,10 @@ const INTERNAL_PREFIX = "goat_rwd_";
  * - 否則若已設定 AD_REWARD_VERIFY_ENDPOINT，則轉發至該 API 驗證。
  *
  * @param {string} token - 前端傳入的獎勵 Token
+ * @param {string} [explicitSigningSecret] - Gen2 Secret 解析後的金鑰，與 issueAdRewardToken 簽發一致
  * @returns {Promise<{ success: boolean, raw: any }>}
  */
-export async function verifyAdRewardToken(token) {
+export async function verifyAdRewardToken(token, explicitSigningSecret) {
   if (typeof token !== "string" || !token.trim()) {
     return { success: false, raw: { error: "empty-token" } };
   }
@@ -25,7 +26,7 @@ export async function verifyAdRewardToken(token) {
 
   // 自簽 Token：由 issueAdRewardToken 簽發，僅後端可驗證
   if (trimmed.startsWith(INTERNAL_PREFIX)) {
-    const result = verifySignedAdRewardToken(trimmed);
+    const result = verifySignedAdRewardToken(trimmed, explicitSigningSecret);
     return {
       success: result.valid,
       raw: result.valid ? { source: "signed", payload: result.payload } : { error: "invalid-signature-or-expired" },

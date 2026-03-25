@@ -12,7 +12,13 @@ import crypto from "crypto";
 const PREFIX = "goat_rwd_";
 const TTL_SEC = 5 * 60; // 5 分鐘有效
 
-function getSecret() {
+/**
+ * @param {string | undefined} explicitSecret - Gen2 `defineSecret` 注入值，優先於 process.env
+ */
+function getSecret(explicitSecret) {
+  if (typeof explicitSecret === "string" && explicitSecret.trim() !== "") {
+    return explicitSecret.trim();
+  }
   const secret = process.env.AD_REWARD_SIGNING_SECRET;
   if (!secret || !secret.trim()) {
     throw new Error("[adRewardSigning] AD_REWARD_SIGNING_SECRET is not set.");
@@ -23,10 +29,11 @@ function getSecret() {
 /**
  * 簽發廣告獎勵 Token（僅供 issueAdRewardToken 使用）。
  * @param {{ placement: string, uid: string }} payload
+ * @param {string} [explicitSecret] - 由 Callable 綁定 Secret 解析後傳入，與 verify 使用同一把金鑰
  * @returns {string} token
  */
-export function signAdRewardToken(payload) {
-  const secret = getSecret();
+export function signAdRewardToken(payload, explicitSecret) {
+  const secret = getSecret(explicitSecret);
   const exp = Math.floor(Date.now() / 1000) + TTL_SEC;
   const data = { ...payload, exp };
   const payloadB64 = Buffer.from(JSON.stringify(data), "utf8").toString("base64url");
@@ -37,14 +44,15 @@ export function signAdRewardToken(payload) {
 /**
  * 驗證我們自己簽發的 Token。
  * @param {string} token
+ * @param {string} [explicitSecret] - 與簽發時相同來源，否則回退 process.env
  * @returns {{ valid: boolean, payload?: { placement: string, uid: string } }}
  */
-export function verifySignedAdRewardToken(token) {
+export function verifySignedAdRewardToken(token, explicitSecret) {
   if (typeof token !== "string" || !token.startsWith(PREFIX)) {
     return { valid: false };
   }
   try {
-    const secret = getSecret();
+    const secret = getSecret(explicitSecret);
     const rest = token.slice(PREFIX.length);
     const dot = rest.indexOf(".");
     if (dot <= 0) return { valid: false };

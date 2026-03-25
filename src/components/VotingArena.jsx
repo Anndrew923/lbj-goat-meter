@@ -48,6 +48,8 @@ export default function VotingArena({
   onExportUnlock,
   activeWarzoneId,
   sessionOverride = false,
+  /** Profile／戰區 Modal 開啟時暫停主戰場所有 CSS 動畫，降低 WebView 合成負載 */
+  arenaAnimationsPaused = false,
 }) {
   const { t, i18n } = useTranslation(["arena", "common"]);
   const { isGuest, profile, profileLoading, hasProfile, revote } = useAuth();
@@ -258,15 +260,18 @@ export default function VotingArena({
               : "form";
 
   const anti = isAntiStance(selectedStance);
+  const isPaused = arenaAnimationsPaused;
 
   return (
     <>
       {/* Supernova 外殼：雷達流光邊框（與突發戰區共用語彙），將內層能量場與卡片包裹在同一個高對比容器中。 */}
-      <div className="voting-arena-wrapper relative isolate overflow-hidden rounded-2xl p-[3px] bg-gradient-to-br from-king-gold via-red-500 to-king-gold bg-[length:200%_200%] animate-border-beam shadow-[0_0_40px_rgba(255,191,0,0.4)] motion-reduce:animate-none">
-        <div className="relative overflow-hidden rounded-[1.1rem] bg-gray-950/90">
+      <div
+        className={`voting-arena-wrapper relative isolate overflow-hidden rounded-2xl p-[3px] bg-gradient-to-br from-king-gold via-red-500 to-king-gold bg-[length:200%_200%] shadow-[0_0_40px_rgba(255,191,0,0.4)] motion-reduce:animate-none ${isPaused ? "" : "animate-border-beam"}`}
+      >
+        <div className="relative overflow-hidden rounded-[1.1rem] bg-gray-950/95">
           {/* Version 2 Supernova 能量場：提高透明度並加入旋轉層，模擬恆星噴發感但仍保持文字可讀性。 */}
           <div
-            className="absolute inset-0 z-0 animate-energy-flow pointer-events-none motion-reduce:animate-none"
+            className={`absolute inset-0 z-0 pointer-events-none motion-reduce:animate-none ${isPaused ? "" : "animate-energy-flow"} ${isPaused ? "hidden" : ""}`}
             style={{
               background:
                 "linear-gradient(-45deg, rgba(212,175,55,0.85), rgba(180,40,50,0.7), rgba(75,0,130,0.85), rgba(212,175,55,0.7))",
@@ -276,7 +281,7 @@ export default function VotingArena({
           />
           {/* 旋轉輻射層：單純負責色彩噴發與流動感，與主流光分離，避免影響 Tailwind 動畫設定。 */}
           <div
-            className="absolute -inset-16 z-0 pointer-events-none animate-spin-slow motion-reduce:animate-none"
+            className={`absolute -inset-16 z-0 pointer-events-none motion-reduce:animate-none ${isPaused ? "" : "animate-spin-slow"} ${isPaused ? "hidden" : ""}`}
             style={{
               background:
                 "conic-gradient(from 0deg, rgba(212,175,55,0.15), rgba(180,40,50,0.3), rgba(75,0,130,0.25), rgba(212,175,55,0.15))",
@@ -303,14 +308,14 @@ export default function VotingArena({
           </p>
         </div>
         {contentMode === "loading" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-8 text-center">
-            <p className="text-king-gold animate-pulse" role="status">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/95 p-8 text-center">
+            <p className={`text-king-gold ${isPaused ? "" : "animate-pulse"}`} role="status">
               {t("common:loadingArena")}
             </p>
           </div>
         )}
         {contentMode === "limbo" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/95 p-6">
             <h3 className="text-lg font-bold text-king-gold mb-2">
               {t("common:chooseStance")}
             </h3>
@@ -321,6 +326,7 @@ export default function VotingArena({
               selectedStance={null}
               onSelect={() => setShowLoginPrompt(true)}
               disabled={false}
+              animationsPaused={isPaused}
             />
             <motion.button
               type="button"
@@ -338,7 +344,7 @@ export default function VotingArena({
           </div>
         )}
         {contentMode === "guest" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/95 p-6">
             <h3 className="text-lg font-bold text-king-gold mb-2">
               {t("common:chooseStance")}
             </h3>
@@ -349,6 +355,7 @@ export default function VotingArena({
               selectedStance={null}
               onSelect={() => setShowLoginPrompt(true)}
               disabled={false}
+              animationsPaused={isPaused}
             />
           </div>
         )}
@@ -382,7 +389,7 @@ export default function VotingArena({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="rounded-xl border border-king-gold/40 bg-gray-950/90 p-8 text-center"
+            className="rounded-xl border border-king-gold/40 bg-gray-950/95 p-8 text-center"
           >
             <p className="text-king-gold font-semibold">
               {t("common:alreadyVoted")}
@@ -404,7 +411,7 @@ export default function VotingArena({
           </motion.div>
         )}
         {contentMode === "form" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/95 p-6">
             <h3 className="text-lg font-bold text-king-gold mb-4">
               {t("common:chooseStance")}
             </h3>
@@ -422,6 +429,7 @@ export default function VotingArena({
                 goatFlash={goatFlash}
                 fraudShatter={fraudShatter}
                 disabled={isProcessing}
+                animationsPaused={isPaused}
               />
             </motion.div>
 
@@ -490,7 +498,7 @@ export default function VotingArena({
               disabled={!canSubmit || submitting || isProcessing}
               whileHover={canSubmit && !isProcessing ? { scale: 1.05 } : {}}
               whileTap={canSubmit && !isProcessing ? { scale: 0.95 } : {}}
-              className={`w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold transition-transform disabled:opacity-50 disabled:cursor-not-allowed ${canSubmit && !submitting && !isProcessing ? "animate-pulse" : ""}`}
+              className={`w-full mt-3 py-3 rounded-lg bg-king-gold text-black font-bold transition-transform disabled:opacity-50 disabled:cursor-not-allowed ${!isPaused && canSubmit && !submitting && !isProcessing ? "animate-pulse" : ""}`}
             >
               {submitting || isProcessing
                 ? t("common:submittingWithAudit")
@@ -554,6 +562,7 @@ export default function VotingArena({
             onExportUnlock={onExportUnlock}
             onExportStart={onExportStart}
             onExportEnd={onExportEnd}
+            arenaAnimationsPaused={arenaAnimationsPaused}
           />
         )}
       </AnimatePresence>

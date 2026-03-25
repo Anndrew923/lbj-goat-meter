@@ -41,6 +41,8 @@ const CALLABLE_HTTP_OPTS = { concurrency: 80 };
 const goatFingerprintPepperSecret = defineSecret("GOAT_FINGERPRINT_PEPPER");
 /** 與 Secret Manager 鍵名一致；供 Golden Key HMAC 驗證使用，取代已棄用的 functions.config()。 */
 const goatGoldenKeySecret = defineSecret("GOAT_GOLDEN_KEY_SECRET");
+/** 與 Secret Manager 鍵名一致；issueAdRewardToken / resetPosition 自簽廣告獎勵 Token 用 */
+const adRewardSigningSecret = defineSecret("AD_REWARD_SIGNING_SECRET");
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -103,6 +105,26 @@ function resolveGoldenKeySecret(secret) {
   if (fromEnv) return fromEnv;
   if (process.env.K_SERVICE) {
     functions.logger.warn("[GoldenKey] GOAT_GOLDEN_KEY_SECRET 未解析，簽章驗證將失敗。請確認 Secret 已綁定並部署。");
+  }
+  return "";
+}
+
+/**
+ * 解析廣告獎勵簽章金鑰：優先 Gen2 secret.value()，失敗則 AD_REWARD_SIGNING_SECRET（Emulator／舊版純環境變數部署）。
+ */
+function resolveAdRewardSigningSecret(secret) {
+  try {
+    const v = secret.value();
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  } catch {
+    // Emulator 或未解析 secret 時改走環境變數
+  }
+  const fromEnv = process.env.AD_REWARD_SIGNING_SECRET?.trim();
+  if (fromEnv) return fromEnv;
+  if (process.env.K_SERVICE) {
+    functions.logger.warn(
+      "[adReward] AD_REWARD_SIGNING_SECRET 未解析：原生 App 看完廣告後無法簽發 Token，請在 Secret Manager 建立並綁定至 issueAdRewardToken、resetPosition"
+    );
   }
   return "";
 }
@@ -396,17 +418,19 @@ async function runSubmitVote(data, context) {
  * - 所有操作要嘛一起成功，要嘛全部回滾，不會出現「設備已解鎖但統計未扣回」的中間狀態。
  */
 export const resetPosition = onCall(
-  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret] },
+  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret, adRewardSigningSecret] },
   async (request) => {
   requireAuth(request);
 
   const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
+  const adRewardSigningSecretResolved = resolveAdRewardSigningSecret(adRewardSigningSecret);
 
   try {
     return await runResetPosition(request.data, {
       auth: request.auth,
       rawRequest: request.rawRequest,
       goldenKeySecret,
+      adRewardSigningSecret: adRewardSigningSecretResolved,
     });
   } catch (err) {
     if (err instanceof HttpsError) throw err;
@@ -446,7 +470,7 @@ async function runResetPosition(data, context) {
     console.log("[resetPosition] Web 無廣告 SDK 過渡：允許重置（origin 已驗證）");
   } else {
     // 重置立場不看 reCAPTCHA 分數：僅以廣告／origin 為門檻；即便被繞過也只是撤一票，不影響整體數據可信度
-    const adResult = await verifyAdRewardToken(adRewardToken);
+    const adResult = await verifyAdRewardToken(adRewardToken, context.adRewardSigningSecret);
     if (!adResult.success) {
       throw new HttpsError("failed-precondition", "Ad reward not verified", {
         code: "ad-not-watched",
@@ -1078,18 +1102,32 @@ async function runSubmitBreakingVote(data, context) {
  *
  * 設計意圖：當未使用 AD_REWARD_VERIFY_ENDPOINT 時，改由後端以 AD_REWARD_SIGNING_SECRET 簽發短期 Token，
  * 前端於「廣告觀看完成」後呼叫此函式取得 Token，再傳入 resetPosition。僅限已登入使用者，且 Token 5 分鐘有效。
+ * Gen2 須以 defineSecret 綁定 Secret Manager，否則執行期 process.env 常為空導致簽發失敗。
  */
-export const issueAdRewardToken = onCall(CALLABLE_HTTP_OPTS, async (request) => {
+export const issueAdRewardToken = onCall(
+  { ...CALLABLE_HTTP_OPTS, secrets: [adRewardSigningSecret] },
+  async (request) => {
   requireAuth(request);
 
   const placement =
     typeof request.data?.placement === "string" ? request.data.placement.trim() : "reset_position";
 
-  try {
-    const token = signAdRewardToken({
-      placement,
-      uid: request.auth.uid,
+  const signingSecret = resolveAdRewardSigningSecret(adRewardSigningSecret);
+  if (!signingSecret) {
+    functions.logger.error("[issueAdRewardToken] AD_REWARD_SIGNING_SECRET is empty after resolve");
+    throw new HttpsError("failed-precondition", "Ad reward signing not configured", {
+      code: "ad-reward-signing-missing",
     });
+  }
+
+  try {
+    const token = signAdRewardToken(
+      {
+        placement,
+        uid: request.auth.uid,
+      },
+      signingSecret
+    );
     return { token };
   } catch (err) {
     // 不將內部錯誤訊息（如 Secret 未設定）回傳給客戶端，避免資訊洩漏
@@ -1098,7 +1136,8 @@ export const issueAdRewardToken = onCall(CALLABLE_HTTP_OPTS, async (request) => 
       code: "ad-reward-issue-failed",
     });
   }
-});
+}
+);
 
 /**
  * getFilteredSentimentSummary — 漏斗篩選後之情緒聚合（Admin 讀 votes，客戶端 Rules 已禁止掃描）。

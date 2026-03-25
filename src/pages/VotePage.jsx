@@ -289,6 +289,7 @@ export default function VotePage() {
             currentUser={currentUser}
             activeWarzoneId={activeWarzone}
             sessionOverride={sessionOverride}
+            arenaAnimationsPaused={isSetupMounted}
             onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
             onExportStart={() => setTickerPausedForExport(true)}
             onExportEnd={() => setTickerPausedForExport(false)}

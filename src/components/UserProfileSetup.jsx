@@ -4,7 +4,7 @@
  * Step 2：派系效忠（支持的球隊，以城市+代表色暗示）+ 地理（國家，IP 預填或手選）
  * 寫入 Firestore profiles 集合，與 docs/SCHEMA.md 對齊。
  */
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
@@ -42,6 +42,20 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
   })
   const [geoLoading, setGeoLoading] = useState(true)
   const [locationSource, setLocationSource] = useState(null) // 'geolocation' | 'ip' | null
+  /** WebView：pointerdown 優先；鍵盤／輔助科技走 click。短時間去重避免同一次觸控連發 pointerdown+click。 */
+  const laterDismissAtRef = useRef(0)
+
+  const handleLaterDismiss = useCallback(
+    (e) => {
+      e.stopPropagation()
+      if (e.type === 'pointerdown') e.preventDefault()
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      if (now - laterDismissAtRef.current < 350) return
+      laterDismissAtRef.current = now
+      onClose?.(e)
+    },
+    [onClose],
+  )
 
   // 由父層控制掛載生命週期；每次掛載時初始化 step/form，避免外部狀態抖動造成中途重置。
   useEffect(() => {
@@ -298,10 +312,8 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
             <>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onClose?.(e)
-                }}
+                onPointerDown={handleLaterDismiss}
+                onClick={handleLaterDismiss}
                 className="px-4 py-2 text-gray-400 hover:text-white"
               >
                 {t('later')}

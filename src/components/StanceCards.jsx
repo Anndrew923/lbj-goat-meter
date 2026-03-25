@@ -124,6 +124,7 @@ function getSelectedCardClass(theme) {
  * @param {boolean} [disabled] - 是否禁用點擊（如來賓模式僅開登入彈窗）
  * @param {boolean} [goatFlash] - 是否播放 GOAT 金閃動畫
  * @param {boolean} [fraudShatter] - 是否播放 FRAUD 紫碎動畫
+ * @param {boolean} [animationsPaused] - Modal 遮罩主戰場時關閉邊框／呼吸動畫（省 WebView GPU）
  */
 export default function StanceCards({
   selectedStance,
@@ -131,6 +132,7 @@ export default function StanceCards({
   disabled,
   goatFlash = false,
   fraudShatter = false,
+  animationsPaused = false,
 }) {
   const rows = getStancesForArena();
 
@@ -141,14 +143,19 @@ export default function StanceCards({
         const isSelected = selectedStance === value;
         const watermarkLetter = (primary && primary[0]) || value[0];
         const beamFlashActive =
-          (value === "goat" && goatFlash) || (value === "fraud" && fraudShatter);
+          !animationsPaused &&
+          ((value === "goat" && goatFlash) || (value === "fraud" && fraudShatter));
+        const beamClass = animationsPaused
+          ? ""
+          : "animate-border-beam motion-reduce:animate-none";
+        const beamFlashClass = beamFlashActive ? "animate-beam-flash" : "";
 
         return (
           <div
             key={value}
-            className={`rounded-xl p-[1.5px] bg-gradient-to-r bg-beam bg-[length:200%_100%] animate-border-beam motion-reduce:animate-none transition-opacity duration-300 ${getBeamGradientClass(
+            className={`rounded-xl p-[1.5px] bg-gradient-to-r bg-beam bg-[length:200%_100%] transition-opacity duration-300 ${beamClass} ${getBeamGradientClass(
               theme
-            )} ${isSelected ? "opacity-100" : "opacity-70"} ${beamFlashActive ? "animate-beam-flash" : ""}`}
+            )} ${isSelected ? "opacity-100" : "opacity-70"} ${beamFlashClass}`}
           >
             <motion.button
               type="button"
@@ -161,7 +168,7 @@ export default function StanceCards({
               className={`relative min-h-[110px] rounded-[10px] text-left px-4 py-2.5 transition-colors flex flex-col items-start justify-end overflow-hidden disabled:cursor-not-allowed w-full ${
                 isSelected
                   ? getSelectedCardClass(theme)
-                  : `animate-subtle-pulse motion-reduce:animate-none ${getUnselectedCardClass(theme)}`
+                  : `${animationsPaused ? "" : "animate-subtle-pulse motion-reduce:animate-none "} ${getUnselectedCardClass(theme)}`
               }`}
               style={
                 isSelected

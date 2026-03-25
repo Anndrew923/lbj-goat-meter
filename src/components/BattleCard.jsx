@@ -537,6 +537,7 @@ const BattleCard = forwardRef(function BattleCard({
   /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
   onExportStart,
   onExportEnd,
+  arenaAnimationsPaused = false,
 }, ref) {
   const { t } = useTranslation("common");
   /** 戰報卡根節點：唯一下載路徑 toPng 目標（不可由 Container 分岔） */
@@ -1058,6 +1059,7 @@ const BattleCard = forwardRef(function BattleCard({
       <motion.div
         ref={overlayRef}
         className="framer-motion-stabilizer absolute inset-0 flex flex-col items-center bg-black/90 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
+        data-arena-paused={arenaAnimationsPaused ? "1" : undefined}
         role="dialog"
         aria-modal="true"
         aria-labelledby="battle-card-title"
@@ -1143,9 +1145,9 @@ const BattleCard = forwardRef(function BattleCard({
                     inset:0;
                     pointer-events:none;
                     border-radius:0.75rem;
-                    opacity:0.95;
+                    opacity:0.88;
                     z-index:11;
-                    mix-blend-mode:screen;
+                    mix-blend-mode:normal;
                     background-repeat:no-repeat;
                   }
                   /* top-left & top-right */
@@ -1209,8 +1211,8 @@ const BattleCard = forwardRef(function BattleCard({
                     data-export-role="laser-cut"
                     style={{
                       backgroundImage: `linear-gradient(115deg, transparent 49.6%, ${hexWithAlpha(laserCutColor, "99")} 49.75%, #FFFFFF 50%, ${hexWithAlpha(laserCutColor, "99")} 50.25%, transparent 50.4%)`,
-                      mixBlendMode: "screen",
-                      opacity: 1,
+                      mixBlendMode: "normal",
+                      opacity: 0.82,
                       filter: `drop-shadow(0 0 2px #FFFFFF) drop-shadow(0 0 10px ${laserCutColor}) drop-shadow(0 0 18px ${hexWithAlpha(laserCutColor, "99")}) contrast(1.4) brightness(1.15)`,
                     }}
                   />
@@ -1235,8 +1237,8 @@ const BattleCard = forwardRef(function BattleCard({
                           ${reflectiveCoreCool} 31%,
                           ${reflectiveTint40} 33%,
                           transparent 45%)`,
-                      mixBlendMode: "overlay",
-                      opacity: 0.95,
+                      mixBlendMode: "normal",
+                      opacity: 0.9,
                       filter: "contrast(1.2) brightness(1.05)",
                     }}
                   />
@@ -1248,8 +1250,8 @@ const BattleCard = forwardRef(function BattleCard({
                     style={{
                       // Phase 6：讓基底 secondary 主導色彩結構，避免雙色融合後仍被 primary 淹沒
                       background: mixHex(teamColors.primary, teamColors.secondary, 0.5),
-                      opacity: 0.16,
-                      mixBlendMode: "overlay",
+                      opacity: 0.2,
+                      mixBlendMode: "normal",
                       filter: "saturate(1.25)",
                     }}
                   />
@@ -1281,9 +1283,9 @@ const BattleCard = forwardRef(function BattleCard({
                   </div>
                 </div>
 
-                {/* Layer 1b: 球卡雜訊紋理 (analog noise, mix-blend-overlay) */}
+                {/* Layer 1b: 球卡雜訊紋理（WebView：避免 mix-blend，改純透明度） */}
                 <div
-                  className="absolute inset-0 z-0 opacity-[0.18] mix-blend-soft-light pointer-events-none rounded-2xl"
+                  className="absolute inset-0 z-0 opacity-[0.2] pointer-events-none rounded-2xl"
                   aria-hidden
                   style={{
                     backgroundImage: `url("${NOISE_DATA_URL}")`,
@@ -1293,7 +1295,7 @@ const BattleCard = forwardRef(function BattleCard({
 
                 {/* Layer 1b+: 全息戰術遮罩（掃描線 + 20px 點陣網格） */}
                 <div
-                  className="absolute inset-0 z-[1] pointer-events-none rounded-2xl mix-blend-overlay"
+                  className="absolute inset-0 z-[1] pointer-events-none rounded-2xl opacity-90"
                   aria-hidden
                   style={{
                     backgroundImage: `
@@ -1302,7 +1304,6 @@ const BattleCard = forwardRef(function BattleCard({
                       repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0px 1px, transparent 1px 7px)
                     `,
                     filter: "contrast(1.2) brightness(1.05)",
-                    opacity: 1,
                   }}
                 />
 
@@ -1398,7 +1399,7 @@ const BattleCard = forwardRef(function BattleCard({
                   <div className="flex-shrink-0 relative flex items-center justify-center mt-2 mb-2 py-6 px-10 overflow-visible rounded-2xl">
                     {/* 毛玻璃襯底：-mx-4 擴張以容納 30px 霓虹光暈，rounded-2xl 柔化邊角 */}
                     <div
-                      className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/60 mix-blend-multiply"
+                      className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/75"
                       aria-hidden
                       style={{
                         boxShadow: "0 0 50px rgba(0,0,0,0.5)",
@@ -1546,7 +1547,7 @@ const BattleCard = forwardRef(function BattleCard({
                   triggerHapticPattern([10, 30, 10]);
                   handleDownload(true);
                 }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-king-gold bg-king-gold/10 text-king-gold font-bold animate-border-blink"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-king-gold bg-king-gold/10 text-king-gold font-bold shadow-[0_0_18px_rgba(212,175,55,0.45)]"
               >
                 <Download className="w-5 h-5 shrink-0" aria-hidden />
                 {t("downloadHighResReport")}

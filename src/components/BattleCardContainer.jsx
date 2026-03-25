@@ -65,6 +65,8 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
     onExportStart,
     onExportEnd,
+    /** 與 VotePage Profile Modal 同步：降低戰報卡合成成本（極少與 Modal 同開，預留一致接口） */
+    arenaAnimationsPaused = false,
   },
   ref,
 ) {
@@ -177,6 +179,7 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
       onRequestRewardAd={onRequestRewardAd}
       onExportStart={onExportStart}
       onExportEnd={onExportEnd}
+      arenaAnimationsPaused={arenaAnimationsPaused}
     />
   ) : null
 
