@@ -89,6 +89,7 @@
   "exportFailedTitle": "Generation Failed (Weak Signal)",
   "exportFailedNetworkAdvice": "Your connection is unstable, so some assets may not have loaded fully. Move to a spot with better signal and try again.",
   "exportFailedNativeRenderAnomalyAdvice": "Your network connection is unstable (Primary Cause), which caused an error in the phone's temporary cache. Even if you move to a better spot, please 【Close and Restart the App】 and connect to a stable Wi-Fi before trying again.",
+  "exportFailedSavePhotoAdvice": "The battle report was generated, but saving to your gallery failed. Please check photo/storage permissions and try again.",
   "battleReportSavedToGallery": "✅ Battle report saved to gallery",
   "generatingHighResReport": "Creating your battle report…",
   "exportSlowResources": "Network is slow; loading high-res assets…",

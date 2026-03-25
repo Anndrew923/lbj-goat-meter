@@ -65,6 +65,18 @@ const HAMMER_DEAD_PIXEL_RGB_SUM_LT = 10;
 const HAMMER_MAX_DEAD_PIXELS = 3;
 /** 中央抽樣 alpha 下限；過低代表合成未完成／半圖 */
 const HAMMER_CENTER_ALPHA_MIN = 250;
+/** 原生匯出：畫面品質探針解析度（僅用來打分，不影響最終裁切輸出） */
+const NATIVE_QUALITY_PROBE_SIZE_PX = 128;
+/** 原生匯出：取樣 stride（越小越精準但越耗時） */
+const NATIVE_QUALITY_SAMPLE_STRIDE_PX = 8;
+/** 原生匯出：通過條件（針對“非全黑/非半圖”的最低可靠信號） */
+const NATIVE_QUALITY_PASS_NONBLACK_RATIO = 0.08;
+const NATIVE_QUALITY_PASS_CENTER_ALPHA = 80;
+/** 原生匯出：最小候選門檻；低於此代表“幾乎必黑/幾乎必半圖” */
+const NATIVE_QUALITY_MIN_NONBLACK_RATIO = 0.04;
+const NATIVE_QUALITY_MIN_CENTER_ALPHA = 40;
+/** 原生匯出：用來做“亮度最低保障”的歸一化門檻（0~1；rgbSum/765） */
+const NATIVE_QUALITY_MIN_AVG_BRIGHTNESS_NORM = 0.02;
 /** 與 HAMMER_CARD_SAMPLE_REL 列優先 3×3 對齊：中心點 alpha 檢查 */
 const HAMMER_CENTER_SAMPLE_INDEX = 4;
 /** 底部列三點索引（半圖常見底黑） */
@@ -228,6 +240,190 @@ async function validateNativeScreenshotBase64(base64, layoutRect) {
   if (bottomDeadCount === HAMMER_BOTTOM_ROW_INDICES.length) return false;
   if (centerAlpha < HAMMER_CENTER_ALPHA_MIN) return false;
   return true;
+}
+
+/**
+ * 原生匯出品質打分：比 validateNativeScreenshotBase64 更“抗抖”。
+ * 設計意圖：
+ * - 你要求“幾乎 100% 成功率且失敗主要歸因於網路/資源未就緒”
+ * - validateNativeScreenshotBase64 目前採九宮格硬閾值，對邊界幀/合成時序非常敏感
+ * - 這裡改成把“layoutRect 對齊裁切來源”投影到小畫布後，做連續指標（非全黑比例/中心 alpha/平均亮度）
+ * - 結果用 score 選擇最佳候選，避免因偶發誤判導致 Dialog.alert 提前 return
+ *
+ * @returns {{
+ *   score: number,
+ *   pass: boolean,
+ *   passMin: boolean,
+ *   nonBlackRatio: number,
+ *   centerAlphaAvg: number,
+ *   avgBrightnessNorm: number
+ * }}
+ */
+async function scoreNativeScreenshotBase64(base64, layoutRect) {
+  if (!base64 || typeof base64 !== "string") {
+    return {
+      score: 0,
+      pass: false,
+      passMin: false,
+      nonBlackRatio: 0,
+      centerAlphaAvg: 0,
+      avgBrightnessNorm: 0,
+    };
+  }
+  if (
+    !layoutRect ||
+    typeof layoutRect.width !== "number" ||
+    typeof layoutRect.height !== "number" ||
+    layoutRect.width <= 0 ||
+    layoutRect.height <= 0
+  ) {
+    return {
+      score: 0,
+      pass: false,
+      passMin: false,
+      nonBlackRatio: 0,
+      centerAlphaAvg: 0,
+      avgBrightnessNorm: 0,
+    };
+  }
+
+  const dataUrl = base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
+  const img = await loadImageFromDataUrl(dataUrl);
+  const IW = img.naturalWidth;
+  const IH = img.naturalHeight;
+  if (!IW || !IH) {
+    return {
+      score: 0,
+      pass: false,
+      passMin: false,
+      nonBlackRatio: 0,
+      centerAlphaAvg: 0,
+      avgBrightnessNorm: 0,
+    };
+  }
+
+  const ox = window.pageXOffset;
+  const oy = window.pageYOffset;
+  const mapping = getNativeScreenshotPixelMapping(IW, IH);
+  if (!mapping) {
+    return {
+      score: 0,
+      pass: false,
+      passMin: false,
+      nonBlackRatio: 0,
+      centerAlphaAvg: 0,
+      avgBrightnessNorm: 0,
+    };
+  }
+
+  // 來源座標計算（以 X/Y 軸分軸縮放；避免非等比縮放時仍走 mapping.map 造成裁切偏移/失真）
+  let sx = Math.round((layoutRect.left + ox) * mapping.scaleX);
+  let sy = Math.round((layoutRect.top + oy) * mapping.scaleY);
+  let sw = Math.round(layoutRect.width * mapping.scaleX);
+  let sh = Math.round(layoutRect.height * mapping.scaleY);
+
+  const inset = CROP_SAFETY_INSET_PX;
+  sx += inset;
+  sy += inset;
+  sw = Math.max(1, sw - 2 * inset);
+  sh = Math.max(1, sh - 2 * inset);
+
+  sx = Math.max(0, Math.min(sx, IW - 1));
+  sy = Math.max(0, Math.min(sy, IH - 1));
+  sw = Math.max(1, Math.min(sw, IW - sx));
+  sh = Math.max(1, Math.min(sh, IH - sy));
+
+  // 強制來源裁切來源為正方形：避免 sw/sh 不等導致拉伸，影響“黑/半圖”指標
+  const side = Math.max(1, Math.min(sw, sh));
+  // 將正方形來源區塊在原矩形內置中，避免 sw!=sh 時從左上角硬裁切造成觀感“壓扁/裁壓”
+  const dx = sw - side;
+  const dy = sh - side;
+  sx += Math.floor(dx / 2);
+  sy += Math.floor(dy / 2);
+  sw = side;
+  sh = side;
+  sx = Math.max(0, Math.min(sx, IW - sw));
+  sy = Math.max(0, Math.min(sy, IH - sh));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = NATIVE_QUALITY_PROBE_SIZE_PX;
+  canvas.height = NATIVE_QUALITY_PROBE_SIZE_PX;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    return {
+      score: 0,
+      pass: false,
+      passMin: false,
+      nonBlackRatio: 0,
+      centerAlphaAvg: 0,
+      avgBrightnessNorm: 0,
+    };
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, NATIVE_QUALITY_PROBE_SIZE_PX, NATIVE_QUALITY_PROBE_SIZE_PX);
+
+  const imageData = ctx.getImageData(0, 0, NATIVE_QUALITY_PROBE_SIZE_PX, NATIVE_QUALITY_PROBE_SIZE_PX);
+  const data = imageData.data;
+
+  let total = 0;
+  let nonBlack = 0;
+  let brightnessSum = 0; // rgbSum/765 (0~1) 累加後再平均
+  let centerAlphaSum = 0;
+  let centerAlphaCount = 0;
+
+  const stride = NATIVE_QUALITY_SAMPLE_STRIDE_PX;
+  const half = Math.floor(NATIVE_QUALITY_PROBE_SIZE_PX / 2);
+  const centerRadiusPx = Math.floor(NATIVE_QUALITY_PROBE_SIZE_PX * 0.15);
+
+  for (let y = 0; y < NATIVE_QUALITY_PROBE_SIZE_PX; y += stride) {
+    for (let x = 0; x < NATIVE_QUALITY_PROBE_SIZE_PX; x += stride) {
+      const idx = (y * NATIVE_QUALITY_PROBE_SIZE_PX + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const a = data[idx + 3];
+
+      total += 1;
+      const rgbSum = r + g + b; // 0~765
+      const brightnessNorm = rgbSum / 765;
+      brightnessSum += brightnessNorm;
+
+      // 非黑：需要有顯示 alpha + 足夠亮度
+      if (a > 0 && rgbSum >= HAMMER_DEAD_PIXEL_RGB_SUM_LT) {
+        nonBlack += 1;
+      }
+
+      // 中心區域：判斷合成是否完成的粗信號（半圖時中心常偏低 alpha）
+      if (Math.abs(x - half) <= centerRadiusPx && Math.abs(y - half) <= centerRadiusPx) {
+        centerAlphaSum += a;
+        centerAlphaCount += 1;
+      }
+    }
+  }
+
+  const nonBlackRatio = total > 0 ? nonBlack / total : 0;
+  const centerAlphaAvg = centerAlphaCount > 0 ? centerAlphaSum / centerAlphaCount : 0;
+  const avgBrightnessNorm = total > 0 ? brightnessSum / total : 0;
+
+  // 綜合分數：讓“非全黑”權重大於 alpha/亮度，確保黑屏不過關
+  const score =
+    nonBlackRatio * 60 +
+    (centerAlphaAvg / 255) * 25 +
+    avgBrightnessNorm * 15;
+
+  const pass = nonBlackRatio >= NATIVE_QUALITY_PASS_NONBLACK_RATIO && centerAlphaAvg >= NATIVE_QUALITY_PASS_CENTER_ALPHA && avgBrightnessNorm >= NATIVE_QUALITY_MIN_AVG_BRIGHTNESS_NORM;
+  const passMin = nonBlackRatio >= NATIVE_QUALITY_MIN_NONBLACK_RATIO && centerAlphaAvg >= NATIVE_QUALITY_MIN_CENTER_ALPHA && avgBrightnessNorm >= NATIVE_QUALITY_MIN_AVG_BRIGHTNESS_NORM / 2;
+
+  return {
+    score,
+    pass,
+    passMin,
+    nonBlackRatio,
+    centerAlphaAvg,
+    avgBrightnessNorm,
+  };
 }
 
 /** 微幅改變透明度再還原，促使 HWC／TextureView 走一次合成路徑（GT Neo 3 等黑屏緩解） */
@@ -427,18 +623,11 @@ async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
     throw new Error("[BattleCard] crop: invalid layout or image dimensions");
   }
 
-  // 先用 mapping.map（等向假設）生成初值；在非等比縮放（bitmap 非 dpr 且 scaleX!=scaleY 且縮放非等向）時再改用 scaleX/scaleY。
-  let sx = Math.round((layoutRect.left + ox) * mapping.map);
-  let sy = Math.round((layoutRect.top + oy) * mapping.map);
-  let sw = Math.round(layoutRect.width * mapping.map);
-  let sh = Math.round(layoutRect.height * mapping.map);
-
-  if (!mapping.bitmapMatchesDpr && !mapping.uniform) {
-    sx = Math.round((layoutRect.left + ox) * mapping.scaleX);
-    sy = Math.round((layoutRect.top + oy) * mapping.scaleY);
-    sw = Math.round(layoutRect.width * mapping.scaleX);
-    sh = Math.round(layoutRect.height * mapping.scaleY);
-  }
+  // 來源座標計算（以 X/Y 軸分軸縮放；避免非等比縮放時仍走 mapping.map 造成裁切偏移/失真）
+  let sx = Math.round((layoutRect.left + ox) * mapping.scaleX);
+  let sy = Math.round((layoutRect.top + oy) * mapping.scaleY);
+  let sw = Math.round(layoutRect.width * mapping.scaleX);
+  let sh = Math.round(layoutRect.height * mapping.scaleY);
 
   const inset = CROP_SAFETY_INSET_PX;
   sx += inset;
@@ -451,11 +640,16 @@ async function cropNativeScreenshotToElement(fullBase64, layoutRect) {
   sw = Math.max(1, Math.min(sw, IW - sx));
   sh = Math.max(1, Math.min(sh, IH - sy));
 
-  // 目標輸出仍維持正方形：先用 sw/sh 分軸計算得到可用裁切範圍，
-  // 再取最小邊長讓來源區塊保持正方形，避免非等比縮放造成畫面拉伸。
+  // 目標輸出仍維持正方形：取 sw/sh 中較小的邊長並在原矩形內置中，避免裁切偏移造成觀感“壓扁/裁壓”
   const side = Math.max(1, Math.min(sw, sh));
+  const dx = sw - side;
+  const dy = sh - side;
+  sx += Math.floor(dx / 2);
+  sy += Math.floor(dy / 2);
   sw = side;
   sh = side;
+  sx = Math.max(0, Math.min(sx, IW - sw));
+  sy = Math.max(0, Math.min(sy, IH - sh));
   const out = Math.max(side, NATIVE_EXPORT_MIN_PX);
   const canvas = document.createElement("canvas");
   canvas.width = out;
@@ -659,9 +853,11 @@ const BattleCard = forwardRef(function BattleCard({
 
           let layoutRect = null;
           let shot = null;
-          let hammerOk = false;
+          let bestShot = null;
+          let bestLayoutRect = null;
+          let bestQuality = null;
 
-          for (let attempt = 1; attempt <= NATIVE_HAMMER_MAX_ATTEMPTS && !hammerOk; attempt += 1) {
+          for (let attempt = 1; attempt <= NATIVE_HAMMER_MAX_ATTEMPTS; attempt += 1) {
             // —— 第三階：物理喚醒與破冰（非首拍才 display 強制刷新，擊碎 GPU 緩存粘滯）——
             if (attempt === 2) {
               await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL1_MS));
@@ -690,11 +886,19 @@ const BattleCard = forwardRef(function BattleCard({
               shot = null;
             }
 
-            const valid =
-              shot?.base64 && (await validateNativeScreenshotBase64(shot.base64, layoutRect));
-            if (valid) {
-              hammerOk = true;
-              break;
+            if (!shot?.base64) continue;
+
+            try {
+              const quality = await scoreNativeScreenshotBase64(shot.base64, layoutRect);
+              if (!bestQuality || quality.score > bestQuality.score) {
+                bestQuality = quality;
+                bestShot = shot;
+                bestLayoutRect = layoutRect;
+              }
+              // 只要達到 pass，就可以直接跳出；否則繼續找“最佳候選”降低偶發誤殺風險。
+              if (quality.pass) break;
+            } catch (e) {
+              console.error("[BattleCard] scoreNativeScreenshotBase64 failed", e);
             }
           }
 
@@ -703,7 +907,7 @@ const BattleCard = forwardRef(function BattleCard({
           });
 
           // —— 第五階：結果產出（失敗則誠實建議 Dialog；成功則裁切 → 存相簿 → Toast）——
-          if (!hammerOk || !shot?.base64 || !layoutRect) {
+          if (!bestShot?.base64 || !bestLayoutRect || !bestQuality || !bestQuality.passMin) {
             await new Promise((r) => setTimeout(r, NATIVE_AFTER_FAIL3_MS));
             await showNativeExportFailedAlert(
               t("exportFailedTitle"),
@@ -714,7 +918,7 @@ const BattleCard = forwardRef(function BattleCard({
 
           let dataUrl;
           try {
-            dataUrl = await cropNativeScreenshotToElement(shot.base64, layoutRect);
+            dataUrl = await cropNativeScreenshotToElement(bestShot.base64, bestLayoutRect);
           } catch (e) {
             console.error("[BattleCard] cropNativeScreenshotToElement failed", e);
             await showNativeExportFailedAlert(
@@ -736,6 +940,10 @@ const BattleCard = forwardRef(function BattleCard({
                 await showBattleReportSavedToast(t("battleReportSavedToGallery"));
               } catch (saveErr) {
                 console.error("[BattleCard] Media.savePhoto failed", saveErr);
+                await showNativeExportFailedAlert(
+                  t("exportFailedTitle"),
+                  t("exportFailedSavePhotoAdvice"),
+                );
               }
             } else {
               const a = document.createElement("a");
