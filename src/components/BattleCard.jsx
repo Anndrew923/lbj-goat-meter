@@ -333,22 +333,23 @@ const BattleCard = forwardRef(function BattleCard({
             // ignore
           }
 
-          // ===== Layout Breakout (2.5)：避免父容器擠壓造成長條狀 =====
-          // 核心做法：擷取瞬間把卡片從文件流中抽離（fixed）並鎖死 640x640，
-          // 讓 PixelCopy 針對穩定的「方形視窗」抓取，而不是被 parent max-width/squeeze 影響。
+          // ===== Layout Breakout (2.7)：安全區縮放絕殺模式 =====
+          // 核心做法：將固定尺寸渲染（640x640）縮放到 320px（scale(0.5)），
+          // 讓擷取瞬間的版面尺寸必然小於主流手機寬度，徹底避免父容器擠壓/瀕臨 overflow。
           const originalStyle = el.style.cssText;
           try {
-            // 1) 擷取瞬間強制 fixed 脫離文件流 + 鎖死寬高，避免 parent 擠壓
+            // 1) 擷取瞬間強制 fixed 脫離文件流 + 鎖定基礎尺寸（640x640）
             el.style.setProperty("position", "fixed", "important");
-            el.style.setProperty("top", "50%", "important");
-            el.style.setProperty("left", "50%", "important");
-            el.style.setProperty("transform", "translate(-50%, -50%) scale(1)", "important");
-            el.style.setProperty("width", `${CARD_SIZE}px`, "important");
-            el.style.setProperty("min-width", `${CARD_SIZE}px`, "important");
-            el.style.setProperty("height", `${CARD_SIZE}px`, "important");
+            el.style.setProperty("top", "0px", "important");
+            el.style.setProperty("left", "0px", "important");
+            el.style.setProperty("width", "640px", "important"); // 保持原始設計寬
+            el.style.setProperty("height", "640px", "important"); // 保持原始設計高
+            el.style.setProperty("transform", "scale(0.5)", "important"); // 視覺佔用縮小到 320px
+            el.style.setProperty("transform-origin", "top left", "important");
+            el.style.setProperty("max-width", "none", "important"); // 破除任何 max-width 限制
             el.style.setProperty("z-index", "9999", "important");
 
-            // 2) 等待佈局穩定
+            // 2) 等待重繪
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
             // —— 第一階：環境鎖定（全螢幕「生成中」+ 圖片 100% 讀取／解碼）——
@@ -376,14 +377,9 @@ const BattleCard = forwardRef(function BattleCard({
             const rect = el.getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
 
-            // 3) 計算物理像素座標：以強制 640x640 的方形為目標，套用物理貼邊 buffer（-4px side, inset +2px）
-            const sidePx = Math.floor(CARD_SIZE * dpr) - 4;
-            const physicalRect = {
-              x: Math.round(rect.left * dpr) + 2,
-              y: Math.round(rect.top * dpr) + 2,
-              width: sidePx,
-              height: sidePx,
-            };
+            // 3) 計算物理像素座標：此時 rect.width 理論上約等於 320（640 * 0.5），再乘 DPR 還原畫質
+            const sidePx = Math.floor(rect.width * dpr);
+            const physicalRect = { x: 0, y: 0, width: sidePx, height: sidePx };
 
             if (sidePx <= 0) {
               await showNativeExportFailedAlert(
@@ -393,9 +389,7 @@ const BattleCard = forwardRef(function BattleCard({
               return;
             }
 
-            console.log(
-              `[ANTI_SQUASH][2.5 fixed] Capturing square: ${physicalRect.width}x${physicalRect.height}`,
-            );
+            console.log(`[SAFE_ZONE_MODE] Capturing: ${sidePx}x${sidePx} (DPR: ${dpr})`);
 
             // 呼叫原生端 PixelCopy 抓圖
             // Bruce 註記：此方法不再需要處理 statusBarHeight 位移，系統會自動對齊 Window 座標。
