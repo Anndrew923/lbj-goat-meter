@@ -33,6 +33,8 @@ const EXPORT_IMAGE_READY_MAX_WAIT_MS = 3000;
 const EXPORT_IMAGE_POLL_INTERVAL_MS = 50;
 /** Shutter Decoupling：setIsCapturing(true) 後等待，讓遮罩卸載與 CSS 變形／重繪落地再快門 */
 const NATIVE_SHUTTER_DOM_WAIT_MS = 600;
+/** 物理破冰：額外等待（廣告解鎖/容器重排後）降低壓扁/非等比拉伸風險 */
+const NATIVE_SHUTTER_WAIT_MS = 250;
 
 async function nextAnimationFrames(count) {
   for (let i = 0; i < count; i += 1) {
@@ -326,58 +328,64 @@ const BattleCard = forwardRef(function BattleCard({
           // 注意：scroll 失敗時不阻斷流程，讓後續 bounds clamp 自行處理。
           try {
             el.scrollIntoView({ behavior: "smooth", block: "center" });
-            await new Promise((r) => setTimeout(r, 400));
+            await new Promise((r) => setTimeout(r, 300));
           } catch {
             // ignore
           }
 
-          // —— 第一階：環境鎖定（全螢幕「生成中」+ 圖片 100% 讀取／解碼）——
-          onExportStart?.();
-          await nextAnimationFrames(2);
-          await decodeBattleCardImages(el);
-          await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
-            flushSync(() => {
-              setExportSlowResourceCopy(true);
-            });
-          });
-
-          const fileName = `GOAT-Card-${Date.now()}`;
-
+          // ===== Layout Breakout (2.5)：避免父容器擠壓造成長條狀 =====
+          // 核心做法：擷取瞬間把卡片從文件流中抽離（fixed）並鎖死 640x640，
+          // 讓 PixelCopy 針對穩定的「方形視窗」抓取，而不是被 parent max-width/squeeze 影響。
           const originalStyle = el.style.cssText;
-
           try {
-            // —— 高清無損輸出強化（2.2）——
-            // 設計意圖：在 `isExporting` 遮罩顯示期間，瞬間解除縮放限制，
-            // 讓 getBoundingClientRect() 讀到固定 640px 尺寸，再乘 DPR 得到 1280px+ 物理輸出。
-            el.style.transform = "translate(-50%, -50%) scale(1)";
-            el.style.width = `${CARD_SIZE}px`;
-            el.style.height = `${CARD_SIZE}px`;
-            el.style.transition = "none";
+            // 1) 擷取瞬間強制 fixed 脫離文件流 + 鎖死寬高，避免 parent 擠壓
+            el.style.setProperty("position", "fixed", "important");
+            el.style.setProperty("top", "50%", "important");
+            el.style.setProperty("left", "50%", "important");
+            el.style.setProperty("transform", "translate(-50%, -50%) scale(1)", "important");
+            el.style.setProperty("width", `${CARD_SIZE}px`, "important");
+            el.style.setProperty("min-width", `${CARD_SIZE}px`, "important");
+            el.style.setProperty("height", `${CARD_SIZE}px`, "important");
+            el.style.setProperty("z-index", "9999", "important");
 
-            el.scrollIntoView({ block: "center", inline: "center" });
-
-            // Double Frame Wait：強迫完成 layout/paint 與 GPU 合成
+            // 2) 等待佈局穩定
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+            // —— 第一階：環境鎖定（全螢幕「生成中」+ 圖片 100% 讀取／解碼）——
+            onExportStart?.();
+            await nextAnimationFrames(2);
+            await decodeBattleCardImages(el);
+            await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
+              flushSync(() => {
+                setExportSlowResourceCopy(true);
+              });
+            });
+
+            const fileName = `GOAT-Card-${Date.now()}`;
 
             // —— 第二階：渲染解耦（隱藏遮罩後等待 DOM 與合成落地）——
             flushSync(() => {
               setIsCapturing(true);
             });
+
+            // 廣告解鎖退場後的額外物理落地等待（避免 PixelCopy 捕捉到非等比過渡幀）
+            await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_WAIT_MS));
             await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_DOM_WAIT_MS));
 
             // 取得組件在視窗中的精確位置
             const rect = el.getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
 
-            // 將 CSS 座標轉換為原生物理像素座標（此時 width/height 理論上固定為 640*dpr）
+            // 3) 計算物理像素座標：以強制 640x640 的方形為目標，套用物理貼邊 buffer（-4px side, inset +2px）
+            const sidePx = Math.floor(CARD_SIZE * dpr) - 4;
             const physicalRect = {
-              x: Math.floor(rect.left * dpr),
-              y: Math.floor(rect.top * dpr),
-              width: Math.round(rect.width * dpr),
-              height: Math.round(rect.height * dpr),
+              x: Math.round(rect.left * dpr) + 2,
+              y: Math.round(rect.top * dpr) + 2,
+              width: sidePx,
+              height: sidePx,
             };
 
-            if (physicalRect.width <= 0 || physicalRect.height <= 0) {
+            if (sidePx <= 0) {
               await showNativeExportFailedAlert(
                 t("exportFailedTitle"),
                 t("exportFailedNativeRenderAnomalyAdvice"),
@@ -386,7 +394,7 @@ const BattleCard = forwardRef(function BattleCard({
             }
 
             console.log(
-              `[HQ_EXPORT] Target Physical Size: ${Math.round(640 * dpr)}x${Math.round(640 * dpr)} (DPR: ${dpr})`,
+              `[ANTI_SQUASH][2.5 fixed] Capturing square: ${physicalRect.width}x${physicalRect.height}`,
             );
 
             // 呼叫原生端 PixelCopy 抓圖
@@ -431,11 +439,13 @@ const BattleCard = forwardRef(function BattleCard({
               a.download = `${fileName}.png`;
               a.click();
             }
+
             return;
           } finally {
-            // 還原樣式，避免影響後續 UI（含下一次匯出）。
+            // 務必還原樣式，否則畫面會卡死在 fixed 狀態
             el.style.cssText = originalStyle;
           }
+          
         }
 
         // —— Web：維持既有 toPng 路徑（含 EXPORT_PAINT_WAIT_MS 與資源就緒輪詢）——

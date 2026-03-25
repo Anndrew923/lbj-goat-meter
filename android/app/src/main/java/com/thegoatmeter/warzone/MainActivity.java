@@ -47,18 +47,17 @@ public class MainActivity extends BridgeActivity implements ModifiedMainActivity
                 return;
             }
 
-            // [重點註記]: 確保傳入座標與寬高皆為正數，避免 PixelCopy 立即崩潰
-            int x = Math.max(0, xObj);
-            int y = Math.max(0, yObj);
-            int width = widthObj;
-            int height = heightObj;
+            int x = xObj;
+            int y = yObj;
+            int w = widthObj;
+            int h = heightObj;
 
-            if (width <= 0 || height <= 0) {
-                call.reject("Invalid rect dimensions");
+            if (w <= 0 || h <= 0) {
+                call.reject("Invalid rect dimensions (non-positive w/h)");
                 return;
             }
 
-            // 防呆：避免 Bitmap.createBitmap 因負值或越界直接拋例外
+            // 取得視窗物理邊界（用於位移補償，避免 bitmap/out-of-bounds）
             android.view.Window window = getActivity().getWindow();
             android.view.View decorView = window.getDecorView();
             int screenWidth = Math.max(0, decorView.getWidth());
@@ -69,69 +68,80 @@ public class MainActivity extends BridgeActivity implements ModifiedMainActivity
                 return;
             }
 
-            int clampedX = x;
-            int clampedY = y;
-            int clampedW = width;
-            int clampedH = height;
-
-            if (clampedX + clampedW > screenWidth) clampedW = screenWidth - clampedX;
-            if (clampedY + clampedH > screenHeight) clampedH = screenHeight - clampedY;
-
-            if (clampedW <= 0 || clampedH <= 0) {
-                call.reject("Rect is out of bounds");
+            // 以寬高最小值作為唯一邊長，強制輸出 1:1 正方形
+            int side = Math.min(w, h);
+            if (side <= 0) {
+                call.reject("Invalid rect side (<=0)");
                 return;
             }
 
-            Bitmap bitmap = null;
             try {
-                bitmap = Bitmap.createBitmap(clampedW, clampedH, Bitmap.Config.ARGB_8888);
+                // side 不能超過螢幕物理範圍；必要時縮小 side 但仍保持等邊
+                if (side > screenWidth) side = screenWidth;
+                if (side > screenHeight) side = screenHeight;
+
+                if (side <= 0) {
+                    call.reject("Rect side out of bounds");
+                    return;
+                }
+
+                // [關鍵修正]: 位移補償（Shifting）而非裁切（Clipping）
+                // 若右/下出界，將起始點往左/往上推，確保 width/height 永遠維持 side。
+                if (x + side > screenWidth) x = screenWidth - side;
+                if (x < 0) x = 0;
+
+                if (y + side > screenHeight) y = screenHeight - side;
+                if (y < 0) y = 0;
+
+                Bitmap bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
+
+                final int finalX = x;
+                final int finalY = y;
+                final int finalSide = side;
+                final android.graphics.Rect captureRect = new android.graphics.Rect(
+                    finalX,
+                    finalY,
+                    finalX + finalSide,
+                    finalY + finalSide
+                );
+
+                final Bitmap finalBitmap = bitmap;
+
+                PixelCopy.request(
+                        window,
+                        captureRect,
+                        finalBitmap,
+                        copyResult -> {
+                            if (copyResult == PixelCopy.SUCCESS) {
+                                ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                                finalBitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
+                                byte[] byteArray = byteArrayOutputStream.toByteArray();
+                                String encoded = Base64.encodeToString(byteArray, Base64.NO_WRAP);
+
+                                JSObject ret = new JSObject();
+                                ret.put("base64", encoded);
+                                call.resolve(ret);
+                            } else {
+                                String errorType = "UNKNOWN";
+                                if (copyResult == PixelCopy.ERROR_SOURCE_NO_DATA) errorType = "OUT_OF_BOUNDS";
+                                if (copyResult == PixelCopy.ERROR_SOURCE_INVALID) errorType = "OUT_OF_BOUNDS";
+                                if (copyResult == PixelCopy.ERROR_DESTINATION_INVALID) errorType = "OUT_OF_BOUNDS";
+                                if (copyResult == PixelCopy.ERROR_TIMEOUT) errorType = "TIMEOUT";
+
+                                call.reject(
+                                        "PIXELCOPY_FAILED_" + errorType,
+                                        "PixelCopy failed: " + errorType + ", copyResult=" + copyResult
+                                );
+                            }
+
+                            finalBitmap.recycle();
+                        },
+                        new Handler(Looper.getMainLooper())
+                );
             } catch (OutOfMemoryError oom) {
                 call.reject("OOM_ERROR", "Bitmap creation failed due to memory limit");
                 return;
             }
-
-            if (bitmap == null) {
-                call.reject("BITMAP_NULL", "Bitmap creation returned null");
-                return;
-            }
-
-            // Java: callback lambda 只能引用 effectively final 變數
-            final Bitmap finalBitmap = bitmap;
-
-            // 使用 PixelCopy 繞過 WebView 的安全限制，確保能抓到 HWC (Hardware Composer) 渲染的內容
-            PixelCopy.request(
-                    window,
-                    new Rect(clampedX, clampedY, clampedX + clampedW, clampedY + clampedH),
-                    finalBitmap,
-                    copyResult -> {
-                        if (copyResult == PixelCopy.SUCCESS) {
-                            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                            finalBitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
-                            byte[] byteArray = byteArrayOutputStream.toByteArray();
-                            String encoded = Base64.encodeToString(byteArray, Base64.NO_WRAP);
-
-                            JSObject ret = new JSObject();
-                            ret.put("base64", encoded);
-                            call.resolve(ret);
-                        } else {
-                            String errorType = "UNKNOWN";
-                            // PixelCopy 官方可用錯誤碼不包含 ERROR_SOURCE_OUT_OF_BOUNDS，
-                            // 因此把「來源無資料 / 來源無效 / 目的地無效」視為 bounds/裁切不穩定的同一類訊號。
-                            if (copyResult == PixelCopy.ERROR_SOURCE_NO_DATA) errorType = "OUT_OF_BOUNDS";
-                            if (copyResult == PixelCopy.ERROR_SOURCE_INVALID) errorType = "OUT_OF_BOUNDS";
-                            if (copyResult == PixelCopy.ERROR_DESTINATION_INVALID) errorType = "OUT_OF_BOUNDS";
-                            if (copyResult == PixelCopy.ERROR_TIMEOUT) errorType = "TIMEOUT";
-
-                            call.reject(
-                                "PIXELCOPY_FAILED_" + errorType,
-                                "PixelCopy failed: " + errorType + ", copyResult=" + copyResult
-                            );
-                        }
-
-                        finalBitmap.recycle();
-                    },
-                    new Handler(Looper.getMainLooper())
-            );
         }
     }
 
