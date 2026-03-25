@@ -21,13 +21,15 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose])
 
-  const handleGoLogin = () => {
-    onClose?.()
+  const handleGoLogin = (e) => {
+    e?.stopPropagation?.()
+    onClose?.(e)
     navigate('/')
   }
 
-  const handleCompleteWarzone = () => {
-    onClose?.()
+  const handleCompleteWarzone = (e) => {
+    e?.stopPropagation?.()
+    onClose?.(e)
     onCompleteWarzone?.()
   }
 
@@ -38,18 +40,18 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
-      initial={{ opacity: 0 }}
+      className="framer-motion-stabilizer fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
+      initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
+      onClick={(e) => onClose?.(e)}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={descId}
     >
       <motion.div
-        className="rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+        className="framer-motion-stabilizer rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
@@ -64,7 +66,10 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose?.(e)
+            }}
             className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors"
           >
             {t('later')}

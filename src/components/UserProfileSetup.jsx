@@ -107,7 +107,6 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
         { merge: true }
       )
       onSaved?.()
-      onClose?.()
     } catch (err) {
       setSaveError(err?.message ?? t('saveError'))
       console.error('[UserProfileSetup]', err)
@@ -140,20 +139,20 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
   return (
     <motion.div
       key="profile-setup-overlay"
-      initial={{ opacity: 0 }}
+      initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.2 } }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
+      className="framer-motion-stabilizer fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
       role="dialog"
       aria-modal="true"
       aria-labelledby="profile-setup-title"
-      onClick={() => onClose?.()}
+      onClick={(e) => onClose?.(e)}
     >
       <motion.div
+        className="framer-motion-stabilizer w-full max-w-md max-h-[85vh] flex flex-col rounded-xl bg-gray-900 border border-villain-purple/40 shadow-xl overflow-hidden"
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-md max-h-[85vh] flex flex-col rounded-xl bg-gray-900 border border-villain-purple/40 shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 border-b border-villain-purple/30 flex-shrink-0">
@@ -169,7 +168,7 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
           {/* 頂部漸層：提示上方無更多內容 */}
           <div className="sticky top-0 left-0 right-0 h-5 bg-gradient-to-b from-gray-900 to-transparent pointer-events-none z-10" aria-hidden />
           <div className="p-6 pt-2 min-h-[280px] pb-10">
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" initial={false}>
             {step === 1 && (
               <motion.div
                 key="step1"
@@ -297,7 +296,14 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
         <div className="p-6 pt-0 flex justify-between gap-3 flex-shrink-0 border-t border-villain-purple/20">
           {step === 1 ? (
             <>
-              <button type="button" onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onClose?.(e)
+                }}
+                className="px-4 py-2 text-gray-400 hover:text-white"
+              >
                 {t('later')}
               </button>
               <button

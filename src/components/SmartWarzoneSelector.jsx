@@ -170,16 +170,14 @@ export default function SmartWarzoneSelector({
           className="fixed inset-0 z-[100] h-[100svh] flex flex-col items-center justify-start pt-[10vh] px-4 pb-4 pointer-events-none"
         >
           {/* 遮罩僅視覺，不攔截點擊（pointer-events-none 由父層繼承） */}
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] pointer-events-none" aria-hidden />
+          <div className="absolute inset-0 bg-black/70 pointer-events-none" aria-hidden />
           <div
             className="relative z-10 pointer-events-auto w-full min-w-[280px] max-w-[90vw] min-h-[min(40vh,20rem)] rounded-xl border border-king-gold/30 overflow-hidden shadow-2xl flex flex-col max-h-[calc(100svh-10vh-2rem)]"
             style={{
-              background: 'rgba(15, 15, 20, 0.95)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
+              background: 'rgba(15, 15, 20, 0.98)',
             }}
           >
-            <div className="p-2 border-b border-gray-600/50 sticky top-0 bg-gray-900/80 backdrop-blur-sm z-10 shrink-0">
+            <div className="p-2 border-b border-gray-600/50 sticky top-0 bg-gray-900 z-10 shrink-0">
               <SearchInput
                 value={query}
                 onChange={setQuery}

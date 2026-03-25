@@ -29,29 +29,33 @@ export default function CommitmentModal({
   }, [open, loading, onClose])
 
   return (
-    <AnimatePresence>
+    <AnimatePresence initial={false}>
       {open && (
         <motion.div
           key="commitment-modal"
-          initial={{ opacity: 0 }}
+          initial={false}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          className="framer-motion-stabilizer fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
           role="dialog"
           aria-modal="true"
           aria-labelledby="commitment-modal-title"
           aria-describedby="commitment-modal-desc"
           onClick={(e) => {
-            if (e.target === e.currentTarget && !loading) onClose()
+            if (e.target === e.currentTarget && !loading) {
+              e.preventDefault()
+              e.stopPropagation()
+              onClose()
+            }
           }}
         >
           <motion.div
+            className="framer-motion-stabilizer w-full max-w-sm rounded-xl border-2 border-red-500/40 bg-gray-900 shadow-xl shadow-red-950/20"
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-            className="w-full max-w-sm rounded-xl border-2 border-red-500/40 bg-gray-900 shadow-xl shadow-red-950/20"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-5">

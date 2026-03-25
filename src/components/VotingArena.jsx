@@ -263,7 +263,7 @@ export default function VotingArena({
     <>
       {/* Supernova 外殼：雷達流光邊框（與突發戰區共用語彙），將內層能量場與卡片包裹在同一個高對比容器中。 */}
       <div className="voting-arena-wrapper relative isolate overflow-hidden rounded-2xl p-[3px] bg-gradient-to-br from-king-gold via-red-500 to-king-gold bg-[length:200%_200%] animate-border-beam shadow-[0_0_40px_rgba(255,191,0,0.4)] motion-reduce:animate-none">
-        <div className="relative overflow-hidden rounded-[1.1rem] bg-gray-950/90 backdrop-blur-xl">
+        <div className="relative overflow-hidden rounded-[1.1rem] bg-gray-950/90">
           {/* Version 2 Supernova 能量場：提高透明度並加入旋轉層，模擬恆星噴發感但仍保持文字可讀性。 */}
           <div
             className="absolute inset-0 z-0 animate-energy-flow pointer-events-none motion-reduce:animate-none"
@@ -303,14 +303,14 @@ export default function VotingArena({
           </p>
         </div>
         {contentMode === "loading" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-8 text-center">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-8 text-center">
             <p className="text-king-gold animate-pulse" role="status">
               {t("common:loadingArena")}
             </p>
           </div>
         )}
         {contentMode === "limbo" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-6">
             <h3 className="text-lg font-bold text-king-gold mb-2">
               {t("common:chooseStance")}
             </h3>
@@ -338,7 +338,7 @@ export default function VotingArena({
           </div>
         )}
         {contentMode === "guest" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-6">
             <h3 className="text-lg font-bold text-king-gold mb-2">
               {t("common:chooseStance")}
             </h3>
@@ -382,7 +382,7 @@ export default function VotingArena({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="rounded-xl border border-king-gold/40 bg-gray-950/90 backdrop-blur-xl p-8 text-center"
+            className="rounded-xl border border-king-gold/40 bg-gray-950/90 p-8 text-center"
           >
             <p className="text-king-gold font-semibold">
               {t("common:alreadyVoted")}
@@ -404,7 +404,7 @@ export default function VotingArena({
           </motion.div>
         )}
         {contentMode === "form" && (
-          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 backdrop-blur-xl p-6">
+          <div className="rounded-xl border border-villain-purple/30 bg-gray-950/90 p-6">
             <h3 className="text-lg font-bold text-king-gold mb-4">
               {t("common:chooseStance")}
             </h3>
@@ -425,7 +425,7 @@ export default function VotingArena({
               />
             </motion.div>
 
-            <AnimatePresence mode="wait">
+            <AnimatePresence initial={false} mode="wait">
               {selectedStance && (
                 <motion.div
                   key={selectedStance}
@@ -509,7 +509,7 @@ export default function VotingArena({
       </div>
 
       {/* Limbo / Guest 共用：登入／完成戰區引導 Modal（掛載由 AnimatePresence 控制，避免 WebView 硬切斷 exit） */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {showLoginPrompt && (
           <LoginPromptModal
             key="login-prompt-modal"
@@ -521,7 +521,7 @@ export default function VotingArena({
       </AnimatePresence>
 
       {/* 已投票流程：戰報卡、廣告解鎖後自動存檔 */}
-      <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>
+      <AnimatePresence initial={false} mode="wait" onExitComplete={handleRevoteComplete}>
         {showBattleCard && (
           <BattleCardContainer
             ref={battleCardContainerRef}

@@ -161,7 +161,7 @@ export default function StanceCards({
               className={`relative min-h-[110px] rounded-[10px] text-left px-4 py-2.5 transition-colors flex flex-col items-start justify-end overflow-hidden disabled:cursor-not-allowed w-full ${
                 isSelected
                   ? getSelectedCardClass(theme)
-                  : `backdrop-blur-md animate-subtle-pulse motion-reduce:animate-none ${getUnselectedCardClass(theme)}`
+                  : `animate-subtle-pulse motion-reduce:animate-none ${getUnselectedCardClass(theme)}`
               }`}
               style={
                 isSelected

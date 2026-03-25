@@ -38,7 +38,7 @@ export default function AnalystGate({
         {children}
       </div>
 
-      <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-2xl">
+      <div className="absolute inset-0 flex items-center justify-center bg-slate-900/92">
         <div className="relative max-w-md w-full mx-4 rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 to-transparent px-6 py-7 shadow-[0_0_40px_rgba(160,32,240,0.35)]">
           {/* 掃描條：增加「資料運算中」的科技感 */}
           <div className="pointer-events-none absolute inset-x-6 -inset-y-4 overflow-hidden">

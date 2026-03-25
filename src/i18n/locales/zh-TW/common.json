@@ -397,5 +397,7 @@
   "breakingVoteCountTooltip": "{{count}} 票",
   "liveTag": "實況",
   "goatMeterBrandAria": "The GOAT Meter 品牌標章",
-  "adPortalAria": "廣告"
+  "adPortalAria": "廣告",
+  "adPortalLoadingTitle": "正在取得戰報生成權限…",
+  "adPortalLoadingSubtitle": "（廣告載入中）"
 }

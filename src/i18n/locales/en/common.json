@@ -407,6 +407,8 @@
   "liveTag": "LIVE",
   "goatMeterBrandAria": "The GOAT Meter brand mark",
   "adPortalAria": "Ad",
+  "adPortalLoadingTitle": "Requesting battle report access…",
+  "adPortalLoadingSubtitle": "(Loading ad)",
   "breakingAdNotice": "This scan requires intel energy. Watch a short clip for voting authorization.",
   "breakingFirstVoteFreeHint": "🛡️ First Strike: Warzone authorization granted for free."
 }

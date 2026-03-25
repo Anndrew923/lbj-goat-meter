@@ -1045,7 +1045,7 @@ const BattleCard = forwardRef(function BattleCard({
     >
       {isExporting && !isCapturing ? (
         <div
-          className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/80 px-6 backdrop-blur-md pointer-events-auto"
+          className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/90 px-6 pointer-events-auto"
           role="status"
           aria-live="polite"
           aria-busy="true"
@@ -1057,22 +1057,22 @@ const BattleCard = forwardRef(function BattleCard({
       ) : null}
       <motion.div
         ref={overlayRef}
-        className="absolute inset-0 flex flex-col items-center bg-black/90 p-4 backdrop-blur-sm pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
+        className="framer-motion-stabilizer absolute inset-0 flex flex-col items-center bg-black/90 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
         role="dialog"
         aria-modal="true"
         aria-labelledby="battle-card-title"
-        initial={{ opacity: 0 }}
+        initial={false}
         animate={{ opacity: 1 }}
         exit={exit}
         transition={{ duration: 0.25 }}
-        onClick={() => onClose?.()}
+        onClick={(e) => onClose?.(e)}
       >
         {/* 戰報卡掃描顯影：從上到下的線性掃描遮罩，營造解密／顯影感 */}
         <div className="scan-line" aria-hidden />
         <motion.div
+          className="framer-motion-stabilizer flex-1 min-h-0 w-full max-w-full flex flex-col items-center justify-center"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex-1 min-h-0 w-full max-w-full flex flex-col items-center justify-center"
           onClick={(e) => e.stopPropagation()}
         >
           {/* 磁吸簇：縮放後卡片 + 按鈕組同一容器，gap-y-6 緊貼 */}
@@ -1117,11 +1117,8 @@ const BattleCard = forwardRef(function BattleCard({
                   backgroundSize: "100% 100%, 100% 100%",
                   backgroundPosition: "0 0, 0 0",
                   backgroundRepeat: "no-repeat, no-repeat",
-                  // Forced Saturation：鎖定主色飽和度，避免高光把紅/黃稀釋
-                  backdropFilter: "saturate(1.8) contrast(1.1)",
-                  WebkitBackdropFilter: "saturate(1.8) contrast(1.1)",
-                  // Phase 8 Polish：統一發色數（補 backdrop 在截圖語境的視覺落差）
-                  filter: "saturate(1.4) contrast(1.15) brightness(1.05)",
+                  // APK：避免 backdrop-filter 加重 WebView 合成成本；飽和/對比僅用 element filter
+                  filter: "saturate(1.5) contrast(1.18) brightness(1.06)",
                   boxShadow: `inset 0 0 100px rgba(0,0,0,0.88), 0 0 22px ${hexWithAlpha(teamColors.secondary, "5A")}, inset 0 0 60px ${hexWithAlpha(
                     extremeSecondary,
                     "20"
@@ -1352,16 +1349,11 @@ const BattleCard = forwardRef(function BattleCard({
                     </h1>
                   </div>
 
-                  {/* 身份區：底層半透明 + blur(2px) 保護 HUD，與字牆／激光層解耦 */}
+                  {/* 身份區：純色半透明底（APK 避免 backdrop-filter 模糊耗 GPU） */}
                   <div className="relative flex items-center gap-3 flex-shrink-0 mb-3 rounded-xl p-2 overflow-hidden">
                     <div
-                      className="absolute inset-0 rounded-xl pointer-events-none z-0"
+                      className="absolute inset-0 rounded-xl pointer-events-none z-0 bg-black/45"
                       aria-hidden
-                      style={{
-                        background: "rgba(0,0,0,0.3)",
-                        backdropFilter: "blur(2px)",
-                        WebkitBackdropFilter: "blur(2px)",
-                      }}
                     />
                     <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3">
                       <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full border-2 border-white/20 bg-white/10">
@@ -1406,7 +1398,7 @@ const BattleCard = forwardRef(function BattleCard({
                   <div className="flex-shrink-0 relative flex items-center justify-center mt-2 mb-2 py-6 px-10 overflow-visible rounded-2xl">
                     {/* 毛玻璃襯底：-mx-4 擴張以容納 30px 霓虹光暈，rounded-2xl 柔化邊角 */}
                     <div
-                      className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/40 backdrop-blur-xl mix-blend-multiply"
+                      className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/60 mix-blend-multiply"
                       aria-hidden
                       style={{
                         boxShadow: "0 0 50px rgba(0,0,0,0.5)",
@@ -1447,7 +1439,7 @@ const BattleCard = forwardRef(function BattleCard({
 
                   {/* Evidence Locker：裁決證詞區（加深背景 + 彩色文字硬邊際光） */}
                   {reasonLabels.length > 0 && (
-                    <div className="flex-shrink-0 rounded-lg p-3 bg-black/50 backdrop-blur-md border border-white/10 mt-2 mb-3 max-h-[120px] overflow-y-auto overflow-x-hidden">
+                    <div className="flex-shrink-0 rounded-lg p-3 bg-black/70 border border-white/10 mt-2 mb-3 max-h-[120px] overflow-y-auto overflow-x-hidden">
                       <p
                         className="text-[10px] text-white/50 uppercase tracking-[0.2em] mb-1.5"
                         style={{ textShadow: textHudEdgeShadow }}
@@ -1577,7 +1569,7 @@ const BattleCard = forwardRef(function BattleCard({
                   type="button"
                   onClick={onRevote}
                   disabled={revoking}
-                  className="flex-1 min-w-0 py-3 px-4 rounded-xl font-medium text-sm text-king-gold/95 bg-white/10 backdrop-blur-md border border-king-gold/30 hover:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 min-w-0 py-3 px-4 rounded-xl font-medium text-sm text-king-gold/95 bg-white/15 border border-king-gold/30 hover:bg-white/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   whileHover={!revoking ? { scale: 1.02 } : {}}
                   whileTap={!revoking ? { scale: 0.98 } : {}}
                 >

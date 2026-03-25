@@ -48,8 +48,8 @@ export default function ExitConfirmModal({ open, onClose, onExit }) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-      initial={{ opacity: 0 }}
+      className="framer-motion-stabilizer fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90"
+      initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={handleStay}
@@ -59,7 +59,7 @@ export default function ExitConfirmModal({ open, onClose, onExit }) {
       aria-describedby={descId}
     >
       <motion.div
-        className="rounded-xl border-2 border-king-gold/50 bg-gray-900/95 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+        className="framer-motion-stabilizer rounded-xl border-2 border-king-gold/50 bg-gray-900/95 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}

@@ -190,26 +190,27 @@ export default function VotePage() {
     }
   }, [shouldShowSetup]);
 
-  const handleCloseModal = useCallback(() => {
+  /** 關閉／完成戰區登錄：單一路徑避免 handleClose vs onSaved 狀態漂移（WebView 點擊穿透亦沿用 preventDefault + stopPropagation） */
+  const dismissProfileSetup = useCallback((e) => {
+    if (e?.preventDefault) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setIsSetupMounted(false);
     setHasHandledDismissal(true);
     setProfileSetupDismissed(true);
     setShowWarzoneClaimModal(false);
-    setIsSetupMounted(false);
   }, []);
 
-  const handleProfileSetupSaved = useCallback(() => {
-    setHasHandledDismissal(true);
-    setProfileSetupDismissed(true);
-    setShowWarzoneClaimModal(false);
-    setIsSetupMounted(false);
-  }, []);
+  const handleCloseModal = dismissProfileSetup;
+  const handleProfileSetupSaved = dismissProfileSetup;
 
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
       <motion.header
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/80 backdrop-blur-xl border-b border-b-[0.5px] border-white/5 pb-4 safe-area-inset-top px-6"
+        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/90 border-b border-b-[0.5px] border-white/5 pb-4 safe-area-inset-top px-6"
       >
         <h1 className="flex flex-row items-baseline">
           <span className="text-sm tracking-widest text-king-gold/80">
@@ -388,7 +389,7 @@ export default function VotePage() {
         </motion.main>
       </WarzoneDataProvider>
 
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {currentUser?.uid && isSetupMounted && (
           <UserProfileSetup
             key="profile-setup-modal"
@@ -402,13 +403,13 @@ export default function VotePage() {
       </AnimatePresence>
 
       {/* 使用者設定區：底部為 Danger Zone（帳號刪除），符合 Google Play 合規與資料隱私透明度 */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {settingsOpen && !isGuest && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/90"
             onClick={() => {
               setSettingsOpen(false);
               clearAuthError();
@@ -503,7 +504,7 @@ export default function VotePage() {
       </AnimatePresence>
 
       {/* 二次確認彈窗：半透明黑色遮罩、明顯紅色警告按鈕 */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {deleteConfirmOpen && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -586,7 +587,7 @@ export default function VotePage() {
       </AnimatePresence>
 
       {/* 重置立場二次確認彈窗：可勾選一併重設個人資料，成功後若 hasProfile 為 false 會自動彈出戰區登錄 */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {resetStanceConfirmOpen && (
           <motion.div
             initial={{ opacity: 0 }}

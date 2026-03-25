@@ -62,7 +62,7 @@ export default function LoginPage() {
   /** 語言切換器 UI（與 config 持久化連動），loading 與主內容皆顯示 */
   const renderLanguageSwitcher = () => (
     <div className="absolute top-6 right-6 z-20" role="group" aria-label={t('language')}>
-      <div className="flex items-center bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10 shadow-lg">
+      <div className="flex items-center bg-black/65 rounded-full p-1 border border-white/10 shadow-lg">
         {languages.map((lang) => {
           const isActive = resolveDisplayLanguage(i18n.language) === lang.code
           return (

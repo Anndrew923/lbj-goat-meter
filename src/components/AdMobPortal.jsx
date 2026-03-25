@@ -121,8 +121,8 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
 
   const portal = (
     <motion.div
-      className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md"
-      initial={{ opacity: 0 }}
+      className="framer-motion-stabilizer fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/90"
+      initial={false}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
       role="dialog"
@@ -130,8 +130,8 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
       aria-label={t('adPortalAria')}
     >
       <div className="text-center px-6 max-w-sm">
-        <p className="text-white/95 text-lg font-medium">正在獲取戰報生成權限...</p>
-        <p className="mt-2 text-white/60 text-sm">（廣告載入中）</p>
+        <p className="text-white/95 text-lg font-medium">{t('adPortalLoadingTitle')}</p>
+        <p className="mt-2 text-white/60 text-sm">{t('adPortalLoadingSubtitle')}</p>
       </div>
     </motion.div>
   )

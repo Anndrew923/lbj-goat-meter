@@ -96,14 +96,14 @@ export default function FilterFunnel({
 
   return (
     <>
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {open && (
           <>
             <motion.div
-              initial={{ opacity: 0 }}
+              initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60"
+              className="framer-motion-stabilizer fixed inset-0 z-40 bg-black/90"
               onClick={onClose}
               aria-hidden="true"
             />
