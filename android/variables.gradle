@@ -1,5 +1,6 @@
 ext {
     minSdkVersion = 24
+    // 戰報存相簿／READ_MEDIA_VISUAL_USER_SELECTED 等需 API 34+；維持 ≥34（目前 36）
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'

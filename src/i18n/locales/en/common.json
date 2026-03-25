@@ -92,6 +92,7 @@
   "exportFailedSavePhotoAdvice": "The battle report was generated, but saving to your gallery failed. Please check photo/storage permissions and try again.",
   "galleryPermissionTitle": "Permission required",
   "galleryPermissionDesc": "Allow photo/gallery access to save your battle report.",
+  "needPhotoPermissionToSave": "To save the battle report to your gallery, allow Photos / media access in system settings.",
   "exportFailedUnknown": "Battle report generation failed due to an unknown error. Please screenshot this message and contact support.",
   "err_pixelcopy_bounds": "The card position is out of the visible screen area. Please move the card to the center manually and try again.",
   "err_pixelcopy_timeout": "System rendering timed out. Please check device performance or disable battery saver.",

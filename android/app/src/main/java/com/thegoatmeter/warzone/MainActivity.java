@@ -146,11 +146,11 @@ public class MainActivity extends BridgeActivity implements ModifiedMainActivity
     }
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        // Register native plugin for pixel-level View capture (PixelCopy).
+    public void onCreate(Bundle savedInstanceState) {
+        // 為確保 Capacitor bridge 啟動時已能註冊 plugin，
+        // 這裡把 registerPlugin 放在 super.onCreate 之前。
         registerPlugin(ViewCapturePlugin.class);
+        super.onCreate(savedInstanceState);
 
         // 為實機除錯版啟用 WebView 調試。
         // 對於正式版（manifest debuggable=false）此設定不會允許外部調試。

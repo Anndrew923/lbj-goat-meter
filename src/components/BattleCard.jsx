@@ -317,6 +317,42 @@ const BattleCard = forwardRef(function BattleCard({
 
       const isNative = Capacitor.isNativePlatform();
 
+      // 原生存相簿：先完成權限預檢再顯示「生成中」遮罩，避免先閃 loading 再跳系統權限
+      if (isNative && saveOnly) {
+        const photosGranted = (p) => p === "granted" || p === "limited";
+        try {
+          if (typeof Media.checkPermissions === "function") {
+            const check = await Media.checkPermissions();
+            if (!photosGranted(check?.photos)) {
+              const request = await Media.requestPermissions();
+              if (!photosGranted(request?.photos)) {
+                await Dialog.alert({
+                  title: t("galleryPermissionTitle"),
+                  message: t("needPhotoPermissionToSave"),
+                });
+                return;
+              }
+            }
+          } else if (typeof Media.requestPermissions === "function") {
+            const perm = await Media.requestPermissions();
+            if (!photosGranted(perm?.photos)) {
+              await Dialog.alert({
+                title: t("galleryPermissionTitle"),
+                message: t("needPhotoPermissionToSave"),
+              });
+              return;
+            }
+          }
+        } catch (permErr) {
+          console.error("[BattleCard] photo permission preflight failed", permErr);
+          await Dialog.alert({
+            title: t("galleryPermissionTitle"),
+            message: t("needPhotoPermissionToSave"),
+          });
+          return;
+        }
+      }
+
       flushSync(() => {
         setIsExporting(true);
         setExportSlowResourceCopy(false);
@@ -414,24 +450,10 @@ const BattleCard = forwardRef(function BattleCard({
             const dataUrl = `data:image/png;base64,${base64}`;
 
             if (saveOnly) {
-              // Android 13+：主動觸發相簿/照片權限對話框，避免 savePhoto 被系統直接攔截
-              if (typeof Media.requestPermissions === "function") {
-                const perm = await Media.requestPermissions();
-                const photos = perm?.photos;
-                const granted = photos === "granted" || photos === "limited";
-                if (!granted) {
-                  await Dialog.alert({
-                    title: t("galleryPermissionTitle"),
-                    message: t("galleryPermissionDesc"),
-                  });
-                  return;
-                }
-              }
-
               const albumIdentifier = await ensureGoatAlbumIdentifier();
               await Media.savePhoto({
                 path: dataUrl,
-                albumIdentifier: albumIdentifier ?? undefined,
+                albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
                 fileName,
               });
               await showBattleReportSavedToast(t("battleReportSavedToGallery"));

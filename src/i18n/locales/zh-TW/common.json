@@ -92,6 +92,7 @@
   "exportFailedSavePhotoAdvice": "戰報已生成，但儲存到相簿失敗。請檢查相片/儲存權限後再試一次。",
   "galleryPermissionTitle": "權限不足",
   "galleryPermissionDesc": "請允許存取相簿以儲存戰報卡。",
+  "needPhotoPermissionToSave": "要將戰報存入相簿，請在系統設定中允許照片／相簿存取權限。",
   "exportFailedUnknown": "戰報生成發生未知錯誤，請截圖此訊息聯繫客服。",
   "err_pixelcopy_bounds": "卡片位置超出螢幕，請嘗試手動將卡片移至中央後再試一次。",
   "err_pixelcopy_timeout": "系統渲染超時，請檢查設備效能或關閉省電模式。",
