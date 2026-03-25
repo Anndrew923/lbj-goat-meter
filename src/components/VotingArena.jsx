@@ -508,13 +508,17 @@ export default function VotingArena({
         </div>
       </div>
 
-      {/* Limbo / Guest 共用：登入／完成戰區引導 Modal */}
-      <LoginPromptModal
-        open={showLoginPrompt}
-        onClose={() => setShowLoginPrompt(false)}
-        variant={contentMode === "limbo" ? "limbo" : undefined}
-        onCompleteWarzone={contentMode === "limbo" ? () => onOpenWarzoneSelect?.() : undefined}
-      />
+      {/* Limbo / Guest 共用：登入／完成戰區引導 Modal（掛載由 AnimatePresence 控制，避免 WebView 硬切斷 exit） */}
+      <AnimatePresence>
+        {showLoginPrompt && (
+          <LoginPromptModal
+            key="login-prompt-modal"
+            onClose={() => setShowLoginPrompt(false)}
+            variant={contentMode === "limbo" ? "limbo" : undefined}
+            onCompleteWarzone={contentMode === "limbo" ? () => onOpenWarzoneSelect?.() : undefined}
+          />
+        )}
+      </AnimatePresence>
 
       {/* 已投票流程：戰報卡、廣告解鎖後自動存檔 */}
       <AnimatePresence mode="wait" onExitComplete={handleRevoteComplete}>

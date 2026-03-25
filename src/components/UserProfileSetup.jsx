@@ -32,7 +32,7 @@ const INITIAL_FORM = {
   city: '',
 }
 
-export default function UserProfileSetup({ open, onClose, userId, onSaved, initialStep = 1, initialProfile }) {
+export default function UserProfileSetup({ onClose, userId, onSaved, initialStep = 1, initialProfile }) {
   const { t, i18n } = useTranslation('common')
   const [step, setStep] = useState(initialStep)
   const [saving, setSaving] = useState(false)
@@ -143,7 +143,7 @@ export default function UserProfileSetup({ open, onClose, userId, onSaved, initi
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.2 } }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
       role="dialog"
       aria-modal="true"
       aria-labelledby="profile-setup-title"

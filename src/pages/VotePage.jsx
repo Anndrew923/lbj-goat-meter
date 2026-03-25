@@ -67,6 +67,8 @@ export default function VotePage() {
   const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
   const [tickerPausedForExport, setTickerPausedForExport] = useState(false);
   const [isGuestBootstrapLoading, setIsGuestBootstrapLoading] = useState(false);
+  /** 手動掛載鎖：僅在 shouldShowSetup 為 true 時掛上；卸載僅由關閉／儲存回呼觸發，避免 Auth 抖動造成閃爍 */
+  const [isSetupMounted, setIsSetupMounted] = useState(false);
   const stableFilters = useMemo(() => ({ ...filters }), [filters]);
   const {
     isAnalystAuthorized,
@@ -110,6 +112,7 @@ export default function VotePage() {
       setProfileSetupDismissed(false);
       setProfileLoadingSettled(false);
       setHasHandledDismissal(false);
+      setIsSetupMounted(false);
       lastStableUidRef.current = nextUid;
     }
   }, [currentUser?.uid]);
@@ -178,10 +181,24 @@ export default function VotePage() {
     profileSetupDismissed,
   ]);
 
+  useEffect(() => {
+    if (shouldShowSetup) {
+      setIsSetupMounted(true);
+    }
+  }, [shouldShowSetup]);
+
   const handleCloseModal = useCallback(() => {
     setHasHandledDismissal(true);
     setProfileSetupDismissed(true);
     setShowWarzoneClaimModal(false);
+    setIsSetupMounted(false);
+  }, []);
+
+  const handleProfileSetupSaved = useCallback(() => {
+    setHasHandledDismissal(true);
+    setProfileSetupDismissed(true);
+    setShowWarzoneClaimModal(false);
+    setIsSetupMounted(false);
   }, []);
 
   return (
@@ -369,16 +386,11 @@ export default function VotePage() {
       </WarzoneDataProvider>
 
       <AnimatePresence>
-        {currentUser?.uid && shouldShowSetup && (
+        {currentUser?.uid && isSetupMounted && (
           <UserProfileSetup
             key="profile-setup-modal"
-            open={shouldShowSetup}
             onClose={handleCloseModal}
-            onSaved={() => {
-              setHasHandledDismissal(true);
-              setProfileSetupDismissed(true);
-              setShowWarzoneClaimModal(false);
-            }}
+            onSaved={handleProfileSetupSaved}
             userId={currentUser?.uid}
             initialStep={1}
             initialProfile={{ ...(profile ?? {}), voterTeam: activeWarzone }}

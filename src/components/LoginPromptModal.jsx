@@ -8,21 +8,18 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 
-export default function LoginPromptModal({ open, onClose, variant, onCompleteWarzone }) {
+export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }) {
   const { t } = useTranslation('common')
   const navigate = useNavigate()
   const isLimbo = variant === 'limbo'
 
   useEffect(() => {
-    if (!open) return
     const handleEscape = (e) => {
       if (e.key === 'Escape') onClose?.()
     }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
-  }, [open, onClose])
-
-  if (!open) return null
+  }, [onClose])
 
   const handleGoLogin = () => {
     onClose?.()
@@ -41,7 +38,7 @@ export default function LoginPromptModal({ open, onClose, variant, onCompleteWar
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

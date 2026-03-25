@@ -37,7 +37,6 @@ export default function SetupPage() {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4 relative">
       <UserProfileSetup
-        open={true}
         onClose={() => navigate('/vote', { replace: true })}
         userId={currentUser?.uid}
         onSaved={() => navigate('/vote', { replace: true })}

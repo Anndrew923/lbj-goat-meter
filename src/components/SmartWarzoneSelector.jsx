@@ -153,7 +153,7 @@ export default function SmartWarzoneSelector({
     >
       <div className="relative">
         <ComboboxButton
-          className="w-full px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none text-left flex items-center justify-between"
+          className="w-full min-h-[2.75rem] px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 focus:border-king-gold focus:ring-1 focus:ring-king-gold outline-none text-left flex items-center justify-between shrink-0"
           aria-label={ariaLabel || t('countryLabel')}
         >
           <span className={!displayLabel ? 'text-gray-500' : ''}>
@@ -172,7 +172,7 @@ export default function SmartWarzoneSelector({
           {/* 遮罩僅視覺，不攔截點擊（pointer-events-none 由父層繼承） */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] pointer-events-none" aria-hidden />
           <div
-            className="relative z-10 pointer-events-auto w-full min-w-[280px] max-w-[90vw] rounded-xl border border-king-gold/30 overflow-hidden shadow-2xl flex flex-col max-h-[calc(100svh-10vh-2rem)]"
+            className="relative z-10 pointer-events-auto w-full min-w-[280px] max-w-[90vw] min-h-[min(40vh,20rem)] rounded-xl border border-king-gold/30 overflow-hidden shadow-2xl flex flex-col max-h-[calc(100svh-10vh-2rem)]"
             style={{
               background: 'rgba(15, 15, 20, 0.95)',
               backdropFilter: 'blur(12px)',
@@ -189,7 +189,7 @@ export default function SmartWarzoneSelector({
               />
             </div>
             <div
-              className="overflow-y-auto overflow-x-hidden warzone-selector-list shrink min-h-0 pb-[max(1.5rem,env(safe-area-inset-bottom,0px),20vh)]"
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden warzone-selector-list pb-[max(1.5rem,env(safe-area-inset-bottom,0px),20vh)] [&_img]:aspect-square [&_img]:h-8 [&_img]:w-8 [&_img]:shrink-0 [&_img]:object-cover"
               style={{ maxHeight: 'calc(100svh - 10vh - 8rem)' }}
             >
               {filteredOptions.length === 0 ? (
