@@ -164,6 +164,8 @@ export default function VotePage() {
     if (showWarzoneClaimModal) return true;
     // B. 本次 Session 已處理關閉，或仍在 Guest Bootstrap：一律不顯示
     if (hasHandledDismissal || isGuestBootstrapLoading) return false;
+    // Profile 同步中：不彈窗，避免「資料尚未抵達」的瞬間誤判
+    if (profileLoading) return false;
     // C. 自動觸發：登入且載入穩定、無 profile、且未手動關閉
     const autoTrigger =
       Boolean(currentUser?.uid) &&
@@ -176,6 +178,7 @@ export default function VotePage() {
     isGuestBootstrapLoading,
     showWarzoneClaimModal,
     currentUser?.uid,
+    profileLoading,
     profileLoadingSettled,
     hasProfile,
     profileSetupDismissed,

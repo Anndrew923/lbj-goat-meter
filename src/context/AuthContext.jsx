@@ -132,6 +132,8 @@ export function AuthProvider({ children }) {
   const retryTimeoutRef = useRef(null);
   const coolingTimeoutRef = useRef(null);
   const profileUnsubscribeRef = useRef(null);
+  /** 已處理過完整 Auth+Profile 訂閱流程的 UID；同 UID 重入時嚴禁清空 profile，避免 APK/WebView 閃爍 */
+  const lastAuthUidRef = useRef(null);
 
   const refreshEntitlements = useCallback(async () => {
     if (!currentUser?.uid) return;
@@ -149,6 +151,7 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthError(null);
       if (!user) {
+        lastAuthUidRef.current = null;
         if (coolingTimeoutRef.current) {
           clearTimeout(coolingTimeoutRef.current);
           coolingTimeoutRef.current = null;
@@ -171,6 +174,24 @@ export function AuthProvider({ children }) {
         photoURL: user.photoURL,
         isPremium: false,
       };
+      // 同 UID 重入（token 更新、前後台恢復）：禁止清空 profile / 重設 loading，由既有 onSnapshot 持續覆寫
+      if (lastAuthUidRef.current === user.uid) {
+        setCurrentUser((prev) =>
+          prev?.uid === user.uid
+            ? {
+                ...prev,
+                email: user.email ?? prev.email,
+                displayName: user.displayName ?? prev.displayName,
+                photoURL: user.photoURL ?? prev.photoURL,
+              }
+            : nextUser,
+        );
+        setIsGuest(false);
+        setLoading(false);
+        return;
+      }
+
+      lastAuthUidRef.current = user.uid;
       setCurrentUser(nextUser);
       setIsGuest(false);
       setLoading(false);
