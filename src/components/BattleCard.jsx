@@ -1,7 +1,8 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放；原生高清存相簿需 isExportReady（首次下載經廣告解鎖後由 VotingArena 直接觸發 saveToGallery）。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；下載／相簿匯出與 Web 相同走 html-to-image（原生用離屏 clone）。
+ * isExportReady：首次下載經廣告解鎖後由 VotingArena 觸發 saveToGallery。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
@@ -10,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Download, RotateCcw } from "lucide-react";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
 import { STANCE_COLORS } from "../lib/constants";
@@ -20,8 +21,6 @@ import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 
 const CARD_SIZE = 640;
-// PixelCopy: Android 原生層直接抓取指定 View 的像素緩衝區。
-const ViewCapture = registerPlugin("ViewCapture");
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
@@ -31,15 +30,116 @@ const EXPORT_PAINT_WAIT_MS = 1500;
 const EXPORT_IMAGE_READY_MAX_WAIT_MS = 3000;
 /** 圖片就緒輪詢間隔，平衡 CPU 與回應速度 */
 const EXPORT_IMAGE_POLL_INTERVAL_MS = 50;
-/** Shutter Decoupling：setIsCapturing(true) 後等待，讓遮罩卸載與 CSS 變形／重繪落地再快門 */
-const NATIVE_SHUTTER_DOM_WAIT_MS = 600;
-/** 物理破冰：額外等待（廣告解鎖/容器重排後）降低壓扁/非等比拉伸風險 */
-const NATIVE_SHUTTER_WAIT_MS = 250;
-
 async function nextAnimationFrames(count) {
   for (let i = 0; i < count; i += 1) {
     await new Promise((r) => requestAnimationFrame(r));
   }
+}
+
+function getBattleCardToPngOptions() {
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  return {
+    width: CARD_SIZE,
+    height: CARD_SIZE,
+    backgroundColor: "#050505",
+    pixelRatio: Math.min(3, Math.max(2, Math.round(dpr))),
+    cacheBust: true,
+    skipFonts: true,
+  };
+}
+
+/**
+ * 把畫面上卡片的 computed 樣式寫入要 raster 的根節點（可為同一節點或離屏 clone）。
+ * 原生端不再用 PixelCopy：JS 視口座標 × dpr 與 Window 物理像素原點常不一致（狀態列／WebView 位移），
+ * 會出現灰帶、裁錯、偏暗；改與 Web 相同走 html-to-image 在 WebView 內直接對 DOM 算圖。
+ */
+function syncExportPaintSnapshotFromLiveCard(liveRoot, exportRoot) {
+  const computed = window.getComputedStyle(liveRoot);
+  exportRoot.style.backgroundImage = computed.backgroundImage;
+  exportRoot.style.backgroundColor = computed.backgroundColor;
+  exportRoot.style.backgroundSize = computed.backgroundSize;
+  exportRoot.style.backgroundPosition = computed.backgroundPosition;
+  exportRoot.style.backgroundRepeat = computed.backgroundRepeat;
+  const filterBase =
+    computed.filter && computed.filter !== "none" ? computed.filter : "";
+  exportRoot.style.filter =
+    `${filterBase} saturate(1.6) contrast(1.1) brightness(1.05)`.trim();
+  exportRoot.style.boxShadow = computed.boxShadow;
+  exportRoot.style.setProperty("backdrop-filter", computed.getPropertyValue("backdrop-filter"));
+  exportRoot.style.setProperty(
+    "-webkit-backdrop-filter",
+    computed.getPropertyValue("-webkit-backdrop-filter"),
+  );
+
+  const liveRoles = liveRoot.querySelectorAll("[data-export-role]");
+  const exportRoles = exportRoot.querySelectorAll("[data-export-role]");
+  const n = Math.min(liveRoles.length, exportRoles.length);
+  if (liveRoles.length !== exportRoles.length) {
+    console.warn(
+      "[BattleCard] export role node count mismatch (live vs export)",
+      liveRoles.length,
+      exportRoles.length,
+    );
+  }
+  for (let i = 0; i < n; i += 1) {
+    const liveNode = liveRoles[i];
+    const node = exportRoles[i];
+    const cs = window.getComputedStyle(liveNode);
+    const role = liveNode.getAttribute("data-export-role");
+    if (role === "text-wall-container") {
+      node.style.transform = cs.transform;
+      node.style.mixBlendMode = cs.mixBlendMode;
+      node.style.opacity = cs.opacity;
+      node.style.filter = cs.filter;
+      node.style.webkitMaskImage = cs.webkitMaskImage;
+      node.style.maskImage = cs.maskImage;
+      node.style.webkitMaskRepeat = cs.webkitMaskRepeat;
+      node.style.maskRepeat = cs.maskRepeat;
+      node.style.webkitMaskSize = cs.webkitMaskSize;
+      node.style.maskSize = cs.maskSize;
+    } else {
+      node.style.backgroundImage = cs.backgroundImage;
+      node.style.mixBlendMode = cs.mixBlendMode;
+      node.style.filter = cs.filter;
+      node.style.opacity = cs.opacity;
+    }
+  }
+}
+
+async function battleCardRootToPngDataUrl(liveRoot, exportRoot, reapplySnapshot) {
+  const opts = getBattleCardToPngOptions();
+  let dataUrl = null;
+  try {
+    dataUrl = await toPng(exportRoot, opts);
+  } catch {
+    const TRANSPARENT_PIXEL =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+    const imgNodes = Array.from(exportRoot.querySelectorAll("img"));
+    const externalImgNodes = imgNodes.filter((img) => {
+      const src = img.getAttribute("src") || img.currentSrc || img.src || "";
+      return typeof src === "string" && /^https?:\/\//i.test(src);
+    });
+    const savedSources = externalImgNodes.map((img) => ({
+      img,
+      src: img.getAttribute("src") || img.currentSrc || img.src || "",
+    }));
+
+    try {
+      externalImgNodes.forEach((img) => {
+        img.setAttribute("src", TRANSPARENT_PIXEL);
+      });
+      reapplySnapshot();
+      dataUrl = await toPng(exportRoot, opts);
+    } catch (err2) {
+      console.error("[BattleCard] toPng failed after retry", err2);
+    } finally {
+      savedSources.forEach(({ img, src }) => {
+        if (src) img.setAttribute("src", src);
+        else img.removeAttribute("src");
+      });
+    }
+  }
+  return dataUrl;
 }
 
 async function showNativeExportFailedAlert(title, message) {
@@ -126,6 +226,20 @@ const NOISE_DATA_URL =
   // 以更高 baseFrequency + 多一層 octave 產生「更細碎」的顆粒，模擬磨砂金屬質地。
   // Phase 5：改成「水平拉絲」(X/Y baseFrequency 不同)，並用 soft-light 讓顆粒只在有光區閃爍。
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill='%23d0d0d0'/%3E%3C/svg%3E";
+
+/**
+ * @capacitor-community/media：Android 的 checkPermissions / requestPermissions 回傳的是
+ * `publicStorage`（舊版儲存權限組）與 `publicStorage13Plus`（READ_MEDIA_*），不是 `photos`。
+ * 若只判斷 `photos`，在 Android 13+ 會誤判為未授權（實際已 granted publicStorage13Plus）。
+ */
+function isMediaPluginSavePermissionOk(perm) {
+  if (!perm || typeof perm !== "object") return false;
+  const ok = (v) => v === "granted" || v === "limited";
+  if (ok(perm.photos)) return true;
+  if (ok(perm.publicStorage13Plus)) return true;
+  if (ok(perm.publicStorage)) return true;
+  return false;
+}
 
 /** 取得或建立 GOAT_Warzone 相簿 identifier（原生端用） */
 async function ensureGoatAlbumIdentifier() {
@@ -242,9 +356,8 @@ const BattleCard = forwardRef(function BattleCard({
     width: 600,
     height: 600,
   });
-  /** isExporting：顯示「生成中」全螢幕遮罩；isCapturing：快門前 true 以卸載遮罩 DOM，避免 Screenshot 拍到遮罩 */
+  /** isExporting：顯示「生成中」全螢幕遮罩 */
   const [isExporting, setIsExporting] = useState(false);
-  const [isCapturing, setIsCapturing] = useState(false);
   /** 圖片尚未就緒時改為慢速文案（弱網提示） */
   const [exportSlowResourceCopy, setExportSlowResourceCopy] = useState(false);
   const stanceColor = status
@@ -300,8 +413,7 @@ const BattleCard = forwardRef(function BattleCard({
   }, [open]);
 
   /**
-   * 下載戰報：原生端走「階梯式」WebView 點陣截圖 + 九宮格驗收；Web 端維持 toPng + 飽和度補償。
-   * 不可改動卡片 transform，否則截圖座標與畫面脫鉤。
+   * 下載戰報：原生與 Web 皆對 DOM 走 html-to-image（原生用離屏 clone，避免動到畫面上卡片的 transform）。
    */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
@@ -319,13 +431,12 @@ const BattleCard = forwardRef(function BattleCard({
 
       // 原生存相簿：先完成權限預檢再顯示「生成中」遮罩，避免先閃 loading 再跳系統權限
       if (isNative && saveOnly) {
-        const photosGranted = (p) => p === "granted" || p === "limited";
         try {
           if (typeof Media.checkPermissions === "function") {
             const check = await Media.checkPermissions();
-            if (!photosGranted(check?.photos)) {
+            if (!isMediaPluginSavePermissionOk(check)) {
               const request = await Media.requestPermissions();
-              if (!photosGranted(request?.photos)) {
+              if (!isMediaPluginSavePermissionOk(request)) {
                 await Dialog.alert({
                   title: t("galleryPermissionTitle"),
                   message: t("needPhotoPermissionToSave"),
@@ -335,7 +446,7 @@ const BattleCard = forwardRef(function BattleCard({
             }
           } else if (typeof Media.requestPermissions === "function") {
             const perm = await Media.requestPermissions();
-            if (!photosGranted(perm?.photos)) {
+            if (!isMediaPluginSavePermissionOk(perm)) {
               await Dialog.alert({
                 title: t("galleryPermissionTitle"),
                 message: t("needPhotoPermissionToSave"),
@@ -360,20 +471,16 @@ const BattleCard = forwardRef(function BattleCard({
 
       try {
         if (isNative) {
-          // ===== BattleCard 3.1：隱形攝影棚系統（0,0 固定擷取）=====
-          // 核心目標：
-          // 1) 避免任何「父容器 max-width / stacking context」造成的內容變形
-          // 2) Android PixelCopy：只擷取螢幕左上角固定矩形（0,0），座標計算極簡且可預期
-
+          // 離屏攝影棚 + clone：與畫面上 transform/父層無關；用 toPng 在 WebView 內算圖（與桌面 Chrome 同源），
+          // 不依賴 PixelCopy（其座標系與 getBoundingClientRect×dpr 常對不齊 → 灰帶／裁切／曝光錯）。
           let studio = null;
           let clonedEl = null;
 
           try {
             onExportStart?.();
 
-            // 1) 隱形攝影棚：固定在 (0,0)。用 z-index 放在 Loading 遮罩之下（理論上不會被用戶察覺閃現）。
             studio = document.createElement("div");
-            studio.id = "invisible-studio";
+            studio.id = "battle-card-export-studio";
             studio.style.cssText = `
               position: fixed;
               top: 0;
@@ -382,15 +489,12 @@ const BattleCard = forwardRef(function BattleCard({
               height: ${CARD_SIZE}px !important;
               background: #000;
               z-index: 9990;
-              overflow: visible;
+              overflow: hidden;
               pointer-events: none;
             `;
             document.body.appendChild(studio);
 
-            // 2) clone + 1:1 強制（移除 transform，避免原卡片 translate/scale 影響像素輸出）
             clonedEl = el.cloneNode(true);
-
-            // 避免 DOM `id` 重複：原卡片 subtree 會保留其 `id`，export clone 只用於像素輸出。
             clonedEl.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
 
             clonedEl.style.setProperty("width", `${CARD_SIZE}px`, "important");
@@ -404,10 +508,8 @@ const BattleCard = forwardRef(function BattleCard({
 
             studio.appendChild(clonedEl);
 
-            // 等待兩幀，確保 GPU 完成繪製
-            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+            await nextAnimationFrames(2);
 
-            // —— 第一階：解碼/就緒（針對 clone）——
             await decodeBattleCardImages(clonedEl);
             await waitForCardImagesPaintReady(clonedEl, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
               flushSync(() => {
@@ -415,39 +517,23 @@ const BattleCard = forwardRef(function BattleCard({
               });
             });
 
+            await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
+
+            syncExportPaintSnapshotFromLiveCard(el, clonedEl);
+            await nextAnimationFrames(1);
+
             const fileName = `GOAT-Card-${Date.now()}`;
-            const dpr = window.devicePixelRatio || 1;
-
-            // 3) 座標鎖定：固定擷取 0,0 的 640x640（乘 DPR）
-            const physicalRect = {
-              x: 0,
-              y: 0,
-              width: Math.round(CARD_SIZE * dpr),
-              height: Math.round(CARD_SIZE * dpr),
-            };
-
-            console.log(
-              `[STUDIO_CAPTURE] Capturing at 0,0: ${physicalRect.width}x${physicalRect.height}`,
+            const dataUrl = await battleCardRootToPngDataUrl(el, clonedEl, () =>
+              syncExportPaintSnapshotFromLiveCard(el, clonedEl),
             );
 
-            // Shutter decoupling：關掉 loading 遮罩，避免 PixelCopy 抓到遮罩像素。
-            flushSync(() => {
-              setIsCapturing(true);
-            });
-            await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_WAIT_MS));
-            await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_DOM_WAIT_MS));
-
-            const captured = await ViewCapture.captureElement({ rect: physicalRect });
-            const base64 = captured?.base64;
-            if (!base64 || typeof base64 !== "string") {
+            if (!dataUrl) {
               await showNativeExportFailedAlert(
                 t("exportFailedTitle"),
                 t("exportFailedNativeRenderAnomalyAdvice"),
               );
               return;
             }
-
-            const dataUrl = `data:image/png;base64,${base64}`;
 
             if (saveOnly) {
               const albumIdentifier = await ensureGoatAlbumIdentifier();
@@ -466,7 +552,6 @@ const BattleCard = forwardRef(function BattleCard({
 
             return;
           } finally {
-            // 必須清理臨時攝影棚 DOM，否則會堆疊記憶體與繪製負擔
             if (studio?.parentNode) studio.parentNode.removeChild(studio);
             studio = null;
             clonedEl = null;
@@ -502,49 +587,6 @@ const BattleCard = forwardRef(function BattleCard({
           webkitBackdropFilter: el.style.getPropertyValue("-webkit-backdrop-filter"),
         };
 
-        /** html-to-image 易吃掉飽和／對比：在 inline 上疊加補償，縮小與原生截圖的觀感落差 */
-        const applyExportSnapshot = () => {
-          const computed = window.getComputedStyle(el);
-          el.style.backgroundImage = computed.backgroundImage;
-          el.style.backgroundColor = computed.backgroundColor;
-          el.style.backgroundSize = computed.backgroundSize;
-          el.style.backgroundPosition = computed.backgroundPosition;
-          el.style.backgroundRepeat = computed.backgroundRepeat;
-          // filter: none 時不可串接，否則整段 filter 會被瀏覽器視為無效
-          const filterBase =
-            computed.filter && computed.filter !== "none" ? computed.filter : "";
-          el.style.filter =
-            `${filterBase} saturate(1.6) contrast(1.1) brightness(1.05)`.trim();
-          el.style.boxShadow = computed.boxShadow;
-          el.style.setProperty("backdrop-filter", computed.getPropertyValue("backdrop-filter"));
-          el.style.setProperty(
-            "-webkit-backdrop-filter",
-            computed.getPropertyValue("-webkit-backdrop-filter"),
-          );
-          el.querySelectorAll("[data-export-role]").forEach((node) => {
-            const cs = window.getComputedStyle(node);
-            const role = node.getAttribute("data-export-role");
-            if (role === "text-wall-container") {
-              node.style.transform = cs.transform;
-              node.style.mixBlendMode = cs.mixBlendMode;
-              node.style.opacity = cs.opacity;
-              node.style.filter = cs.filter;
-              node.style.webkitMaskImage = cs.webkitMaskImage;
-              node.style.maskImage = cs.maskImage;
-              node.style.webkitMaskRepeat = cs.webkitMaskRepeat;
-              node.style.maskRepeat = cs.maskRepeat;
-              node.style.webkitMaskSize = cs.webkitMaskSize;
-              node.style.maskSize = cs.maskSize;
-            } else {
-              // laser-cut / reflective-sweeps 等：同步 filter，避免 html-to-image clone 與實際算繪不一致
-              node.style.backgroundImage = cs.backgroundImage;
-              node.style.mixBlendMode = cs.mixBlendMode;
-              node.style.filter = cs.filter;
-              node.style.opacity = cs.opacity;
-            }
-          });
-        };
-
         const restoreExportDomStyles = () => {
           el.style.backgroundImage = rootPaintBackup.backgroundImage;
           el.style.backgroundColor = rootPaintBackup.backgroundColor;
@@ -560,50 +602,36 @@ const BattleCard = forwardRef(function BattleCard({
           });
         };
 
+        const parentEl = el.parentElement;
+        const parentGeomBackup =
+          parentEl != null
+            ? {
+                overflow: parentEl.style.overflow,
+                width: parentEl.style.width,
+                height: parentEl.style.height,
+              }
+            : null;
+        const elGeomBackup = {
+          transform: el.style.transform,
+          left: el.style.left,
+          top: el.style.top,
+        };
+
         try {
-          applyExportSnapshot();
-
-          const toPngBaseOpts = {
-            width: CARD_SIZE,
-            height: CARD_SIZE,
-            backgroundColor: "#050505",
-            pixelRatio: 2,
-            cacheBust: true,
-            skipFonts: true,
-          };
-
-          let dataUrl = null;
-          try {
-            dataUrl = await toPng(el, toPngBaseOpts);
-          } catch {
-            const TRANSPARENT_PIXEL =
-              "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-            const imgNodes = Array.from(el.querySelectorAll("img"));
-            const externalImgNodes = imgNodes.filter((img) => {
-              const src =
-                img.getAttribute("src") || img.currentSrc || img.src || "";
-              return typeof src === "string" && /^https?:\/\//i.test(src);
-            });
-            const savedSources = externalImgNodes.map((img) => ({
-              img,
-              src: img.getAttribute("src") || img.currentSrc || img.src || "",
-            }));
-
-            try {
-              externalImgNodes.forEach((img) => {
-                img.setAttribute("src", TRANSPARENT_PIXEL);
-              });
-              applyExportSnapshot();
-              dataUrl = await toPng(el, toPngBaseOpts);
-            } catch (err2) {
-              console.error("[BattleCard] toPng failed after retry", err2);
-            } finally {
-              savedSources.forEach(({ img, src }) => {
-                if (src) img.setAttribute("src", src);
-                else img.removeAttribute("src");
-              });
-            }
+          // html-to-image 對 translate(-50%,-50%)+scale 的截圖中心經常漂移；暫時拉平為完整 640 方塊再拍
+          el.style.setProperty("transform", "none", "important");
+          el.style.setProperty("left", "0", "important");
+          el.style.setProperty("top", "0", "important");
+          if (parentEl) {
+            parentEl.style.setProperty("overflow", "visible", "important");
+            parentEl.style.setProperty("width", `${CARD_SIZE}px`, "important");
+            parentEl.style.setProperty("height", `${CARD_SIZE}px`, "important");
           }
+
+          syncExportPaintSnapshotFromLiveCard(el, el);
+          const dataUrl = await battleCardRootToPngDataUrl(el, el, () =>
+            syncExportPaintSnapshotFromLiveCard(el, el),
+          );
 
           if (dataUrl) {
             const a = document.createElement("a");
@@ -612,6 +640,38 @@ const BattleCard = forwardRef(function BattleCard({
             a.click();
           }
         } finally {
+          if (parentEl && parentGeomBackup) {
+            if (parentGeomBackup.overflow) {
+              parentEl.style.overflow = parentGeomBackup.overflow;
+            } else {
+              parentEl.style.removeProperty("overflow");
+            }
+            if (parentGeomBackup.width) {
+              parentEl.style.width = parentGeomBackup.width;
+            } else {
+              parentEl.style.removeProperty("width");
+            }
+            if (parentGeomBackup.height) {
+              parentEl.style.height = parentGeomBackup.height;
+            } else {
+              parentEl.style.removeProperty("height");
+            }
+          }
+          if (elGeomBackup.transform) {
+            el.style.transform = elGeomBackup.transform;
+          } else {
+            el.style.removeProperty("transform");
+          }
+          if (elGeomBackup.left) {
+            el.style.left = elGeomBackup.left;
+          } else {
+            el.style.removeProperty("left");
+          }
+          if (elGeomBackup.top) {
+            el.style.top = elGeomBackup.top;
+          } else {
+            el.style.removeProperty("top");
+          }
           restoreExportDomStyles();
         }
       } catch (err) {
@@ -633,7 +693,6 @@ const BattleCard = forwardRef(function BattleCard({
       } finally {
         flushSync(() => {
           setExportSlowResourceCopy(false);
-          setIsCapturing(false);
           setIsExporting(false);
         });
         onExportEnd?.();
@@ -795,7 +854,7 @@ const BattleCard = forwardRef(function BattleCard({
       className="fixed inset-0 z-[9998] flex flex-col"
       style={{ isolation: "isolate" }}
     >
-      {isExporting && !isCapturing ? (
+      {isExporting ? (
         <div
           className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/90 px-6 pointer-events-auto"
           role="status"
