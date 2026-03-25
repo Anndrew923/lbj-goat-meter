@@ -46,7 +46,7 @@ export default function VotePage() {
   } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const prevStableUidRef = useRef(currentUser?.uid);
+  const lastStableUidRef = useRef(currentUser?.uid);
   const [activeWarzone, setActiveWarzone] = useState(
     profile?.voterTeam ?? DEFAULT_WARZONE_ID,
   );
@@ -100,16 +100,23 @@ export default function VotePage() {
     };
   }, [remainingPoints]);
 
-  // 帳號定錨：僅在「真換帳號」時重置狀態鎖，忽略 APK rehydrate 的 uid 暫時抖動。
+  // 帳號定錨：僅在「真換帳號」或「徹底登出」時重置狀態鎖，忽略 APK rehydrate 的 uid 暫時抖動。
   useEffect(() => {
     const nextUid = currentUser?.uid;
-    const prevUid = prevStableUidRef.current;
+    const prevUid = lastStableUidRef.current;
 
     if (nextUid && nextUid !== prevUid) {
       setProfileSetupDismissed(false);
       setProfileLoadingSettled(false);
       setHasHandledDismissal(false);
-      prevStableUidRef.current = nextUid;
+      lastStableUidRef.current = nextUid;
+    }
+
+    if (prevUid && !nextUid) {
+      setProfileSetupDismissed(false);
+      setProfileLoadingSettled(false);
+      setHasHandledDismissal(false);
+      lastStableUidRef.current = null;
     }
   }, [currentUser?.uid]);
 
