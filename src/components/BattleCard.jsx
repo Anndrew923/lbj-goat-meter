@@ -324,75 +324,83 @@ const BattleCard = forwardRef(function BattleCard({
 
       try {
         if (isNative) {
-          // 下載前自動校正位置：將卡片置中，降低 rect 超出 Window bounds 造成 PixelCopy 失敗機率。
-          // 注意：scroll 失敗時不阻斷流程，讓後續 bounds clamp 自行處理。
-          try {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-            await new Promise((r) => setTimeout(r, 300));
-          } catch {
-            // ignore
-          }
+          // ===== BattleCard 3.1：隱形攝影棚系統（0,0 固定擷取）=====
+          // 核心目標：
+          // 1) 避免任何「父容器 max-width / stacking context」造成的內容變形
+          // 2) Android PixelCopy：只擷取螢幕左上角固定矩形（0,0），座標計算極簡且可預期
 
-          // ===== Layout Breakout (2.7)：安全區縮放絕殺模式 =====
-          // 核心做法：將固定尺寸渲染（640x640）縮放到 320px（scale(0.5)），
-          // 讓擷取瞬間的版面尺寸必然小於主流手機寬度，徹底避免父容器擠壓/瀕臨 overflow。
-          const originalStyle = el.style.cssText;
-          try {
-            // 1) 擷取瞬間強制 fixed 脫離文件流 + 鎖定基礎尺寸（640x640）
-            el.style.setProperty("position", "fixed", "important");
-            el.style.setProperty("top", "0px", "important");
-            el.style.setProperty("left", "0px", "important");
-            el.style.setProperty("width", "640px", "important"); // 保持原始設計寬
-            el.style.setProperty("height", "640px", "important"); // 保持原始設計高
-            el.style.setProperty("transform", "scale(0.5)", "important"); // 視覺佔用縮小到 320px
-            el.style.setProperty("transform-origin", "top left", "important");
-            el.style.setProperty("max-width", "none", "important"); // 破除任何 max-width 限制
-            el.style.setProperty("z-index", "9999", "important");
+          let studio = null;
+          let clonedEl = null;
 
-            // 2) 等待重繪
+          try {
+            onExportStart?.();
+
+            // 1) 隱形攝影棚：固定在 (0,0)。用 z-index 放在 Loading 遮罩之下（理論上不會被用戶察覺閃現）。
+            studio = document.createElement("div");
+            studio.id = "invisible-studio";
+            studio.style.cssText = `
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: ${CARD_SIZE}px !important;
+              height: ${CARD_SIZE}px !important;
+              background: #000;
+              z-index: 9990;
+              overflow: visible;
+              pointer-events: none;
+            `;
+            document.body.appendChild(studio);
+
+            // 2) clone + 1:1 強制（移除 transform，避免原卡片 translate/scale 影響像素輸出）
+            clonedEl = el.cloneNode(true);
+
+            // 避免 DOM `id` 重複：原卡片 subtree 會保留其 `id`，export clone 只用於像素輸出。
+            clonedEl.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+
+            clonedEl.style.setProperty("width", `${CARD_SIZE}px`, "important");
+            clonedEl.style.setProperty("height", `${CARD_SIZE}px`, "important");
+            clonedEl.style.setProperty("transform", "none", "important");
+            clonedEl.style.setProperty("position", "relative", "important");
+            clonedEl.style.setProperty("margin", "0", "important");
+            clonedEl.style.setProperty("top", "0px", "important");
+            clonedEl.style.setProperty("left", "0px", "important");
+            clonedEl.style.setProperty("max-width", "none", "important");
+
+            studio.appendChild(clonedEl);
+
+            // 等待兩幀，確保 GPU 完成繪製
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-            // —— 第一階：環境鎖定（全螢幕「生成中」+ 圖片 100% 讀取／解碼）——
-            onExportStart?.();
-            await nextAnimationFrames(2);
-            await decodeBattleCardImages(el);
-            await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
+            // —— 第一階：解碼/就緒（針對 clone）——
+            await decodeBattleCardImages(clonedEl);
+            await waitForCardImagesPaintReady(clonedEl, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
               flushSync(() => {
                 setExportSlowResourceCopy(true);
               });
             });
 
             const fileName = `GOAT-Card-${Date.now()}`;
+            const dpr = window.devicePixelRatio || 1;
 
-            // —— 第二階：渲染解耦（隱藏遮罩後等待 DOM 與合成落地）——
+            // 3) 座標鎖定：固定擷取 0,0 的 640x640（乘 DPR）
+            const physicalRect = {
+              x: 0,
+              y: 0,
+              width: Math.round(CARD_SIZE * dpr),
+              height: Math.round(CARD_SIZE * dpr),
+            };
+
+            console.log(
+              `[STUDIO_CAPTURE] Capturing at 0,0: ${physicalRect.width}x${physicalRect.height}`,
+            );
+
+            // Shutter decoupling：關掉 loading 遮罩，避免 PixelCopy 抓到遮罩像素。
             flushSync(() => {
               setIsCapturing(true);
             });
-
-            // 廣告解鎖退場後的額外物理落地等待（避免 PixelCopy 捕捉到非等比過渡幀）
             await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_WAIT_MS));
             await new Promise((r) => setTimeout(r, NATIVE_SHUTTER_DOM_WAIT_MS));
 
-            // 取得組件在視窗中的精確位置
-            const rect = el.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-
-            // 3) 計算物理像素座標：此時 rect.width 理論上約等於 320（640 * 0.5），再乘 DPR 還原畫質
-            const sidePx = Math.floor(rect.width * dpr);
-            const physicalRect = { x: 0, y: 0, width: sidePx, height: sidePx };
-
-            if (sidePx <= 0) {
-              await showNativeExportFailedAlert(
-                t("exportFailedTitle"),
-                t("exportFailedNativeRenderAnomalyAdvice"),
-              );
-              return;
-            }
-
-            console.log(`[SAFE_ZONE_MODE] Capturing: ${sidePx}x${sidePx} (DPR: ${dpr})`);
-
-            // 呼叫原生端 PixelCopy 抓圖
-            // Bruce 註記：此方法不再需要處理 statusBarHeight 位移，系統會自動對齊 Window 座標。
             const captured = await ViewCapture.captureElement({ rect: physicalRect });
             const base64 = captured?.base64;
             if (!base64 || typeof base64 !== "string") {
@@ -436,10 +444,11 @@ const BattleCard = forwardRef(function BattleCard({
 
             return;
           } finally {
-            // 務必還原樣式，否則畫面會卡死在 fixed 狀態
-            el.style.cssText = originalStyle;
+            // 必須清理臨時攝影棚 DOM，否則會堆疊記憶體與繪製負擔
+            if (studio?.parentNode) studio.parentNode.removeChild(studio);
+            studio = null;
+            clonedEl = null;
           }
-          
         }
 
         // —— Web：維持既有 toPng 路徑（含 EXPORT_PAINT_WAIT_MS 與資源就緒輪詢）——
