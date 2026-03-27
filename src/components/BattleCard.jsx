@@ -1,7 +1,7 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放；下載／相簿匯出與 Web 相同走 html-to-image（原生用離屏 clone）。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出為資料驅動 Canvas 1080×PNG（見 battleReportCanvas.js）。
  * isExportReady：首次下載經廣告解鎖後由 VotingArena 觸發 saveToGallery。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
@@ -9,14 +9,16 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { createPortal, flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { toPng } from "html-to-image";
 import { Download, RotateCcw } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
 import { STANCE_COLORS } from "../lib/constants";
 import crownIcon from "../assets/goat-crown-icon.png";
+import brandData from "../i18n/brand.json";
 import { hexWithAlpha } from "../utils/colorUtils";
+import { mixHex, hashStringToSeed, mulberry32, hexToRgb, rgbToHex } from "../utils/battleCardVisualMath";
+import { generateBattleReportPngDataUrl } from "../utils/battleReportCanvas";
 import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 
@@ -24,123 +26,6 @@ const CARD_SIZE = 640;
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
-/** 保守派：廣告關閉後給足 GPU 重繪時間，再進入快門隱身；不追求極限快門、追求成功率 */
-const EXPORT_PAINT_WAIT_MS = 1500;
-/** 在基礎等待之後，額外輪詢 img.complete && naturalWidth 的最長時間（弱網） */
-const EXPORT_IMAGE_READY_MAX_WAIT_MS = 3000;
-/** 圖片就緒輪詢間隔，平衡 CPU 與回應速度 */
-const EXPORT_IMAGE_POLL_INTERVAL_MS = 50;
-async function nextAnimationFrames(count) {
-  for (let i = 0; i < count; i += 1) {
-    await new Promise((r) => requestAnimationFrame(r));
-  }
-}
-
-function getBattleCardToPngOptions() {
-  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  return {
-    width: CARD_SIZE,
-    height: CARD_SIZE,
-    backgroundColor: "#050505",
-    pixelRatio: Math.min(3, Math.max(2, Math.round(dpr))),
-    cacheBust: true,
-    skipFonts: true,
-  };
-}
-
-/**
- * 把畫面上卡片的 computed 樣式寫入要 raster 的根節點（可為同一節點或離屏 clone）。
- * 原生端不再用 PixelCopy：JS 視口座標 × dpr 與 Window 物理像素原點常不一致（狀態列／WebView 位移），
- * 會出現灰帶、裁錯、偏暗；改與 Web 相同走 html-to-image 在 WebView 內直接對 DOM 算圖。
- */
-function syncExportPaintSnapshotFromLiveCard(liveRoot, exportRoot) {
-  const computed = window.getComputedStyle(liveRoot);
-  exportRoot.style.backgroundImage = computed.backgroundImage;
-  exportRoot.style.backgroundColor = computed.backgroundColor;
-  exportRoot.style.backgroundSize = computed.backgroundSize;
-  exportRoot.style.backgroundPosition = computed.backgroundPosition;
-  exportRoot.style.backgroundRepeat = computed.backgroundRepeat;
-  const filterBase =
-    computed.filter && computed.filter !== "none" ? computed.filter : "";
-  exportRoot.style.filter =
-    `${filterBase} saturate(1.6) contrast(1.1) brightness(1.05)`.trim();
-  exportRoot.style.boxShadow = computed.boxShadow;
-  exportRoot.style.setProperty("backdrop-filter", computed.getPropertyValue("backdrop-filter"));
-  exportRoot.style.setProperty(
-    "-webkit-backdrop-filter",
-    computed.getPropertyValue("-webkit-backdrop-filter"),
-  );
-
-  const liveRoles = liveRoot.querySelectorAll("[data-export-role]");
-  const exportRoles = exportRoot.querySelectorAll("[data-export-role]");
-  const n = Math.min(liveRoles.length, exportRoles.length);
-  if (liveRoles.length !== exportRoles.length) {
-    console.warn(
-      "[BattleCard] export role node count mismatch (live vs export)",
-      liveRoles.length,
-      exportRoles.length,
-    );
-  }
-  for (let i = 0; i < n; i += 1) {
-    const liveNode = liveRoles[i];
-    const node = exportRoles[i];
-    const cs = window.getComputedStyle(liveNode);
-    const role = liveNode.getAttribute("data-export-role");
-    if (role === "text-wall-container") {
-      node.style.transform = cs.transform;
-      node.style.mixBlendMode = cs.mixBlendMode;
-      node.style.opacity = cs.opacity;
-      node.style.filter = cs.filter;
-      node.style.webkitMaskImage = cs.webkitMaskImage;
-      node.style.maskImage = cs.maskImage;
-      node.style.webkitMaskRepeat = cs.webkitMaskRepeat;
-      node.style.maskRepeat = cs.maskRepeat;
-      node.style.webkitMaskSize = cs.webkitMaskSize;
-      node.style.maskSize = cs.maskSize;
-    } else {
-      node.style.backgroundImage = cs.backgroundImage;
-      node.style.mixBlendMode = cs.mixBlendMode;
-      node.style.filter = cs.filter;
-      node.style.opacity = cs.opacity;
-    }
-  }
-}
-
-async function battleCardRootToPngDataUrl(liveRoot, exportRoot, reapplySnapshot) {
-  const opts = getBattleCardToPngOptions();
-  let dataUrl = null;
-  try {
-    dataUrl = await toPng(exportRoot, opts);
-  } catch {
-    const TRANSPARENT_PIXEL =
-      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-    const imgNodes = Array.from(exportRoot.querySelectorAll("img"));
-    const externalImgNodes = imgNodes.filter((img) => {
-      const src = img.getAttribute("src") || img.currentSrc || img.src || "";
-      return typeof src === "string" && /^https?:\/\//i.test(src);
-    });
-    const savedSources = externalImgNodes.map((img) => ({
-      img,
-      src: img.getAttribute("src") || img.currentSrc || img.src || "",
-    }));
-
-    try {
-      externalImgNodes.forEach((img) => {
-        img.setAttribute("src", TRANSPARENT_PIXEL);
-      });
-      reapplySnapshot();
-      dataUrl = await toPng(exportRoot, opts);
-    } catch (err2) {
-      console.error("[BattleCard] toPng failed after retry", err2);
-    } finally {
-      savedSources.forEach(({ img, src }) => {
-        if (src) img.setAttribute("src", src);
-        else img.removeAttribute("src");
-      });
-    }
-  }
-  return dataUrl;
-}
 
 async function showNativeExportFailedAlert(title, message) {
   if (Capacitor.isNativePlatform()) {
@@ -153,72 +38,6 @@ async function showNativeExportFailedAlert(title, message) {
   } else {
     window.alert(`${title}\n\n${message}`);
   }
-}
-
-/**
- * 截圖前確認 card 內所有 <img> 已解碼且可見（complete + naturalWidth>0）。
- * 弱網下 decode() 可能仍無像素；額外最多等 EXPORT_IMAGE_READY_MAX_WAIT_MS。
- * 若首次檢查未就緒則呼叫 onSlow（切換遮罩文案）；逾時仍繼續截圖並 warn。
- */
-async function waitForCardImagesPaintReady(rootEl, maxWaitMs, onSlow) {
-  const listImgs = () => Array.from(rootEl.querySelectorAll("img"));
-  const allReady = () => {
-    const imgs = listImgs();
-    if (imgs.length === 0) return true;
-    return imgs.every((img) => img.complete && img.naturalWidth > 0);
-  };
-
-  if (allReady()) return;
-
-  onSlow?.();
-
-  const deadline = Date.now() + maxWaitMs;
-  while (Date.now() < deadline) {
-    if (allReady()) return;
-    await new Promise((r) => setTimeout(r, EXPORT_IMAGE_POLL_INTERVAL_MS));
-  }
-
-  if (!allReady()) {
-    console.warn("[BattleCard] waitForCardImagesPaintReady: timeout, screenshot may be incomplete");
-  }
-}
-
-/** 盡力觸發戰報卡根節點內所有 img 的 decode／onload，與 waitForCardImagesPaintReady 搭配使用。 */
-async function decodeBattleCardImages(rootEl) {
-  const imgs = Array.from(rootEl.querySelectorAll("img"));
-  await Promise.all(
-    imgs.map(
-      (img) =>
-        new Promise((res) => {
-          const decodeTimer = window.setTimeout(res, 450);
-          try {
-            if (typeof img.decode === "function") {
-              img.decode().finally(() => {
-                window.clearTimeout(decodeTimer);
-                res(true);
-              });
-              return;
-            }
-            if (img.complete) {
-              window.clearTimeout(decodeTimer);
-              res(true);
-              return;
-            }
-            img.onload = () => {
-              window.clearTimeout(decodeTimer);
-              res(true);
-            };
-            img.onerror = () => {
-              window.clearTimeout(decodeTimer);
-              res(true);
-            };
-          } catch {
-            window.clearTimeout(decodeTimer);
-            res(true);
-          }
-        }),
-    ),
-  );
 }
 
 /** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
@@ -268,56 +87,6 @@ async function showBattleReportSavedToast(text) {
   }
 }
 
-/**
- * 極致背景字牆需要「隨機但可預期」的視覺輸出：
- * - preview / toPng 期間不應因 rerender 而變掉
- * - 因此使用字串 hash + PRNG 生成穩定序列
- */
-function hashStringToSeed(str) {
-  const s = String(str ?? "");
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function rand() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function hexToRgb(hex) {
-  const clean = String(hex || "").replace(/^#/, "");
-  if (clean.length !== 6) return { r: 0, g: 0, b: 0 };
-  const n = parseInt(clean, 16);
-  return {
-    r: (n >> 16) & 255,
-    g: (n >> 8) & 255,
-    b: n & 255,
-  };
-}
-
-function rgbToHex(r, g, b) {
-  const to = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-
-/** mix = 0 => a, mix = 1 => b */
-function mixHex(a, b, mix) {
-  const ma = hexToRgb(a);
-  const mb = hexToRgb(b);
-  const t = Math.max(0, Math.min(1, mix));
-  return rgbToHex(ma.r + (mb.r - ma.r) * t, ma.g + (mb.g - ma.g) * t, ma.b + (mb.b - ma.b) * t);
-}
-
 const BattleCard = forwardRef(function BattleCard({
   open,
   onClose,
@@ -343,13 +112,13 @@ const BattleCard = forwardRef(function BattleCard({
   isExportReady = false,
   onExportUnlock,
   onRequestRewardAd,
-  /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
+  /** 戰報匯出開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
   onExportStart,
   onExportEnd,
   arenaAnimationsPaused = false,
 }, ref) {
   const { t } = useTranslation("common");
-  /** 戰報卡根節點：唯一下載路徑 toPng 目標（不可由 Container 分岔） */
+  /** 戰報卡根節點：預覽用（匯出改走 Canvas 引擎） */
   const cardRef = useRef(null);
   const overlayRef = useRef(null);
   const [containerSize, setContainerSize] = useState({
@@ -358,8 +127,6 @@ const BattleCard = forwardRef(function BattleCard({
   });
   /** isExporting：顯示「生成中」全螢幕遮罩 */
   const [isExporting, setIsExporting] = useState(false);
-  /** 圖片尚未就緒時改為慢速文案（弱網提示） */
-  const [exportSlowResourceCopy, setExportSlowResourceCopy] = useState(false);
   const stanceColor = status
     ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat)
     : STANCE_COLORS.goat;
@@ -380,6 +147,7 @@ const BattleCard = forwardRef(function BattleCard({
       })()
     : [stanceDisplayName, ""];
   const regionText = [country, city].filter(Boolean).join(" · ") || t("global");
+  const wallText = String(voterTeam || "LAL").toUpperCase().trim() || "LAL";
 
   const availableHeight = Math.max(
     0,
@@ -412,8 +180,10 @@ const BattleCard = forwardRef(function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
+  const stableMetaTimestamp = useRef(Date.now());
+
   /**
-   * 下載戰報：原生與 Web 皆對 DOM 走 html-to-image（原生用離屏 clone，避免動到畫面上卡片的 transform）。
+   * 下載戰報：原生與 Web 皆走資料驅動 Canvas（1080×1080 PNG），無 DOM clone／html-to-image。
    */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
@@ -424,12 +194,9 @@ const BattleCard = forwardRef(function BattleCard({
         }
         return;
       }
-      const el = cardRef.current;
-      if (!el) return;
 
       const isNative = Capacitor.isNativePlatform();
 
-      // 原生存相簿：先完成權限預檢再顯示「生成中」遮罩，避免先閃 loading 再跳系統權限
       if (isNative && saveOnly) {
         try {
           if (typeof Media.checkPermissions === "function") {
@@ -466,239 +233,116 @@ const BattleCard = forwardRef(function BattleCard({
 
       flushSync(() => {
         setIsExporting(true);
-        setExportSlowResourceCopy(false);
       });
 
+      const regionTextExport = [country, city].filter(Boolean).join(" · ") || t("global");
+      const teamLineText = teamLabel
+        ? String(teamLabel).toUpperCase()
+        : t("supporting_team", { team: teamLabel });
+
       try {
-        if (isNative) {
-          // 離屏攝影棚 + clone：與畫面上 transform/父層無關；用 toPng 在 WebView 內算圖（與桌面 Chrome 同源），
-          // 不依賴 PixelCopy（其座標系與 getBoundingClientRect×dpr 常對不齊 → 灰帶／裁切／曝光錯）。
-          let studio = null;
-          let clonedEl = null;
+        onExportStart?.();
 
-          try {
-            onExportStart?.();
+        const exportPayload = {
+          teamColors,
+          stanceColor,
+          battleTitle,
+          battleSubtitle,
+          displayName: displayName || t("anonymousWarrior"),
+          teamLineText,
+          regionText: regionTextExport,
+          rankLineText: rankLabel ?? t("rankLabel"),
+          reasonLabels,
+          stanceDisplayName,
+          wallText,
+          photoURL,
+          metaFooterLine: t("battleCard.meta_footer", {
+            timestamp: String(stableMetaTimestamp.current),
+            status: t("verified_data_status"),
+          }),
+          disclaimerLine: t("battleCard.disclaimer"),
+          evidenceLabel: t("battleCard.verdict_evidence"),
+          brandLine: brandData.appName,
+          isTitleUppercase,
+        };
 
-            studio = document.createElement("div");
-            studio.id = "battle-card-export-studio";
-            studio.style.cssText = `
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: ${CARD_SIZE}px !important;
-              height: ${CARD_SIZE}px !important;
-              background: #000;
-              z-index: 9990;
-              overflow: hidden;
-              pointer-events: none;
-            `;
-            document.body.appendChild(studio);
-
-            clonedEl = el.cloneNode(true);
-            clonedEl.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
-
-            clonedEl.style.setProperty("width", `${CARD_SIZE}px`, "important");
-            clonedEl.style.setProperty("height", `${CARD_SIZE}px`, "important");
-            clonedEl.style.setProperty("transform", "none", "important");
-            clonedEl.style.setProperty("position", "relative", "important");
-            clonedEl.style.setProperty("margin", "0", "important");
-            clonedEl.style.setProperty("top", "0px", "important");
-            clonedEl.style.setProperty("left", "0px", "important");
-            clonedEl.style.setProperty("max-width", "none", "important");
-
-            studio.appendChild(clonedEl);
-
-            await nextAnimationFrames(2);
-
-            await decodeBattleCardImages(clonedEl);
-            await waitForCardImagesPaintReady(clonedEl, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
-              flushSync(() => {
-                setExportSlowResourceCopy(true);
-              });
-            });
-
-            await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
-
-            syncExportPaintSnapshotFromLiveCard(el, clonedEl);
-            await nextAnimationFrames(1);
-
-            const fileName = `GOAT-Card-${Date.now()}`;
-            const dataUrl = await battleCardRootToPngDataUrl(el, clonedEl, () =>
-              syncExportPaintSnapshotFromLiveCard(el, clonedEl),
-            );
-
-            if (!dataUrl) {
-              await showNativeExportFailedAlert(
-                t("exportFailedTitle"),
-                t("exportFailedNativeRenderAnomalyAdvice"),
-              );
-              return;
-            }
-
-            if (saveOnly) {
-              const albumIdentifier = await ensureGoatAlbumIdentifier();
-              await Media.savePhoto({
-                path: dataUrl,
-                albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
-                fileName,
-              });
-              await showBattleReportSavedToast(t("battleReportSavedToGallery"));
-            } else {
-              const a = document.createElement("a");
-              a.href = dataUrl;
-              a.download = `${fileName}.png`;
-              a.click();
-            }
-
-            return;
-          } finally {
-            if (studio?.parentNode) studio.parentNode.removeChild(studio);
-            studio = null;
-            clonedEl = null;
-          }
+        let dataUrl;
+        try {
+          dataUrl = await generateBattleReportPngDataUrl(exportPayload);
+        } catch (canvasErr) {
+          console.error("[BattleCard] canvas export failed", canvasErr);
+          dataUrl = null;
         }
 
-        // —— Web：維持既有 toPng 路徑（含 EXPORT_PAINT_WAIT_MS 與資源就緒輪詢）——
-        await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
-        onExportStart?.();
-        await decodeBattleCardImages(el);
-        await waitForCardImagesPaintReady(el, EXPORT_IMAGE_READY_MAX_WAIT_MS, () => {
-          flushSync(() => {
-            setExportSlowResourceCopy(true);
-          });
-        });
-
-        const exportTag = `PH8-v${Date.now()}`;
-        const fileBase = `GOAT-Meter-${battleTitle.replace(/\s+/g, "-")}-${exportTag}`;
-
-        /** Web：toPng 前備份／還原 DOM，避免 clone 殘影 */
-        const roleStyleBackup = new Map(
-          Array.from(el.querySelectorAll("[data-export-role]")).map((n) => [n, n.style.cssText]),
-        );
-        const rootPaintBackup = {
-          backgroundImage: el.style.backgroundImage,
-          backgroundColor: el.style.backgroundColor,
-          backgroundSize: el.style.backgroundSize,
-          backgroundPosition: el.style.backgroundPosition,
-          backgroundRepeat: el.style.backgroundRepeat,
-          filter: el.style.filter,
-          boxShadow: el.style.boxShadow,
-          backdropFilter: el.style.getPropertyValue("backdrop-filter"),
-          webkitBackdropFilter: el.style.getPropertyValue("-webkit-backdrop-filter"),
-        };
-
-        const restoreExportDomStyles = () => {
-          el.style.backgroundImage = rootPaintBackup.backgroundImage;
-          el.style.backgroundColor = rootPaintBackup.backgroundColor;
-          el.style.backgroundSize = rootPaintBackup.backgroundSize;
-          el.style.backgroundPosition = rootPaintBackup.backgroundPosition;
-          el.style.backgroundRepeat = rootPaintBackup.backgroundRepeat;
-          el.style.filter = rootPaintBackup.filter;
-          el.style.boxShadow = rootPaintBackup.boxShadow;
-          el.style.setProperty("backdrop-filter", rootPaintBackup.backdropFilter);
-          el.style.setProperty("-webkit-backdrop-filter", rootPaintBackup.webkitBackdropFilter);
-          roleStyleBackup.forEach((cssText, node) => {
-            if (node.isConnected) node.style.cssText = cssText;
-          });
-        };
-
-        const parentEl = el.parentElement;
-        const parentGeomBackup =
-          parentEl != null
-            ? {
-                overflow: parentEl.style.overflow,
-                width: parentEl.style.width,
-                height: parentEl.style.height,
-              }
-            : null;
-        const elGeomBackup = {
-          transform: el.style.transform,
-          left: el.style.left,
-          top: el.style.top,
-        };
-
-        try {
-          // html-to-image 對 translate(-50%,-50%)+scale 的截圖中心經常漂移；暫時拉平為完整 640 方塊再拍
-          el.style.setProperty("transform", "none", "important");
-          el.style.setProperty("left", "0", "important");
-          el.style.setProperty("top", "0", "important");
-          if (parentEl) {
-            parentEl.style.setProperty("overflow", "visible", "important");
-            parentEl.style.setProperty("width", `${CARD_SIZE}px`, "important");
-            parentEl.style.setProperty("height", `${CARD_SIZE}px`, "important");
-          }
-
-          syncExportPaintSnapshotFromLiveCard(el, el);
-          const dataUrl = await battleCardRootToPngDataUrl(el, el, () =>
-            syncExportPaintSnapshotFromLiveCard(el, el),
+        if (!dataUrl) {
+          await showNativeExportFailedAlert(
+            t("exportFailedTitle"),
+            t(isNative ? "exportFailedNativeRenderAnomalyAdvice" : "exportFailedUnknown"),
           );
+          return;
+        }
 
-          if (dataUrl) {
+        const fileName = `GOAT-Card-${Date.now()}`;
+        const exportTag = `PH8-v${Date.now()}`;
+        const safeTitleSlug = battleTitle
+          .replace(/[/\\?%*:|"<>]/g, "-")
+          .replace(/\s+/g, "-")
+          .slice(0, 120);
+        const fileBaseWeb = `GOAT-Meter-${safeTitleSlug}-${exportTag}`;
+
+        if (isNative) {
+          if (saveOnly) {
+            const albumIdentifier = await ensureGoatAlbumIdentifier();
+            await Media.savePhoto({
+              path: dataUrl,
+              albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
+              fileName,
+            });
+            await showBattleReportSavedToast(t("battleReportSavedToGallery"));
+          } else {
             const a = document.createElement("a");
             a.href = dataUrl;
-            a.download = `${fileBase}.png`;
+            a.download = `${fileName}.png`;
             a.click();
           }
-        } finally {
-          if (parentEl && parentGeomBackup) {
-            if (parentGeomBackup.overflow) {
-              parentEl.style.overflow = parentGeomBackup.overflow;
-            } else {
-              parentEl.style.removeProperty("overflow");
-            }
-            if (parentGeomBackup.width) {
-              parentEl.style.width = parentGeomBackup.width;
-            } else {
-              parentEl.style.removeProperty("width");
-            }
-            if (parentGeomBackup.height) {
-              parentEl.style.height = parentGeomBackup.height;
-            } else {
-              parentEl.style.removeProperty("height");
-            }
-          }
-          if (elGeomBackup.transform) {
-            el.style.transform = elGeomBackup.transform;
-          } else {
-            el.style.removeProperty("transform");
-          }
-          if (elGeomBackup.left) {
-            el.style.left = elGeomBackup.left;
-          } else {
-            el.style.removeProperty("left");
-          }
-          if (elGeomBackup.top) {
-            el.style.top = elGeomBackup.top;
-          } else {
-            el.style.removeProperty("top");
-          }
-          restoreExportDomStyles();
+        } else {
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = `${fileBaseWeb}.png`;
+          a.click();
         }
       } catch (err) {
         console.error("[BattleCard] export failed", err);
-        const rawMsg = String(err?.message ?? "");
-        const rawCode = String(err?.code ?? "");
-
-        let adviceKey = "exportFailedUnknown";
-        if (rawMsg.includes("OUT_OF_BOUNDS") || rawCode.includes("OUT_OF_BOUNDS")) {
-          adviceKey = "err_pixelcopy_bounds";
-        } else if (rawMsg.includes("TIMEOUT") || rawCode.includes("TIMEOUT")) {
-          adviceKey = "err_pixelcopy_timeout";
-        } else if (rawMsg.includes("OOM") || rawCode.includes("OOM")) {
-          adviceKey = "err_pixelcopy_oom";
-        }
-
-        const detail = err?.code ? `\n${String(err.code)}` : "";
-        await showNativeExportFailedAlert(t("exportFailedTitle"), `${t(adviceKey)}${detail}`);
+        await showNativeExportFailedAlert(t("exportFailedTitle"), t("exportFailedUnknown"));
       } finally {
         flushSync(() => {
-          setExportSlowResourceCopy(false);
           setIsExporting(false);
         });
         onExportEnd?.();
       }
     },
-    [battleTitle, isExportReady, onExportUnlock, onRequestRewardAd, onExportStart, onExportEnd, t],
+    [
+      battleTitle,
+      battleSubtitle,
+      country,
+      city,
+      displayName,
+      isExportReady,
+      isTitleUppercase,
+      onExportEnd,
+      onExportStart,
+      onExportUnlock,
+      onRequestRewardAd,
+      photoURL,
+      rankLabel,
+      reasonLabels,
+      stanceColor,
+      stanceDisplayName,
+      t,
+      teamColors,
+      teamLabel,
+      wallText,
+    ],
   );
 
   useImperativeHandle(
@@ -708,9 +352,6 @@ const BattleCard = forwardRef(function BattleCard({
     }),
     [handleDownload],
   );
-
-  const stableMetaTimestamp = useRef(Date.now());
-  const wallText = String(voterTeam || "LAL").toUpperCase().trim() || "LAL";
 
   // Layer 1: 升級文字牆（隨機字級/粗細/空心邊框字），但輸出可預期（seed 固定）
   const mixedWallWords = useMemo(() => {
@@ -862,7 +503,7 @@ const BattleCard = forwardRef(function BattleCard({
           aria-busy="true"
         >
           <p className="text-center text-lg font-semibold text-king-gold max-w-sm leading-relaxed">
-            {exportSlowResourceCopy ? t("exportSlowResources") : t("generatingHighResReport")}
+            {t("generatingHighResReport")}
           </p>
         </div>
       ) : null}
@@ -940,7 +581,7 @@ const BattleCard = forwardRef(function BattleCard({
                   )}`,
                 }}
               >
-                {/* Warzone UI：四角瞄準框（用 pseudo 元素繪製，確保 toPng 也能抓到） */}
+                {/* Warzone UI：四角瞄準框（用 pseudo 元素繪製） */}
                 <style>{`
                   .battlecard-corners-accent{
                     filter:
@@ -1018,7 +659,6 @@ const BattleCard = forwardRef(function BattleCard({
                   <div
                     className="absolute inset-0 pointer-events-none"
                     aria-hidden
-                    data-export-role="laser-cut"
                     style={{
                       backgroundImage: `linear-gradient(115deg, transparent 49.6%, ${hexWithAlpha(laserCutColor, "99")} 49.75%, #FFFFFF 50%, ${hexWithAlpha(laserCutColor, "99")} 50.25%, transparent 50.4%)`,
                       mixBlendMode: "normal",
@@ -1031,7 +671,6 @@ const BattleCard = forwardRef(function BattleCard({
                   <div
                     className="absolute left-0 right-0 pointer-events-none"
                     aria-hidden
-                    data-export-role="reflective-sweeps"
                     style={{
                       top: "-10%",
                       height: "120%",
@@ -1068,7 +707,6 @@ const BattleCard = forwardRef(function BattleCard({
 
                   {/* 升級文字牆：動態混合字級/粗細/空心邊框字，並維持 -15deg 但增加密度 */}
                   <div
-                    data-export-role="text-wall-container"
                     className="absolute inset-0 flex flex-wrap content-start gap-x-4 gap-y-2 p-4"
                     style={{
                       transform: "rotate(-15deg)",
@@ -1077,7 +715,7 @@ const BattleCard = forwardRef(function BattleCard({
                       opacity: 0.92,
                       filter: "brightness(1.25) saturate(1.2) contrast(1.05)",
                       // Radial Alpha Decay：以「球員照片 / Power Stance」區域為中心的透明度黑洞
-                      // 注意：mask 只控制可見性 alpha，避免影響字的排版與 toPng 版面。
+                      // 注意：mask 只控制可見性 alpha，避免影響字的排版與預覽版面。
                       WebkitMaskImage:
                         "radial-gradient(circle at 50% 50%, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.08) 20%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.035) 70%, rgba(0,0,0,0.012) 100%)",
                       maskImage:
@@ -1319,7 +957,7 @@ const BattleCard = forwardRef(function BattleCard({
                   </div>
 
                   {/* 免責聲明 */}
-                  {/* Warzone UI：底部極細資訊列（toPng 會一併渲染） */}
+                  {/* Warzone UI：底部極細資訊列 */}
                   <p
                     className="text-[6px] text-white/40 mt-2 text-center leading-tight tracking-[0.18em] uppercase"
                     aria-hidden

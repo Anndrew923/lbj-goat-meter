@@ -58,11 +58,11 @@ const BattleCardContainer = forwardRef(function BattleCardContainer(
     country = '',
     rankLabel,
     exit = { opacity: 0, scale: 0.9 },
-    /** 喚起激勵廣告（或模擬廣告），播放完畢後須呼叫 onWatched()；未傳則點擊下載不執行 toPng。 */
+    /** 喚起激勵廣告（或模擬廣告），播放完畢後須呼叫 onWatched()；未傳則點擊下載不執行匯出。 */
     onRequestRewardAd,
     /** 解鎖完成時額外通知父層（可選，例如同步儀表狀態） */
     onExportUnlock: onExportUnlockFromParent,
-    /** 戰報 toPng 開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
+    /** 戰報匯出開始／結束時呼叫，用於暫停 LiveTicker 動畫 */
     onExportStart,
     onExportEnd,
     /** 與 VotePage Profile Modal 同步：降低戰報卡合成成本（極少與 Modal 同開，預留一致接口） */
