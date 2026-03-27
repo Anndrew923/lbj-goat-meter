@@ -44,6 +44,7 @@ function loadImageFromObjectUrl(url) {
  * @property {string} displayName
  * @property {string} teamLineText
  * @property {string} regionText
+ * @property {string} [locationLine]
  * @property {string} rankLineText
  * @property {string[]} reasonLabels
  * @property {string} stanceDisplayName

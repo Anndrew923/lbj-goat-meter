@@ -236,6 +236,7 @@ const BattleCard = forwardRef(function BattleCard({
       });
 
       const regionTextExport = [country, city].filter(Boolean).join(" · ") || t("global");
+      const locationLineExport = rankLabel ?? t("rankLabelWithCity", { city: regionTextExport });
       const teamLineText = teamLabel
         ? String(teamLabel).toUpperCase()
         : t("supporting_team", { team: teamLabel });
@@ -251,6 +252,7 @@ const BattleCard = forwardRef(function BattleCard({
           displayName: displayName || t("anonymousWarrior"),
           teamLineText,
           regionText: regionTextExport,
+          locationLine: locationLineExport,
           rankLineText: rankLabel ?? t("rankLabel"),
           reasonLabels,
           stanceDisplayName,
