@@ -7,7 +7,8 @@ import { prepareBattleAssets } from "./svgAssetPreflight";
  * - Native App 主線已切換為 BattleCardExportScene + capacitor-screenshot（DOM 單一事實來源）
  * - 本檔保留給 Web 端匯出與原生備援路徑，不再追求與 BattleCard DOM 視覺逐像素同步。
  */
-export const BATTLE_CARD_EXPORT_SIZE = 1080;
+/** PNG 輸出像素（SVG 仍為 1080 viewBox，drawImage 放大至此解析度） */
+export const BATTLE_CARD_EXPORT_SIZE = 1920;
 export const BATTLE_CARD_DESIGN_SIZE = 1080;
 
 /**
@@ -65,7 +66,7 @@ function loadImageFromObjectUrl(url) {
 
 /**
  * SVG 模板匯出主流程：
- * 1) 資源預處理 -> 2) 建立 SVG -> 3) Rasterize 到 1080x1080 Canvas。
+ * 1) 資源預處理 -> 2) 建立 SVG -> 3) Rasterize 到 BATTLE_CARD_EXPORT_SIZE 正方形 Canvas。
  *
  * @param {BattleReportCanvasInput} input
  * @returns {Promise<HTMLCanvasElement>}

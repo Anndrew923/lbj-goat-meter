@@ -1,8 +1,8 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出以 html-to-image 將 DOM 快照為 1080×1080 PNG（與預覽一致）。
- * 快照完成後以 mirrorImg 切換為 <img>，便於行動裝置長按儲存／分享。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出以 SVG 模板 rasterize（generateBattleReportPngDataUrl），輸出 1920×1920 PNG。
+ * 完成後以 mirrorImg 切換為 <img>，便於行動裝置長按儲存／分享。
  * isExportReady：首次下載經廣告解鎖後由 VotingArena 觸發 saveToGallery。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
@@ -14,8 +14,8 @@ import { Download, RotateCcw } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
-import { toPng } from "html-to-image";
 import { STANCE_COLORS } from "../lib/constants";
+import { generateBattleReportPngDataUrl } from "../utils/battleReportCanvas";
 import crownIcon from "../assets/goat-crown-icon.png";
 import { hexWithAlpha } from "../utils/colorUtils";
 import { mixHex, hashStringToSeed, mulberry32, hexToRgb, rgbToHex } from "../utils/battleCardVisualMath";
@@ -27,11 +27,6 @@ const CARD_SIZE = 640;
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
-const EXPORT_SIZE_PX = 1080;
-/** 邏輯卡片 640 → 輸出 1080：用單一 pixelRatio，避免 canvasWidth 與內部縮放疊加造成裁切／糊塗 */
-const EXPORT_PIXEL_RATIO = EXPORT_SIZE_PX / CARD_SIZE;
-/** WebView 濾鏡／字體合成後多等一幀時間，降低快照半成品機率（與 Export Scene 同量級） */
-const EXPORT_PAINT_WAIT_MS = 120;
 
 async function showNativeExportFailedAlert(title, message) {
   if (Capacitor.isNativePlatform()) {
@@ -115,7 +110,7 @@ const BattleCard = forwardRef(function BattleCard({
   disablePortal = false,
 }, ref) {
   const { t } = useTranslation("common");
-  /** 戰報卡根節點：預覽與 html-to-image 快照目標（鏡像模式下卸載，匯出前會先清空鏡像以恢復 ref） */
+  /** 戰報卡根節點（鏡像模式顯示 <img> 時此 ref 暫無 DOM 子節點） */
   const cardRef = useRef(null);
   const overlayRef = useRef(null);
   const [containerSize, setContainerSize] = useState({
@@ -193,8 +188,8 @@ const BattleCard = forwardRef(function BattleCard({
   const stableMetaTimestamp = useRef(Date.now());
 
   /**
-   * 下載戰報：全平台以 html-to-image 對 cardRef DOM 輸出 1080×1080 PNG，再設 mirrorImg 切換為 <img>。
-   * 匯出前先 flushSync 清空鏡像，確保 cardRef 掛回可快照；原生寫入相簿前仍走 Media 權限（含 limited）。
+   * 下載戰報：以 battleReportCanvas（SVG 模板）輸出高解析 PNG，再設 mirrorImg。
+   * 匯出前 flushSync 清空鏡像；原生寫入相簿前仍走 Media 權限（含 limited）。
    */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
@@ -238,42 +233,44 @@ const BattleCard = forwardRef(function BattleCard({
         if (typeof document !== "undefined" && document.fonts?.ready) {
           await document.fonts.ready;
         }
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
 
         if (!isMountedRef.current || !openRef.current) {
           return;
         }
 
-        const cardEl = cardRef.current;
-        if (!cardEl) {
-          throw new Error("card element unavailable");
-        }
-
-        // 預覽用 absolute + translate(-50%,-50%) scale：若只清 transform 仍會卡在容器 50%/50%，
-        // foreignObject 內等同「只截到右下角」，必須一併重置定位與 overflow。
-        // skipFonts：生產環境若用 Google Fonts 外鏈，讀取 cssRules 會觸發跨域 SecurityError 導致整張圖失敗；
-        // 略過嵌入字體仍會用 clone 時的 computed font-family（瀏覽器已載入的字型可正常繪製）。
-        const dataUrl = await toPng(cardEl, {
-          width: CARD_SIZE,
-          height: CARD_SIZE,
-          pixelRatio: EXPORT_PIXEL_RATIO,
-          cacheBust: true,
-          backgroundColor: "#000000",
-          quality: 1,
-          skipFonts: true,
-          style: {
-            transform: "none",
-            position: "relative",
-            left: "0",
-            top: "0",
-            right: "auto",
-            bottom: "auto",
-            margin: "0",
-            overflow: "visible",
-            borderRadius: "1rem",
-          },
+        const teamLineText = teamLabel
+          ? String(teamLabel).toUpperCase()
+          : t("supporting_team", { team: teamLabel });
+        const rankLineText = rankLabel ?? t("rankLabel");
+        const metaFooterLine = t("battleCard.meta_footer", {
+          timestamp: String(stableMetaTimestamp.current),
+          status: t("verified_data_status"),
         });
+        const disclaimerLine = t("battleCard.disclaimer");
+        const evidenceLabel = t("battleCard.verdict_evidence");
+        const brandLine = "The GOAT Meter";
+
+        const reportInput = {
+          teamColors,
+          stanceColor,
+          battleTitle,
+          battleSubtitle,
+          displayName: displayName || t("anonymousWarrior"),
+          teamLineText,
+          regionText,
+          rankLineText,
+          reasonLabels,
+          stanceDisplayName,
+          wallText,
+          photoURL,
+          metaFooterLine,
+          disclaimerLine,
+          evidenceLabel,
+          brandLine,
+          isTitleUppercase,
+        };
+
+        const dataUrl = await generateBattleReportPngDataUrl(reportInput);
 
         if (!dataUrl) {
           throw new Error("Image generation failed");
@@ -310,7 +307,7 @@ const BattleCard = forwardRef(function BattleCard({
           a.click();
         }
       } catch (err) {
-        console.error("[BattleCard] html-to-image export failed", err);
+        console.error("[BattleCard] SVG battle report export failed", err);
         await showNativeExportFailedAlert(
           t("exportFailedTitle"),
           isNative ? t("exportFailedNativeRenderAnomalyAdvice") : t("exportFailedUnknown"),
@@ -326,13 +323,25 @@ const BattleCard = forwardRef(function BattleCard({
       }
     },
     [
+      battleSubtitle,
       battleTitle,
+      displayName,
       isExportReady,
+      isTitleUppercase,
       onExportEnd,
       onExportStart,
       onExportUnlock,
       onRequestRewardAd,
+      photoURL,
+      rankLabel,
+      reasonLabels,
+      regionText,
+      stanceColor,
+      stanceDisplayName,
       t,
+      teamColors,
+      teamLabel,
+      wallText,
     ],
   );
 
