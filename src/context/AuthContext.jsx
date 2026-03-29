@@ -29,7 +29,14 @@ import {
   deleteUser,
   reauthenticateWithPopup,
 } from "firebase/auth";
-import { doc, getDoc, getDocFromCache, onSnapshot } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  getDocFromCache,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 import { auth, googleProvider, db, isFirebaseReady } from "../lib/firebase";
 import {
   loginWithGoogleForFirebase,
@@ -43,6 +50,7 @@ import { getRecaptchaToken } from "../services/RecaptchaService";
 import { trackCompleteRegistration } from "../services/MetaAnalyticsService";
 import { triggerHaptic } from "../utils/hapticUtils";
 import i18n from "../i18n/config";
+import { ensureAvatarInStorage } from "../services/AvatarService";
 
 const AuthContext = createContext(null);
 
@@ -166,120 +174,159 @@ export function AuthProvider({ children }) {
         setLoading(false);
         return;
       }
-      // 先寫入 user，避免彈窗關閉後 UI 仍等 Firestore
-      const nextUser = {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        isPremium: false,
-      };
-      // 同 UID 重入（token 更新、前後台恢復）：禁止清空 profile / 重設 loading，由既有 onSnapshot 持續覆寫
-      if (lastAuthUidRef.current === user.uid) {
-        setCurrentUser((prev) =>
-          prev?.uid === user.uid
-            ? {
-                ...prev,
-                email: user.email ?? prev.email,
-                displayName: user.displayName ?? prev.displayName,
-                photoURL: user.photoURL ?? prev.photoURL,
-              }
-            : nextUser,
-        );
-        setIsGuest(false);
-        setLoading(false);
-        return;
-      }
-
-      lastAuthUidRef.current = user.uid;
-      setCurrentUser(nextUser);
-      setIsGuest(false);
-      setLoading(false);
-      setProfile(null);
-      setProfileLoading(true);
-      const isFirstRegistration =
-        user?.metadata?.creationTime &&
-        user?.metadata?.lastSignInTime &&
-        user.metadata.creationTime === user.metadata.lastSignInTime;
-      if (isFirstRegistration) {
-        const trackedKey = `meta_complete_registration_${user.uid}`;
-        const trackedBefore =
-          typeof window !== "undefined" &&
-          window.localStorage.getItem(trackedKey) === "1";
-        if (!trackedBefore) {
-          trackCompleteRegistration({
-            registrationMethod: "google",
-            userId: user.uid,
-          }).then((tracked) => {
-            if (tracked && typeof window !== "undefined") {
-              window.localStorage.setItem(trackedKey, "1");
-            }
+      (async () => {
+        // 先寫入 user，避免彈窗關閉後 UI 仍等 Firestore；如有需要則嘗試將 Google 頭像鏡像到 Firebase Storage
+        let effectivePhotoURL = user.photoURL || null;
+        let mirroredProfilePhotoURL = null;
+        try {
+          mirroredProfilePhotoURL = await ensureAvatarInStorage({
+            uid: user.uid,
+            photoURL: user.photoURL,
           });
+          if (mirroredProfilePhotoURL) {
+            effectivePhotoURL = mirroredProfilePhotoURL;
+          }
+        } catch (err) {
+          if (import.meta.env.DEV) {
+            console.warn("[AuthContext] ensureAvatarInStorage failed:", err);
+          }
         }
-      }
 
-      if (!db) {
-        setProfileLoading(false);
-        return;
-      }
-      // 連線冷卻期：auth 穩定後再訂閱 Firestore，避免觸發瞬間 client is offline
-      coolingTimeoutRef.current = setTimeout(() => {
-        coolingTimeoutRef.current = null;
-        if (profileUnsubscribeRef.current) {
-          profileUnsubscribeRef.current();
-          profileUnsubscribeRef.current = null;
-        }
-        const profileRef = doc(db, "profiles", user.uid);
-        profileUnsubscribeRef.current = onSnapshot(
-          profileRef,
-          (snap) => {
-            const data = snap.exists() ? snap.data() : null;
-            setProfile(data);
-            setProfileLoading(false);
-            setCurrentUser((prev) => {
-              if (prev?.uid !== user.uid) return prev;
-              return { ...prev, isPremium: data?.isPremium === true };
-            });
-          },
-          (err) => {
+        // 鏡像成功後將 Storage 下載網址寫入 profiles，供離線／多端與後台查核；setDoc+merge 兼容文件尚未建立
+        if (mirroredProfilePhotoURL && db) {
+          try {
+            await setDoc(
+              doc(db, "profiles", user.uid),
+              {
+                photoURL: mirroredProfilePhotoURL,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+          } catch (persistErr) {
             if (import.meta.env.DEV) {
               console.warn(
-                "[AuthContext] profile onSnapshot 錯誤:",
-                err?.message ?? err,
+                "[AuthContext] persist profile photoURL failed:",
+                persistErr,
               );
             }
-            setProfileLoading(false);
-          },
-        );
-        // 保留原有 isPremium 重試邏輯（離線時 onSnapshot 可能延遲）
-        const tryFetchPremium = (retryCount = 0) => {
-          fetchIsPremium(user.uid)
-            .then((isPremium) => {
-              setCurrentUser((prev) =>
-                prev?.uid === user.uid ? { ...prev, isPremium } : prev,
-              );
-            })
-            .catch((err) => {
+          }
+        }
+
+        const nextUser = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: effectivePhotoURL,
+          isPremium: false,
+        };
+        // 同 UID 重入（token 更新、前後台恢復）：禁止清空 profile / 重設 loading，由既有 onSnapshot 持續覆寫
+        if (lastAuthUidRef.current === user.uid) {
+          setCurrentUser((prev) =>
+            prev?.uid === user.uid
+              ? {
+                  ...prev,
+                  email: user.email ?? prev.email,
+                  displayName: user.displayName ?? prev.displayName,
+                  photoURL: effectivePhotoURL ?? prev.photoURL,
+                }
+              : nextUser,
+          );
+          setIsGuest(false);
+          setLoading(false);
+          return;
+        }
+
+        lastAuthUidRef.current = user.uid;
+        setCurrentUser(nextUser);
+        setIsGuest(false);
+        setLoading(false);
+        setProfile(null);
+        setProfileLoading(true);
+        const isFirstRegistration =
+          user?.metadata?.creationTime &&
+          user?.metadata?.lastSignInTime &&
+          user.metadata.creationTime === user.metadata.lastSignInTime;
+        if (isFirstRegistration) {
+          const trackedKey = `meta_complete_registration_${user.uid}`;
+          const trackedBefore =
+            typeof window !== "undefined" &&
+            window.localStorage.getItem(trackedKey) === "1";
+          if (!trackedBefore) {
+            trackCompleteRegistration({
+              registrationMethod: "google",
+              userId: user.uid,
+            }).then((tracked) => {
+              if (tracked && typeof window !== "undefined") {
+                window.localStorage.setItem(trackedKey, "1");
+              }
+            });
+          }
+        }
+
+        if (!db) {
+          setProfileLoading(false);
+          return;
+        }
+        // 連線冷卻期：auth 穩定後再訂閱 Firestore，避免觸發瞬間 client is offline
+        coolingTimeoutRef.current = setTimeout(() => {
+          coolingTimeoutRef.current = null;
+          if (profileUnsubscribeRef.current) {
+            profileUnsubscribeRef.current();
+            profileUnsubscribeRef.current = null;
+          }
+          const profileRef = doc(db, "profiles", user.uid);
+          profileUnsubscribeRef.current = onSnapshot(
+            profileRef,
+            (snap) => {
+              const data = snap.exists() ? snap.data() : null;
+              setProfile(data);
+              setProfileLoading(false);
+              setCurrentUser((prev) => {
+                if (prev?.uid !== user.uid) return prev;
+                return { ...prev, isPremium: data?.isPremium === true };
+              });
+            },
+            (err) => {
               if (import.meta.env.DEV) {
                 console.warn(
-                  "[AuthContext] 取得 isPremium 失敗:",
+                  "[AuthContext] profile onSnapshot 錯誤:",
                   err?.message ?? err,
                 );
               }
-              const isOffline = err?.message?.includes("offline") ?? false;
-              if (
-                (isOffline || err?.code === "unavailable") &&
-                retryCount < IS_PREMIUM_RETRY_MAX
-              ) {
-                retryTimeoutRef.current = setTimeout(
-                  () => tryFetchPremium(retryCount + 1),
-                  IS_PREMIUM_RETRY_DELAY_MS,
+              setProfileLoading(false);
+            },
+          );
+          // 保留原有 isPremium 重試邏輯（離線時 onSnapshot 可能延遲）
+          const tryFetchPremium = (retryCount = 0) => {
+            fetchIsPremium(user.uid)
+              .then((isPremium) => {
+                setCurrentUser((prev) =>
+                  prev?.uid === user.uid ? { ...prev, isPremium } : prev,
                 );
-              }
-            });
-        };
-        tryFetchPremium();
-      }, FIREBASE_COOLING_MS);
+              })
+              .catch((err) => {
+                if (import.meta.env.DEV) {
+                  console.warn(
+                    "[AuthContext] 取得 isPremium 失敗:",
+                    err?.message ?? err,
+                  );
+                }
+                const isOffline = err?.message?.includes("offline") ?? false;
+                if (
+                  (isOffline || err?.code === "unavailable") &&
+                  retryCount < IS_PREMIUM_RETRY_MAX
+                ) {
+                  retryTimeoutRef.current = setTimeout(
+                    () => tryFetchPremium(retryCount + 1),
+                    IS_PREMIUM_RETRY_DELAY_MS,
+                  );
+                }
+              });
+          };
+          tryFetchPremium();
+        }, FIREBASE_COOLING_MS);
+      })();
     });
     return () => {
       if (coolingTimeoutRef.current) clearTimeout(coolingTimeoutRef.current);

@@ -28,6 +28,8 @@ const CARD_SIZE = 640;
 const BUTTON_GROUP_RESERVE = 200;
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 const EXPORT_SIZE_PX = 1080;
+/** 邏輯卡片 640 → 輸出 1080：用單一 pixelRatio，避免 canvasWidth 與內部縮放疊加造成裁切／糊塗 */
+const EXPORT_PIXEL_RATIO = EXPORT_SIZE_PX / CARD_SIZE;
 /** WebView 濾鏡／字體合成後多等一幀時間，降低快照半成品機率（與 Export Scene 同量級） */
 const EXPORT_PAINT_WAIT_MS = 120;
 
@@ -248,16 +250,24 @@ const BattleCard = forwardRef(function BattleCard({
           throw new Error("card element unavailable");
         }
 
+        // 預覽用 absolute + translate(-50%,-50%) scale：若只清 transform 仍會卡在容器 50%/50%，
+        // foreignObject 內等同「只截到右下角」，必須一併重置定位與 overflow。
         const dataUrl = await toPng(cardEl, {
           width: CARD_SIZE,
           height: CARD_SIZE,
-          canvasWidth: EXPORT_SIZE_PX,
-          canvasHeight: EXPORT_SIZE_PX,
-          pixelRatio: 1,
+          pixelRatio: EXPORT_PIXEL_RATIO,
           cacheBust: true,
+          backgroundColor: "#000000",
+          quality: 1,
           style: {
-            // 快照座標系與 640 設計稿對齊，不受預覽用 translate(-50%,-50%) scale(scale) 影響
             transform: "none",
+            position: "relative",
+            left: "0",
+            top: "0",
+            right: "auto",
+            bottom: "auto",
+            margin: "0",
+            overflow: "visible",
             borderRadius: "1rem",
           },
         });
