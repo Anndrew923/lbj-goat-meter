@@ -2,6 +2,11 @@ import crownIcon from "../assets/goat-crown-icon.png";
 import { buildBattleReportSvg } from "./battleReportSvgTemplate";
 import { prepareBattleAssets } from "./svgAssetPreflight";
 
+/**
+ * LEGACY PIPELINE:
+ * - Native App 主線已切換為 BattleCardExportScene + capacitor-screenshot（DOM 單一事實來源）
+ * - 本檔保留給 Web 端匯出與原生備援路徑，不再追求與 BattleCard DOM 視覺逐像素同步。
+ */
 export const BATTLE_CARD_EXPORT_SIZE = 1080;
 export const BATTLE_CARD_DESIGN_SIZE = 1080;
 

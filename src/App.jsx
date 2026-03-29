@@ -13,6 +13,7 @@ import SetupPage from './pages/SetupPage'
 import PrivacyPage from './pages/PrivacyPage'
 import UniversalAdmin from './pages/UniversalAdmin'
 import BreakingHistoryPage from './pages/BreakingHistoryPage'
+import BattleCardExportScene from './pages/BattleCardExportScene'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import ExitConfirmModal from './components/ExitConfirmModal'
@@ -58,6 +59,7 @@ export default function App() {
 
   pathnameRef.current = location.pathname
   exitModalOpenRef.current = isExitModalOpen
+  const isBattleCardExportScene = location.pathname === '/battlecard-export'
 
   useEffect(() => {
     initializeAdMob().catch(() => {})
@@ -266,19 +268,31 @@ export default function App() {
             </AdminRoute>
           }
         />
+        <Route
+          path="/battlecard-export"
+          element={
+            <ProtectedRoute>
+              <BattleCardExportScene />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </BreakingVoteProvider>
-      {toastMessage && (
+      {!isBattleCardExportScene && toastMessage && (
         <div role="status" aria-live="polite" style={toastStyle}>
           {toastMessage}
         </div>
       )}
-      <ExitConfirmModal
-        open={isExitModalOpen}
-        onClose={() => setIsExitModalOpen(false)}
-      />
-      <RecaptchaDisclosure />
+      {!isBattleCardExportScene ? (
+        <>
+          <ExitConfirmModal
+            open={isExitModalOpen}
+            onClose={() => setIsExitModalOpen(false)}
+          />
+          <RecaptchaDisclosure />
+        </>
+      ) : null}
     </>
   )
 }

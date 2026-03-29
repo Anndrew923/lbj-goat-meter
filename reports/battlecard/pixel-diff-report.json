@@ -1,0 +1,14 @@
+{
+  "imageA": "/Users/anndrew/Desktop/lbj-goat-meter/reports/battlecard/export-fixture-a.png",
+  "imageB": "/Users/anndrew/Desktop/lbj-goat-meter/reports/battlecard/export-fixture-b.png",
+  "width": 1080,
+  "height": 1080,
+  "threshold": 24,
+  "diffPixels": 0,
+  "totalPixels": 1166400,
+  "mismatchRatio": 0,
+  "mismatchPercent": 0,
+  "avgDelta": 0,
+  "maxDelta": 0,
+  "generatedAt": "2026-03-27T09:32:10.482Z"
+}

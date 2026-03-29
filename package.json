@@ -13,7 +13,9 @@
     "android:apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 assembleDebug",
     "android:apk:clean": "powershell -ExecutionPolicy Bypass -File ./scripts/clean-and-build-debug-apk.ps1",
     "android:release-apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 assembleRelease",
-    "android:aab": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 bundleRelease"
+    "android:aab": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 bundleRelease",
+    "battlecard:fixture": "node scripts/generate-battlecard-fixture.mjs",
+    "battlecard:pixel-diff": "node scripts/battlecard-pixel-diff.mjs"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.0.0",

@@ -13,6 +13,7 @@ import { Download, RotateCcw } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
+import { Screenshot } from "capacitor-screenshot";
 import { STANCE_COLORS } from "../lib/constants";
 import crownIcon from "../assets/goat-crown-icon.png";
 import brandData from "../i18n/brand.json";
@@ -21,11 +22,13 @@ import { mixHex, hashStringToSeed, mulberry32, hexToRgb, rgbToHex } from "../uti
 import { generateBattleReportPngDataUrl } from "../utils/battleReportCanvas";
 import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
+import { buildWallWordSpecs, getPowerStanceModel } from "../utils/battleCardMirrorShared";
 
 const CARD_SIZE = 640;
-const GOAT_ALBUM_NAME = "GOAT_Warzone";
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
 const BUTTON_GROUP_RESERVE = 200;
+const GOAT_ALBUM_NAME = "GOAT_Warzone";
+const EXPORT_SIZE_PX = 1080;
 
 async function showNativeExportFailedAlert(title, message) {
   if (Capacitor.isNativePlatform()) {
@@ -40,17 +43,6 @@ async function showNativeExportFailedAlert(title, message) {
   }
 }
 
-/** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
-const NOISE_DATA_URL =
-  // 以更高 baseFrequency + 多一層 octave 產生「更細碎」的顆粒，模擬磨砂金屬質地。
-  // Phase 5：改成「水平拉絲」(X/Y baseFrequency 不同)，並用 soft-light 讓顆粒只在有光區閃爍。
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill='%23d0d0d0'/%3E%3C/svg%3E";
-
-/**
- * @capacitor-community/media：Android 的 checkPermissions / requestPermissions 回傳的是
- * `publicStorage`（舊版儲存權限組）與 `publicStorage13Plus`（READ_MEDIA_*），不是 `photos`。
- * 若只判斷 `photos`，在 Android 13+ 會誤判為未授權（實際已 granted publicStorage13Plus）。
- */
 function isMediaPluginSavePermissionOk(perm) {
   if (!perm || typeof perm !== "object") return false;
   const ok = (v) => v === "granted" || v === "limited";
@@ -60,7 +52,6 @@ function isMediaPluginSavePermissionOk(perm) {
   return false;
 }
 
-/** 取得或建立 GOAT_Warzone 相簿 identifier（原生端用） */
 async function ensureGoatAlbumIdentifier() {
   const list = (await Media.getAlbums())?.albums ?? [];
   let album = list.find((a) => a.name === GOAT_ALBUM_NAME);
@@ -73,19 +64,78 @@ async function ensureGoatAlbumIdentifier() {
   return album?.identifier;
 }
 
-/** 存相簿成功後的原生 Toast；失敗僅記 log，不影響匯出流程。 */
 async function showBattleReportSavedToast(text) {
   try {
     const { Toast } = await import("@capacitor/toast");
-    await Toast.show({
-      text,
-      duration: "short",
-      position: "bottom",
-    });
-  } catch (e) {
-    console.error("[BattleCard] Toast.show failed", e);
+    await Toast.show({ text, duration: "short", position: "bottom" });
+  } catch {
+    // ignore toast fail
   }
 }
+
+function normalizeScreenshotDataUrl(result) {
+  if (!result) return "";
+  if (typeof result.base64 === "string" && result.base64) return `data:image/png;base64,${result.base64}`;
+  if (typeof result.webPath === "string" && result.webPath) return result.webPath;
+  if (typeof result.path === "string" && result.path) return result.path;
+  return "";
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("screenshot decode failed"));
+    img.src = dataUrl;
+  });
+}
+
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
+
+async function captureCardAs1080Png(cardEl) {
+  if (!cardEl || typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("card element unavailable");
+  }
+
+  const rect = cardEl.getBoundingClientRect();
+  const viewportW = Math.max(1, window.innerWidth);
+  const viewportH = Math.max(1, window.innerHeight);
+
+  if (rect.width <= 0 || rect.height <= 0) {
+    throw new Error("card rect invalid");
+  }
+
+  const screenshot = await Screenshot.take();
+  const screenshotData = normalizeScreenshotDataUrl(screenshot);
+  if (!screenshotData) throw new Error("screenshot empty");
+
+  const img = await loadImage(screenshotData);
+  const scaleX = img.width / viewportW;
+  const scaleY = img.height / viewportH;
+
+  const sx = clamp(Math.round(rect.left * scaleX), 0, img.width - 1);
+  const sy = clamp(Math.round(rect.top * scaleY), 0, img.height - 1);
+  const sw = clamp(Math.round(rect.width * scaleX), 1, img.width - sx);
+  const sh = clamp(Math.round(rect.height * scaleY), 1, img.height - sy);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = EXPORT_SIZE_PX;
+  canvas.height = EXPORT_SIZE_PX;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2d context unavailable");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, EXPORT_SIZE_PX, EXPORT_SIZE_PX);
+  return canvas.toDataURL("image/png", 1.0);
+}
+
+/** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
+const NOISE_DATA_URL =
+  // 以更高 baseFrequency + 多一層 octave 產生「更細碎」的顆粒，模擬磨砂金屬質地。
+  // Phase 5：改成「水平拉絲」(X/Y baseFrequency 不同)，並用 soft-light 讓顆粒只在有光區閃爍。
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill='%23d0d0d0'/%3E%3C/svg%3E";
 
 const BattleCard = forwardRef(function BattleCard({
   open,
@@ -116,6 +166,8 @@ const BattleCard = forwardRef(function BattleCard({
   onExportStart,
   onExportEnd,
   arenaAnimationsPaused = false,
+  exportSceneMode = false,
+  disablePortal = false,
 }, ref) {
   const { t } = useTranslation("common");
   /** 戰報卡根節點：預覽用（匯出改走 Canvas 引擎） */
@@ -135,17 +187,10 @@ const BattleCard = forwardRef(function BattleCard({
       getStance(status)?.primary ??
       (status ? String(status).toUpperCase() : "GOAT")
     ).toUpperCase().trim() || "GOAT";
-  const stanceLen = stanceDisplayName.length;
-  const powerStanceLong = stanceLen >= 11;
-  const powerStanceMedium = stanceLen >= 8 && stanceLen <= 10;
-  const [powerStanceLine1, powerStanceLine2] = powerStanceLong
-    ? (() => {
-        const idx = stanceDisplayName.indexOf(" ");
-        return idx > 0
-          ? [stanceDisplayName.slice(0, idx), stanceDisplayName.slice(idx + 1)]
-          : [stanceDisplayName, ""];
-      })()
-    : [stanceDisplayName, ""];
+  const powerStanceModel = useMemo(
+    () => getPowerStanceModel(stanceDisplayName),
+    [stanceDisplayName],
+  );
   const regionText = [country, city].filter(Boolean).join(" · ") || t("global");
   const wallText = String(voterTeam || "LAL").toUpperCase().trim() || "LAL";
 
@@ -183,7 +228,9 @@ const BattleCard = forwardRef(function BattleCard({
   const stableMetaTimestamp = useRef(Date.now());
 
   /**
-   * 下載戰報：原生與 Web 皆走資料驅動 Canvas（1080×1080 PNG），無 DOM clone／html-to-image。
+   * 下載戰報：
+   * - Web：走 SVG → Canvas pipeline（generateBattleReportPngDataUrl）
+   * - 原生：直接對當前 BattleCard DOM 整螢幕截圖並依 rect 裁切為 1080×1080 PNG。
    */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
@@ -196,40 +243,6 @@ const BattleCard = forwardRef(function BattleCard({
       }
 
       const isNative = Capacitor.isNativePlatform();
-
-      if (isNative && saveOnly) {
-        try {
-          if (typeof Media.checkPermissions === "function") {
-            const check = await Media.checkPermissions();
-            if (!isMediaPluginSavePermissionOk(check)) {
-              const request = await Media.requestPermissions();
-              if (!isMediaPluginSavePermissionOk(request)) {
-                await Dialog.alert({
-                  title: t("galleryPermissionTitle"),
-                  message: t("needPhotoPermissionToSave"),
-                });
-                return;
-              }
-            }
-          } else if (typeof Media.requestPermissions === "function") {
-            const perm = await Media.requestPermissions();
-            if (!isMediaPluginSavePermissionOk(perm)) {
-              await Dialog.alert({
-                title: t("galleryPermissionTitle"),
-                message: t("needPhotoPermissionToSave"),
-              });
-              return;
-            }
-          }
-        } catch (permErr) {
-          console.error("[BattleCard] photo permission preflight failed", permErr);
-          await Dialog.alert({
-            title: t("galleryPermissionTitle"),
-            message: t("needPhotoPermissionToSave"),
-          });
-          return;
-        }
-      }
 
       flushSync(() => {
         setIsExporting(true);
@@ -249,6 +262,11 @@ const BattleCard = forwardRef(function BattleCard({
           stanceColor,
           battleTitle,
           battleSubtitle,
+          voterTeam,
+          status,
+          city,
+          country,
+          teamLabel,
           displayName: displayName || t("anonymousWarrior"),
           teamLineText,
           regionText: regionTextExport,
@@ -268,6 +286,54 @@ const BattleCard = forwardRef(function BattleCard({
           isTitleUppercase,
         };
 
+        if (isNative) {
+          try {
+            if (typeof Media.checkPermissions === "function") {
+              const check = await Media.checkPermissions();
+              if (!isMediaPluginSavePermissionOk(check)) {
+                const request = await Media.requestPermissions();
+                if (!isMediaPluginSavePermissionOk(request)) {
+                  await Dialog.alert({
+                    title: t("galleryPermissionTitle"),
+                    message: t("needPhotoPermissionToSave"),
+                  });
+                  return;
+                }
+              }
+            }
+
+            if (typeof document !== "undefined" && document.fonts?.ready) {
+              await document.fonts.ready;
+            }
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+            const dataUrlNative = await captureCardAs1080Png(cardRef.current);
+            const fileName = `GOAT-Card-${Date.now()}`;
+
+            if (saveOnly) {
+              const albumIdentifier = await ensureGoatAlbumIdentifier();
+              await Media.savePhoto({
+                path: dataUrlNative,
+                albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
+                fileName,
+              });
+              await showBattleReportSavedToast(t("battleReportSavedToGallery"));
+            } else {
+              const a = document.createElement("a");
+              a.href = dataUrlNative;
+              a.download = `${fileName}.png`;
+              a.click();
+            }
+          } catch (nativeErr) {
+            console.error("[BattleCard] native screenshot export failed", nativeErr);
+            await showNativeExportFailedAlert(
+              t("exportFailedTitle"),
+              t("exportFailedNativeRenderAnomalyAdvice"),
+            );
+          }
+          return;
+        }
+
         let dataUrl;
         try {
           dataUrl = await generateBattleReportPngDataUrl(exportPayload);
@@ -279,7 +345,7 @@ const BattleCard = forwardRef(function BattleCard({
         if (!dataUrl) {
           await showNativeExportFailedAlert(
             t("exportFailedTitle"),
-            t(isNative ? "exportFailedNativeRenderAnomalyAdvice" : "exportFailedUnknown"),
+            t("exportFailedUnknown"),
           );
           return;
         }
@@ -292,27 +358,10 @@ const BattleCard = forwardRef(function BattleCard({
           .slice(0, 120);
         const fileBaseWeb = `GOAT-Meter-${safeTitleSlug}-${exportTag}`;
 
-        if (isNative) {
-          if (saveOnly) {
-            const albumIdentifier = await ensureGoatAlbumIdentifier();
-            await Media.savePhoto({
-              path: dataUrl,
-              albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
-              fileName,
-            });
-            await showBattleReportSavedToast(t("battleReportSavedToGallery"));
-          } else {
-            const a = document.createElement("a");
-            a.href = dataUrl;
-            a.download = `${fileName}.png`;
-            a.click();
-          }
-        } else {
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = `${fileBaseWeb}.png`;
-          a.click();
-        }
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `${fileBaseWeb}.png`;
+        a.click();
       } catch (err) {
         console.error("[BattleCard] export failed", err);
         await showNativeExportFailedAlert(t("exportFailedTitle"), t("exportFailedUnknown"));
@@ -344,6 +393,9 @@ const BattleCard = forwardRef(function BattleCard({
       teamColors,
       teamLabel,
       wallText,
+      voterTeam,
+      status,
+      cardRef,
     ],
   );
 
@@ -357,25 +409,24 @@ const BattleCard = forwardRef(function BattleCard({
 
   // Layer 1: 升級文字牆（隨機字級/粗細/空心邊框字），但輸出可預期（seed 固定）
   const mixedWallWords = useMemo(() => {
+    const wordSpecs = buildWallWordSpecs({ wallText, battleTitle, teamColors });
     const rand = mulberry32(hashStringToSeed(`${wallText}|${battleTitle}|${teamColors.primary}|${teamColors.secondary}`));
-    const sizeClasses = ["text-4xl", "text-5xl", "text-6xl", "text-7xl", "text-8xl", "text-9xl"];
-    const wallCount = 150; // Phase 8：斜向界面需要更高重疊密度
     // Smart Watermark（Phase 7）：字牆用「中性銀色」讓壓印在上下雙色背景都能清晰浮現
     const smartSilver = mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#e6e6e6", 0.55);
     const hollowStrokeColor = hexWithAlpha(smartSilver, "FF");
     const glitchRed = "rgba(255,0,80,0.35)";
     const glitchCyan = "rgba(0,220,255,0.30)";
 
-    return Array.from({ length: wallCount }).map((_, wordIdx) => {
-      const sizeClass = sizeClasses[Math.floor(rand() * sizeClasses.length)];
-      const weightClass = rand() > 0.5 ? "font-black" : "font-thin";
+    return wordSpecs.map((spec) => {
+      const sizeClass = spec.sizeClass;
+      const weightClass = spec.isBlackWeight ? "font-black" : "font-thin";
       // 透明度衰減交由「Radial Alpha Decay」(mask) 控制：字體 span 保持 1，避免疊加導致透明度偏移。
-      const glowAlpha = 0.75 + rand() * 0.35;
-      const glitchHollow = rand() < 0.28;
-      const glitchBold = weightClass === "font-black" && rand() < 0.22;
+      const glowAlpha = spec.glowAlpha;
+      const glitchHollow = spec.glitchHollow;
+      const glitchBold = weightClass === "font-black" && spec.glitchBold;
 
       // 每個字牆「詞」的內部字母：每 5 個字隨機出現一個空心邊框字
-      const textLen = wallText.length;
+      const textLen = spec.text.length;
       const hollowIdxByBlock = new Set();
       for (let start = 0; start < textLen; start += 5) {
         const end = Math.min(start + 5, textLen);
@@ -383,7 +434,7 @@ const BattleCard = forwardRef(function BattleCard({
         hollowIdxByBlock.add(pick);
       }
 
-      const chars = wallText.split("").map((ch, charIdx) => {
+      const chars = spec.text.split("").map((ch, charIdx) => {
         const isHollow = hollowIdxByBlock.has(charIdx);
         if (isHollow) {
           const glitchShadow = glitchHollow
@@ -392,7 +443,7 @@ const BattleCard = forwardRef(function BattleCard({
           return (
             <span
               // charIdx 在同一個 word span 內穩定，key 用它即可
-              key={`${wordIdx}-${charIdx}`}
+              key={`${spec.id}-${charIdx}`}
               style={{
                 display: "inline-block",
                 lineHeight: 1,
@@ -410,7 +461,7 @@ const BattleCard = forwardRef(function BattleCard({
         const glitchShadow = glitchBold ? `, -1px 0 0 ${glitchRed}, 1px 0 0 ${glitchCyan}` : "";
         return (
           <span
-            key={`${wordIdx}-${charIdx}`}
+            key={`${spec.id}-${charIdx}`}
             style={{
               display: "inline-block",
               lineHeight: 1,
@@ -428,7 +479,7 @@ const BattleCard = forwardRef(function BattleCard({
 
       return (
         <span
-          key={`wall-word-${wordIdx}`}
+          key={`wall-word-${spec.id}`}
           className={`${sizeClass} ${weightClass} italic uppercase select-none whitespace-nowrap`}
           aria-hidden
           style={{
@@ -442,7 +493,7 @@ const BattleCard = forwardRef(function BattleCard({
         </span>
       );
     });
-  }, [wallText, battleTitle, teamColors.primary, teamColors.secondary]);
+  }, [wallText, battleTitle, teamColors]);
 
   const wallPrimaryGlow = hexWithAlpha(teamColors.primary, "33"); // ~20% alpha
   const wallSecondaryGlow = hexWithAlpha(teamColors.secondary, "26"); // ~15% alpha
@@ -520,7 +571,10 @@ const BattleCard = forwardRef(function BattleCard({
         animate={{ opacity: 1 }}
         exit={exit}
         transition={{ duration: 0.25 }}
-        onClick={(e) => onClose?.(e)}
+        onClick={(e) => {
+          if (exportSceneMode) return;
+          onClose?.(e);
+        }}
       >
         {/* 戰報卡掃描顯影：從上到下的線性掃描遮罩，營造解密／顯影感 */}
         <div className="scan-line" aria-hidden />
@@ -864,26 +918,18 @@ const BattleCard = forwardRef(function BattleCard({
                         filter: `drop-shadow(0 0 30px ${stanceColor}) drop-shadow(0 0 18px ${hexWithAlpha(teamColors.primary, "70")}) drop-shadow(0 0 8px ${reflectiveTint60}) drop-shadow(0 2px 3px rgba(0,0,0,1))`,
                       }}
                     >
-                      {powerStanceLong ? (
-                        <span className="block text-[90px] leading-[0.85]">
-                          {powerStanceLine1}
-                          {powerStanceLine2 ? (
+                      {powerStanceModel.isMultiLine ? (
+                        <span className={`block ${powerStanceModel.domClassName}`}>
+                          {powerStanceModel.line1}
+                          {powerStanceModel.line2 ? (
                             <>
                               <br />
-                              {powerStanceLine2}
+                              {powerStanceModel.line2}
                             </>
                           ) : null}
                         </span>
                       ) : (
-                        <span
-                          className={
-                            powerStanceMedium
-                              ? "text-[95px] leading-none"
-                              : "text-[120px] leading-none"
-                          }
-                        >
-                          {powerStanceLine1}
-                        </span>
+                        <span className={powerStanceModel.domClassName}>{powerStanceModel.line1}</span>
                       )}
                     </div>
                   </div>
@@ -989,6 +1035,7 @@ const BattleCard = forwardRef(function BattleCard({
           </div>
 
           {/* 按鈕組：緊貼卡片下方 (gap-y-6)；解鎖後顯示「下載高解析戰報」存相簿；匯出中隱藏全部操作避免誤觸與流程跳轉 */}
+          {!exportSceneMode ? (
           <div className="flex-shrink-0 flex flex-col items-center w-full max-w-sm gap-y-4">
             {!isExporting && isExportReady ? (
               <button
@@ -1059,12 +1106,16 @@ const BattleCard = forwardRef(function BattleCard({
               </div>
             )}
           </div>
+          ) : null}
         </div>
       </motion.div>
     </motion.div>
     </div>
   );
 
+  if (exportSceneMode || disablePortal || typeof document === "undefined") {
+    return modalContent;
+  }
   return createPortal(modalContent, document.body);
 });
 
