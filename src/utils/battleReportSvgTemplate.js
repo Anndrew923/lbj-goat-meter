@@ -7,11 +7,42 @@ import {
 } from "./battleCardMirrorShared.js";
 
 /**
- * LEGACY TEMPLATE:
- * - Native App 主線改為 BattleCardExportScene + 原生整畫面截圖。
- * - 本模板僅供 battleReportCanvas 的 Web 匯出/備援使用；請勿再以此檔作為 BattleCard DOM 視覺基準調整。
+ * Web 匯出 SVG 套版：戰報 PNG 由此模板 rasterize；隊色／點綴色需套用 Overdrive 映射後再進漸層與濾鏡。
  */
 const CANVAS_SIZE = 1080;
+
+/** 匯出專用飽和終點色（與 preset-c overdrive 對齊）；鍵為 canonical 主題 6-digit hex */
+const SVG_EXPORT_OVERDRIVE_MAP = Object.freeze({
+  "#8B0000": "#FF0000",
+  "#552583": "#BF57FF",
+  "#D4AF37": "#FFD700",
+  "#008348": "#00FF41",
+  "#006BB6": "#0099FF",
+  "#7A0026": "#FF0000",
+  "#3A0CA3": "#BF57FF",
+});
+
+function normalizeHex6(hex) {
+  const s = String(hex ?? "").trim();
+  if (/^#[0-9A-Fa-f]{8}$/i.test(s)) return `#${s.slice(1, 7).toUpperCase()}`;
+  if (/^#[0-9A-Fa-f]{6}$/i.test(s)) return s.toUpperCase();
+  return "#000000";
+}
+
+/** @param {{ primary: string, secondary: string }} teamColors */
+function applySvgExportTeamColors(teamColors) {
+  const p = normalizeHex6(teamColors?.primary);
+  const s = normalizeHex6(teamColors?.secondary);
+  return {
+    primary: SVG_EXPORT_OVERDRIVE_MAP[p] ?? teamColors?.primary ?? "#FF0000",
+    secondary: SVG_EXPORT_OVERDRIVE_MAP[s] ?? teamColors?.secondary ?? "#BF57FF",
+  };
+}
+
+function applySvgExportAccentHex(hex) {
+  const n = normalizeHex6(hex);
+  return SVG_EXPORT_OVERDRIVE_MAP[n] ?? hex;
+}
 const TITLE_MAX_CHARS_PER_LINE = 22;
 const TITLE_MAX_LINES = 4;
 const EVIDENCE_MAX_CHARS_PER_LINE = 58;
@@ -91,18 +122,6 @@ function buildEvidenceLines(reasonLabels) {
   return breakLineByChars(merged, EVIDENCE_MAX_CHARS_PER_LINE, EVIDENCE_MAX_LINES);
 }
 
-function brightenHex(hex, amount) {
-  const value = String(hex || "#000000").replace("#", "");
-  const normalized = value.length === 3
-    ? value.split("").map((ch) => `${ch}${ch}`).join("")
-    : value.padEnd(6, "0").slice(0, 6);
-  const r = Number.parseInt(normalized.slice(0, 2), 16);
-  const g = Number.parseInt(normalized.slice(2, 4), 16);
-  const b = Number.parseInt(normalized.slice(4, 6), 16);
-  const next = (v) => Math.max(0, Math.min(255, Math.round(v + (255 - v) * amount)));
-  return `#${[next(r), next(g), next(b)].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
-}
-
 function buildLaserLineByRotate(deg, centerX, centerY, length) {
   const rad = (deg * Math.PI) / 180;
   const dx = Math.cos(rad) * (length / 2);
@@ -125,8 +144,6 @@ function buildWatermarkTextWall({ wallText, battleTitle, teamColors }) {
   const rowStep = Math.round(58 * SCALE);
   const smartSilver = mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#e6e6e6", 0.55);
   const hollowStrokeColor = hexWithAlpha(smartSilver, "FF");
-  const glitchRed = "rgba(255,0,80,0.35)";
-  const glitchCyan = "rgba(0,220,255,0.30)";
   return specs
     .map((spec) => {
       const row = Math.floor(spec.id / colCount) % rowCount;
@@ -135,17 +152,18 @@ function buildWatermarkTextWall({ wallText, battleTitle, teamColors }) {
       const y = startY + row * rowStep;
       const alpha = (0.2 + spec.glowAlpha * 0.16).toFixed(3);
       const weight = spec.isBlackWeight ? 900 : 200;
-      const letters = spec.text.split("").map((ch, idx) => {
-        const blockStart = Math.floor(idx / 5) * 5;
-        const isHollow = (spec.id + blockStart) % 3 === idx % 5;
-        const glitchShadow = isHollow && spec.glitchHollow
-          ? `, -1px 0 0 ${glitchRed}, 1px 0 0 ${glitchCyan}`
-          : (spec.isBlackWeight && spec.glitchBold ? `, -1px 0 0 ${glitchRed}, 1px 0 0 ${glitchCyan}` : "");
-        return isHollow
-          ? `<tspan fill="transparent" stroke="${hollowStrokeColor}" stroke-width="1" style="paint-order:stroke; text-shadow:0 0 ${Math.round(18 * spec.glowAlpha)}px ${hexWithAlpha(smartSilver, "33")}${glitchShadow};">${escapeXml(ch)}</tspan>`
-          : `<tspan fill="${smartSilver}" style="text-shadow:0 0 ${Math.round(14 * spec.glowAlpha)}px ${hexWithAlpha(smartSilver, "44")}, 0 0 ${Math.round(34 * spec.glowAlpha)}px ${hexWithAlpha(smartSilver, "18")}${glitchShadow};">${escapeXml(ch)}</tspan>`;
-      }).join("");
-      return `<text x="${x}" y="${y}" fill-opacity="${alpha}" font-size="${Math.round(spec.sizePx * SCALE)}" font-style="italic" font-weight="${weight}" letter-spacing="2">${letters}<tspan> </tspan>${letters}<tspan> </tspan>${letters}</text>`;
+      const letters = spec.text
+        .split("")
+        .map((ch, idx) => {
+          const blockStart = Math.floor(idx / 5) * 5;
+          const isHollow = (spec.id + blockStart) % 3 === idx % 5;
+          return isHollow
+            ? `<tspan fill="transparent" stroke="${hollowStrokeColor}" stroke-width="1" style="paint-order:stroke">${escapeXml(ch)}</tspan>`
+            : `<tspan fill="${smartSilver}">${escapeXml(ch)}</tspan>`;
+        })
+        .join("");
+      const triple = `${letters}<tspan> </tspan>${letters}<tspan> </tspan>${letters}`;
+      return `<text x="${x}" y="${y}" fill-opacity="${alpha}" font-size="${Math.round(spec.sizePx * SCALE)}" font-style="italic" font-weight="${weight}" letter-spacing="2">${triple}</text>`;
     })
     .join("");
 }
@@ -154,17 +172,18 @@ function buildWatermarkTextWall({ wallText, battleTitle, teamColors }) {
  * SVG 戰報模板：以宣告式圖層描述取代指令式 Canvas，確保可維護與可測試。
  */
 export function buildBattleReportSvg(input, assets) {
-  const teamColors = input.teamColors ?? { primary: "#7A0026", secondary: "#3A0CA3" };
-  const stanceColor = input.stanceColor ?? "#D4AF37";
+  const teamColors = applySvgExportTeamColors(input.teamColors ?? { primary: "#7A0026", secondary: "#3A0CA3" });
+  const stanceColor = applySvgExportAccentHex(input.stanceColor ?? "#D4AF37");
+  const bgMidSolid = mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#000000", 0.82);
   const titleLines = breakLineByChars(input.battleTitle, TITLE_MAX_CHARS_PER_LINE, TITLE_MAX_LINES);
   const evidenceLines = buildEvidenceLines(input.reasonLabels);
-  const stanceLine = escapeXml(String(input.stanceDisplayName || "GOAT").toUpperCase());
   const wallMarkup = buildWatermarkTextWall({
     wallText: input.wallText,
     battleTitle: input.battleTitle,
     teamColors,
   });
-  const wallColorBright20 = brightenHex(teamColors.primary, 0.2);
+  const wallChromeSpray = mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#c4c4d2", 0.38);
+  const wallOverlayBed = mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.48), "#121212", 0.62);
   const CONTENT_PX = Math.round(20 * SCALE); // DOM p-5
   const subtitleY = CONTENT_PX + TOP_SUBTITLE_FONT_SIZE;
   const titleStep = Math.round(40 * SCALE);
@@ -179,6 +198,10 @@ export function buildBattleReportSvg(input, assets) {
   const idAvatarSize = Math.round(48 * SCALE);
   const idAvatarX = CONTENT_PX + Math.round(8 * SCALE);
   const idAvatarY = idY + Math.round((H_16 - idAvatarSize) / 2);
+
+  const idHeaderCrownSize = Math.round(48 * SCALE);
+  const idHeaderCrownX = CANVAS_SIZE / 2 - idHeaderCrownSize / 2;
+  const idHeaderCrownY = idY - idHeaderCrownSize - Math.round(8 * SCALE);
 
   const powerY = idY + H_16 + CONTENT_GAP;
   const powerH = Math.round(170 * SCALE);
@@ -229,7 +252,7 @@ export function buildBattleReportSvg(input, assets) {
       <linearGradient id="bg-grad" x1="0%" y1="0%" x2="42.3%" y2="90.6%">
         <stop offset="0%" stop-color="${hexWithAlpha(teamColors.primary, "FF")}" />
         <stop offset="45%" stop-color="${hexWithAlpha(teamColors.primary, "E6")}" />
-        <stop offset="50%" stop-color="rgba(0,0,0,0.8)" />
+        <stop offset="50%" stop-color="${bgMidSolid}" />
         <stop offset="55%" stop-color="${hexWithAlpha(teamColors.secondary, "E6")}" />
         <stop offset="100%" stop-color="${hexWithAlpha(teamColors.secondary, "FF")}" />
       </linearGradient>
@@ -247,6 +270,17 @@ export function buildBattleReportSvg(input, assets) {
         <stop offset="29%" stop-color="${hexWithAlpha(mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#ffffff", 0.78), "D9")}" />
         <stop offset="31%" stop-color="${hexWithAlpha(mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#ffffff", 0.78), "D9")}" />
         <stop offset="33%" stop-color="${hexWithAlpha(teamColors.primary, "40")}" />
+        <stop offset="45%" stop-color="transparent" />
+      </linearGradient>
+      <linearGradient id="reflective-sweep-145" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(145 0.5 0.5)">
+        <stop offset="18%" stop-color="transparent" />
+        <stop offset="22%" stop-color="${hexWithAlpha(teamColors.primary, "22")}" />
+        <stop offset="24%" stop-color="${hexWithAlpha(teamColors.primary, "55")}" />
+        <stop offset="26%" stop-color="${hexWithAlpha(teamColors.secondary, "22")}" />
+        <stop offset="28%" stop-color="${hexWithAlpha(teamColors.secondary, "55")}" />
+        <stop offset="29%" stop-color="${hexWithAlpha(mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#ffffff", 0.82), "CC")}" />
+        <stop offset="31%" stop-color="${hexWithAlpha(mixHex(mixHex(teamColors.primary, teamColors.secondary, 0.5), "#ffffff", 0.82), "CC")}" />
+        <stop offset="33%" stop-color="${hexWithAlpha(teamColors.primary, "38")}" />
         <stop offset="45%" stop-color="transparent" />
       </linearGradient>
       <linearGradient id="laser-core" gradientUnits="userSpaceOnUse" x1="${laserMain.x1}" y1="${laserMain.y1}" x2="${laserMain.x2}" y2="${laserMain.y2}">
@@ -271,11 +305,20 @@ export function buildBattleReportSvg(input, assets) {
         </feMerge>
       </filter>
 
-      <filter id="wall-exclusion-filter" x="-20%" y="-20%" width="160%" height="160%">
-        <feFlood flood-color="${wallColorBright20}" flood-opacity="1" result="wallTint" />
-        <feBlend in="SourceGraphic" in2="wallTint" mode="exclusion" result="wallBlend" />
-        <feComposite in="wallBlend" in2="SourceAlpha" operator="in" />
+      <filter id="wall-chrome-overlay" x="-22%" y="-22%" width="144%" height="144%" color-interpolation-filters="sRGB">
+        <feFlood flood-color="${wallChromeSpray}" flood-opacity="0.5" result="spray" />
+        <feBlend in="SourceGraphic" in2="spray" mode="overlay" result="step1" />
+        <feFlood flood-color="${wallOverlayBed}" flood-opacity="0.52" result="bed" />
+        <feBlend in="step1" in2="bed" mode="overlay" />
       </filter>
+
+      <filter id="export-fe-turbulence-noise" x="0" y="0" width="1080" height="1080" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.065" numOctaves="4" seed="11" stitchTiles="stitch" result="raw" />
+        <feColorMatrix in="raw" type="luminanceToAlpha" result="mask" />
+        <feFlood flood-color="#f2f2f4" flood-opacity="1" result="base" />
+        <feComposite in="base" in2="mask" operator="in" result="grain" />
+      </filter>
+
       <pattern id="noise-pattern" patternUnits="userSpaceOnUse" width="180" height="180">
         <image href="${NOISE_DATA_URL}" x="0" y="0" width="180" height="180" />
       </pattern>
@@ -285,12 +328,14 @@ export function buildBattleReportSvg(input, assets) {
       </clipPath>
     </defs>
 
-    <g style="filter:saturate(1.5) contrast(1.18) brightness(1.06);">
+    <g>
     <rect width="1080" height="1080" fill="url(#bg-grad)" />
     <rect width="1080" height="1080" fill="url(#center-glow)" />
     <rect x="0" y="-108" width="1080" height="1296" fill="url(#reflective-sweep)" opacity="0.9" />
+    <rect x="0" y="-108" width="1080" height="1296" fill="url(#reflective-sweep-145)" opacity="0.78" />
     <rect width="1080" height="1080" fill="${mixHex(teamColors.primary, teamColors.secondary, 0.5)}" fill-opacity="0.2" />
-    <rect width="1080" height="1080" fill="url(#noise-pattern)" opacity="0.2" />
+    <rect width="1080" height="1080" fill="url(#noise-pattern)" opacity="0.22" />
+    <rect width="1080" height="1080" filter="url(#export-fe-turbulence-noise)" opacity="0.42" />
     ${Array.from({ length: 54 })
       .map((_, i) => `<line x1="0" y1="${i * 20}" x2="1080" y2="${i * 20}" stroke="rgba(255,255,255,0.02)" stroke-width="1" />`)
       .join("")}
@@ -300,7 +345,7 @@ export function buildBattleReportSvg(input, assets) {
     ${Array.from({ length: 155 })
       .map((_, i) => `<line x1="0" y1="${i * 7}" x2="1080" y2="${i * 7}" stroke="rgba(255,255,255,0.03)" stroke-width="1" />`)
       .join("")}
-    <g transform="rotate(-15 ${CANVAS_SIZE / 2} ${CANVAS_SIZE / 2})" filter="url(#wall-exclusion-filter)" opacity="0.92">
+    <g transform="rotate(-15 ${CANVAS_SIZE / 2} ${CANVAS_SIZE / 2})" filter="url(#wall-chrome-overlay)" opacity="0.94">
       ${wallMarkup}
     </g>
     <rect width="1080" height="1080" fill="url(#laser-core)" opacity="0.82" />
@@ -309,6 +354,7 @@ export function buildBattleReportSvg(input, assets) {
 
     <text x="${CANVAS_SIZE / 2}" y="${subtitleY}" text-anchor="middle" fill="${hexWithAlpha(stanceColor, "CC")}" font-size="${TOP_SUBTITLE_FONT_SIZE}" font-weight="700" letter-spacing="6">${escapeXml(input.battleSubtitle)}</text>
     ${titleMarkup}
+    <image href="${assets.crownDataUri}" x="${idHeaderCrownX}" y="${idHeaderCrownY}" width="${idHeaderCrownSize}" height="${idHeaderCrownSize}" preserveAspectRatio="xMidYMid meet" />
 
     <rect x="${CONTENT_PX}" y="${idY}" width="${CANVAS_SIZE - CONTENT_PX * 2}" height="${H_16}" rx="18" fill="rgba(0,0,0,0.45)" />
     <image href="${assets.avatarDataUri}" x="${idAvatarX}" y="${idAvatarY}" width="${idAvatarSize}" height="${idAvatarSize}" clip-path="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice" />
@@ -338,7 +384,7 @@ export function buildBattleReportSvg(input, assets) {
     <text x="${CONTENT_PX}" y="${footerRankY}" fill="rgba(255,255,255,0.85)" font-size="${Math.round(12 * SCALE)}" font-weight="500">${rankLine}</text>
 
     <image href="${assets.crownDataUri}" x="${crownX}" y="${crownY}" width="${crownSize}" height="${crownSize}" preserveAspectRatio="xMidYMid meet" />
-    <text x="${brandTextX}" y="${crownCenterY}" dominant-baseline="middle" text-anchor="end" fill="#D4AF37" font-size="${Math.round(12 * SCALE)}" font-weight="700">${brandLine || "The GOAT Meter"}</text>
+    <text x="${brandTextX}" y="${crownCenterY}" dominant-baseline="middle" text-anchor="end" fill="${stanceColor}" font-size="${Math.round(12 * SCALE)}" font-weight="700">${brandLine || "The GOAT Meter"}</text>
     <g opacity="0.88">
       <line x1="0" y1="0" x2="${Math.round(34 * SCALE)}" y2="0" stroke="${hexWithAlpha(teamColors.primary, "F0")}" stroke-width="1" />
       <line x1="0" y1="0" x2="0" y2="${Math.round(34 * SCALE)}" stroke="${hexWithAlpha(teamColors.primary, "F0")}" stroke-width="1" />
