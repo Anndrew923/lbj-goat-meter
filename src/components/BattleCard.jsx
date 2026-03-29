@@ -1,7 +1,8 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出為資料驅動 Canvas 1080×PNG（見 battleReportCanvas.js）。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出以 html-to-image 將 DOM 快照為 1080×1080 PNG（與預覽一致）。
+ * 快照完成後以 mirrorImg 切換為 <img>，便於行動裝置長按儲存／分享。
  * isExportReady：首次下載經廣告解鎖後由 VotingArena 觸發 saveToGallery。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
  */
@@ -13,13 +14,11 @@ import { Download, RotateCcw } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
-import { Screenshot } from "capacitor-screenshot";
+import { toPng } from "html-to-image";
 import { STANCE_COLORS } from "../lib/constants";
 import crownIcon from "../assets/goat-crown-icon.png";
-import brandData from "../i18n/brand.json";
 import { hexWithAlpha } from "../utils/colorUtils";
 import { mixHex, hashStringToSeed, mulberry32, hexToRgb, rgbToHex } from "../utils/battleCardVisualMath";
-import { generateBattleReportPngDataUrl } from "../utils/battleReportCanvas";
 import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 import { buildWallWordSpecs, getPowerStanceModel } from "../utils/battleCardMirrorShared";
@@ -29,6 +28,8 @@ const CARD_SIZE = 640;
 const BUTTON_GROUP_RESERVE = 200;
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 const EXPORT_SIZE_PX = 1080;
+/** WebView 濾鏡／字體合成後多等一幀時間，降低快照半成品機率（與 Export Scene 同量級） */
+const EXPORT_PAINT_WAIT_MS = 120;
 
 async function showNativeExportFailedAlert(title, message) {
   if (Capacitor.isNativePlatform()) {
@@ -73,64 +74,6 @@ async function showBattleReportSavedToast(text) {
   }
 }
 
-function normalizeScreenshotDataUrl(result) {
-  if (!result) return "";
-  if (typeof result.base64 === "string" && result.base64) return `data:image/png;base64,${result.base64}`;
-  if (typeof result.webPath === "string" && result.webPath) return result.webPath;
-  if (typeof result.path === "string" && result.path) return result.path;
-  return "";
-}
-
-function loadImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("screenshot decode failed"));
-    img.src = dataUrl;
-  });
-}
-
-function clamp(val, min, max) {
-  return Math.max(min, Math.min(max, val));
-}
-
-async function captureCardAs1080Png(cardEl) {
-  if (!cardEl || typeof window === "undefined" || typeof document === "undefined") {
-    throw new Error("card element unavailable");
-  }
-
-  const rect = cardEl.getBoundingClientRect();
-  const viewportW = Math.max(1, window.innerWidth);
-  const viewportH = Math.max(1, window.innerHeight);
-
-  if (rect.width <= 0 || rect.height <= 0) {
-    throw new Error("card rect invalid");
-  }
-
-  const screenshot = await Screenshot.take();
-  const screenshotData = normalizeScreenshotDataUrl(screenshot);
-  if (!screenshotData) throw new Error("screenshot empty");
-
-  const img = await loadImage(screenshotData);
-  const scaleX = img.width / viewportW;
-  const scaleY = img.height / viewportH;
-
-  const sx = clamp(Math.round(rect.left * scaleX), 0, img.width - 1);
-  const sy = clamp(Math.round(rect.top * scaleY), 0, img.height - 1);
-  const sw = clamp(Math.round(rect.width * scaleX), 1, img.width - sx);
-  const sh = clamp(Math.round(rect.height * scaleY), 1, img.height - sy);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = EXPORT_SIZE_PX;
-  canvas.height = EXPORT_SIZE_PX;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("2d context unavailable");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, EXPORT_SIZE_PX, EXPORT_SIZE_PX);
-  return canvas.toDataURL("image/png", 1.0);
-}
-
 /** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
 const NOISE_DATA_URL =
   // 以更高 baseFrequency + 多一層 octave 產生「更細碎」的顆粒，模擬磨砂金屬質地。
@@ -170,7 +113,7 @@ const BattleCard = forwardRef(function BattleCard({
   disablePortal = false,
 }, ref) {
   const { t } = useTranslation("common");
-  /** 戰報卡根節點：預覽用（匯出改走 Canvas 引擎） */
+  /** 戰報卡根節點：預覽與 html-to-image 快照目標（鏡像模式下卸載，匯出前會先清空鏡像以恢復 ref） */
   const cardRef = useRef(null);
   const overlayRef = useRef(null);
   const [containerSize, setContainerSize] = useState({
@@ -179,6 +122,15 @@ const BattleCard = forwardRef(function BattleCard({
   });
   /** isExporting：顯示「生成中」全螢幕遮罩 */
   const [isExporting, setIsExporting] = useState(false);
+  /** 快照 Data URL：有值時改顯示 <img> 以利長按儲存／分享 */
+  const [mirrorImg, setMirrorImg] = useState(null);
+  /** 避免匯出流程 await 期間組件已卸載仍寫入 state */
+  const isMountedRef = useRef(true);
+  /** 防止連續觸發 handleDownload（雙擊／imperative 重入）造成交錯 flushSync */
+  const exportInFlightRef = useRef(false);
+  /** 非同步匯出完成時讀取「目前」是否仍開啟戰報（避免閉包抓到舊的 open） */
+  const openRef = useRef(open);
+  openRef.current = open;
   const stanceColor = status
     ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat)
     : STANCE_COLORS.goat;
@@ -208,7 +160,11 @@ const BattleCard = forwardRef(function BattleCard({
       : 1;
 
   useEffect(() => {
-    if (!open || !overlayRef.current) return;
+    if (!open) {
+      setMirrorImg(null);
+      return;
+    }
+    if (!overlayRef.current) return;
     const el = overlayRef.current;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0]?.contentRect ?? {};
@@ -225,12 +181,18 @@ const BattleCard = forwardRef(function BattleCard({
     return () => ro.disconnect();
   }, [open]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const stableMetaTimestamp = useRef(Date.now());
 
   /**
-   * 下載戰報：
-   * - Web：走 SVG → Canvas pipeline（generateBattleReportPngDataUrl）
-   * - 原生：直接對當前 BattleCard DOM 整螢幕截圖並依 rect 裁切為 1080×1080 PNG。
+   * 下載戰報：全平台以 html-to-image 對 cardRef DOM 輸出 1080×1080 PNG，再設 mirrorImg 切換為 <img>。
+   * 匯出前先 flushSync 清空鏡像，確保 cardRef 掛回可快照；原生寫入相簿前仍走 Media 權限（含 limited）。
    */
   const handleDownload = useCallback(
     async (saveOnly = false) => {
@@ -244,110 +206,69 @@ const BattleCard = forwardRef(function BattleCard({
 
       const isNative = Capacitor.isNativePlatform();
 
+      if (isNative && typeof Media.checkPermissions === "function") {
+        const check = await Media.checkPermissions();
+        if (!isMediaPluginSavePermissionOk(check)) {
+          const request = await Media.requestPermissions();
+          if (!isMediaPluginSavePermissionOk(request)) {
+            await Dialog.alert({
+              title: t("galleryPermissionTitle"),
+              message: t("needPhotoPermissionToSave"),
+            });
+            return;
+          }
+        }
+      }
+
+      if (exportInFlightRef.current) {
+        return;
+      }
+      exportInFlightRef.current = true;
+
       flushSync(() => {
+        setMirrorImg(null);
         setIsExporting(true);
       });
-
-      const regionTextExport = [country, city].filter(Boolean).join(" · ") || t("global");
-      const locationLineExport = rankLabel ?? t("rankLabelWithCity", { city: regionTextExport });
-      const teamLineText = teamLabel
-        ? String(teamLabel).toUpperCase()
-        : t("supporting_team", { team: teamLabel });
 
       try {
         onExportStart?.();
 
-        const exportPayload = {
-          teamColors,
-          stanceColor,
-          battleTitle,
-          battleSubtitle,
-          voterTeam,
-          status,
-          city,
-          country,
-          teamLabel,
-          displayName: displayName || t("anonymousWarrior"),
-          teamLineText,
-          regionText: regionTextExport,
-          locationLine: locationLineExport,
-          rankLineText: rankLabel ?? t("rankLabel"),
-          reasonLabels,
-          stanceDisplayName,
-          wallText,
-          photoURL,
-          metaFooterLine: t("battleCard.meta_footer", {
-            timestamp: String(stableMetaTimestamp.current),
-            status: t("verified_data_status"),
-          }),
-          disclaimerLine: t("battleCard.disclaimer"),
-          evidenceLabel: t("battleCard.verdict_evidence"),
-          brandLine: brandData.appName,
-          isTitleUppercase,
-        };
+        if (typeof document !== "undefined" && document.fonts?.ready) {
+          await document.fonts.ready;
+        }
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await new Promise((r) => setTimeout(r, EXPORT_PAINT_WAIT_MS));
 
-        if (isNative) {
-          try {
-            if (typeof Media.checkPermissions === "function") {
-              const check = await Media.checkPermissions();
-              if (!isMediaPluginSavePermissionOk(check)) {
-                const request = await Media.requestPermissions();
-                if (!isMediaPluginSavePermissionOk(request)) {
-                  await Dialog.alert({
-                    title: t("galleryPermissionTitle"),
-                    message: t("needPhotoPermissionToSave"),
-                  });
-                  return;
-                }
-              }
-            }
-
-            if (typeof document !== "undefined" && document.fonts?.ready) {
-              await document.fonts.ready;
-            }
-            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-            const dataUrlNative = await captureCardAs1080Png(cardRef.current);
-            const fileName = `GOAT-Card-${Date.now()}`;
-
-            if (saveOnly) {
-              const albumIdentifier = await ensureGoatAlbumIdentifier();
-              await Media.savePhoto({
-                path: dataUrlNative,
-                albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
-                fileName,
-              });
-              await showBattleReportSavedToast(t("battleReportSavedToGallery"));
-            } else {
-              const a = document.createElement("a");
-              a.href = dataUrlNative;
-              a.download = `${fileName}.png`;
-              a.click();
-            }
-          } catch (nativeErr) {
-            console.error("[BattleCard] native screenshot export failed", nativeErr);
-            await showNativeExportFailedAlert(
-              t("exportFailedTitle"),
-              t("exportFailedNativeRenderAnomalyAdvice"),
-            );
-          }
+        if (!isMountedRef.current || !openRef.current) {
           return;
         }
 
-        let dataUrl;
-        try {
-          dataUrl = await generateBattleReportPngDataUrl(exportPayload);
-        } catch (canvasErr) {
-          console.error("[BattleCard] canvas export failed", canvasErr);
-          dataUrl = null;
+        const cardEl = cardRef.current;
+        if (!cardEl) {
+          throw new Error("card element unavailable");
         }
+
+        const dataUrl = await toPng(cardEl, {
+          width: CARD_SIZE,
+          height: CARD_SIZE,
+          canvasWidth: EXPORT_SIZE_PX,
+          canvasHeight: EXPORT_SIZE_PX,
+          pixelRatio: 1,
+          cacheBust: true,
+          style: {
+            // 快照座標系與 640 設計稿對齊，不受預覽用 translate(-50%,-50%) scale(scale) 影響
+            transform: "none",
+            borderRadius: "1rem",
+          },
+        });
 
         if (!dataUrl) {
-          await showNativeExportFailedAlert(
-            t("exportFailedTitle"),
-            t("exportFailedUnknown"),
-          );
-          return;
+          throw new Error("Image generation failed");
+        }
+
+        if (isMountedRef.current && openRef.current) {
+          setMirrorImg(dataUrl);
+          void triggerHapticPattern([10, 50, 10]);
         }
 
         const fileName = `GOAT-Card-${Date.now()}`;
@@ -358,44 +279,47 @@ const BattleCard = forwardRef(function BattleCard({
           .slice(0, 120);
         const fileBaseWeb = `GOAT-Meter-${safeTitleSlug}-${exportTag}`;
 
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `${fileBaseWeb}.png`;
-        a.click();
+        if (isNative && saveOnly) {
+          const albumIdentifier = await ensureGoatAlbumIdentifier();
+          await Media.savePhoto({
+            path: dataUrl,
+            albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
+            fileName,
+          });
+          if (isMountedRef.current) {
+            await showBattleReportSavedToast(t("battleReportSavedToGallery"));
+          }
+        } else {
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.rel = "noopener noreferrer";
+          a.download = isNative ? `${fileName}.png` : `${fileBaseWeb}.png`;
+          a.click();
+        }
       } catch (err) {
-        console.error("[BattleCard] export failed", err);
-        await showNativeExportFailedAlert(t("exportFailedTitle"), t("exportFailedUnknown"));
+        console.error("[BattleCard] html-to-image export failed", err);
+        await showNativeExportFailedAlert(
+          t("exportFailedTitle"),
+          isNative ? t("exportFailedNativeRenderAnomalyAdvice") : t("exportFailedUnknown"),
+        );
       } finally {
-        flushSync(() => {
-          setIsExporting(false);
-        });
+        exportInFlightRef.current = false;
+        if (isMountedRef.current) {
+          flushSync(() => {
+            setIsExporting(false);
+          });
+        }
         onExportEnd?.();
       }
     },
     [
       battleTitle,
-      battleSubtitle,
-      country,
-      city,
-      displayName,
       isExportReady,
-      isTitleUppercase,
       onExportEnd,
       onExportStart,
       onExportUnlock,
       onRequestRewardAd,
-      photoURL,
-      rankLabel,
-      reasonLabels,
-      stanceColor,
-      stanceDisplayName,
       t,
-      teamColors,
-      teamLabel,
-      wallText,
-      voterTeam,
-      status,
-      cardRef,
     ],
   );
 
@@ -566,7 +490,8 @@ const BattleCard = forwardRef(function BattleCard({
         data-arena-paused={arenaAnimationsPaused ? "1" : undefined}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="battle-card-title"
+        aria-labelledby={mirrorImg ? undefined : "battle-card-title"}
+        aria-label={mirrorImg ? t("battleCard.mirror_image_alt") : undefined}
         initial={false}
         animate={{ opacity: 1 }}
         exit={exit}
@@ -594,10 +519,25 @@ const BattleCard = forwardRef(function BattleCard({
               }}
               className="relative flex-shrink-0 overflow-hidden"
             >
-              <div
-                ref={cardRef}
-                data-ref="battle-card-ref"
-                className="absolute left-1/2 top-1/2 flex flex-col shrink-0 bg-black text-white rounded-2xl origin-center border-2 battlecard-corners-accent"
+              {mirrorImg ? (
+                <img
+                  src={mirrorImg}
+                  alt={t("battleCard.mirror_image_alt")}
+                  crossOrigin="anonymous"
+                  draggable={false}
+                  decoding="async"
+                  className="h-full w-full object-contain rounded-2xl shadow-2xl"
+                  style={{
+                    userSelect: "auto",
+                    WebkitUserSelect: "auto",
+                    WebkitTouchCallout: "default",
+                  }}
+                />
+              ) : (
+                <div
+                  ref={cardRef}
+                  data-ref="battle-card-ref"
+                  className="absolute left-1/2 top-1/2 flex flex-col shrink-0 bg-black text-white rounded-2xl origin-center border-2 battlecard-corners-accent"
                 style={{
                   width: CARD_SIZE,
                   height: CARD_SIZE,
@@ -992,6 +932,7 @@ const BattleCard = forwardRef(function BattleCard({
                       <img
                         src={crownIcon}
                         alt=""
+                        crossOrigin="anonymous"
                         className="w-14 h-14 object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.6)]"
                         aria-hidden
                       />
@@ -1031,6 +972,7 @@ const BattleCard = forwardRef(function BattleCard({
                   </p>
                 </div>
               </div>
+              )}
             </div>
           </div>
 

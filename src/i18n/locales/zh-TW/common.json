@@ -364,7 +364,8 @@
     "scan_to_debate": "掃碼加入論戰。",
     "define_history": "定義歷史。",
     "meta_footer": "時間戳記：{{timestamp}} | 狀態：{{status}}",
-    "disclaimer": "本專案為球迷自製數據分析，與 NBA 及其球隊無關。"
+    "disclaimer": "本專案為球迷自製數據分析，與 NBA 及其球隊無關。",
+    "mirror_image_alt": "已匯出的高解析戰報卡預覽，可長按儲存或分享。"
   },
   "recaptchaDisclosure": "本網站受 reCAPTCHA 保護，並適用 Google <privacy>隱私權政策</privacy>與<terms>服務條款</terms>。",
   "recaptchaDisclosureAria": "reCAPTCHA 聲明與 Google 隱私權、服務條款連結",

@@ -373,7 +373,8 @@
     "scan_to_debate": "SCAN TO DEBATE.",
     "define_history": "DEFINE HISTORY.",
     "meta_footer": "TIMESTAMP: {{timestamp}} | STATUS: {{status}}",
-    "disclaimer": "This is a fan-made analytics project. Not affiliated with the NBA or its teams."
+    "disclaimer": "This is a fan-made analytics project. Not affiliated with the NBA or its teams.",
+    "mirror_image_alt": "Exported high-resolution battle report preview; long-press to save or share."
   },
   "recaptchaDisclosure": "This site is protected by reCAPTCHA and the Google <privacy>Privacy Policy</privacy> and <terms>Terms of Service</terms> apply.",
   "recaptchaDisclosureAria": "reCAPTCHA disclosure and links to Google Privacy Policy and Terms of Service",
