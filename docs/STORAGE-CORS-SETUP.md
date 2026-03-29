@@ -27,7 +27,7 @@ BUCKET="lbj-goat-meter.appspot.com"
 cat << 'CORSEOF' > /tmp/cors.json
 [
   {
-    "origin": ["http://localhost:2323", "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:2323", "http://127.0.0.1:5173", "https://localhost", "capacitor://localhost", "ionic://localhost"],
+    "origin": ["http://localhost:2323", "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:2323", "http://127.0.0.1:5173", "https://localhost", "capacitor://localhost", "ionic://localhost", "https://lbj-goat-meter.web.app", "https://lbj-goat-meter.firebaseapp.com"],
     "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
     "responseHeader": ["Content-Type", "Authorization", "Content-Length", "User-Agent", "x-goog-resumable", "x-goog-meta-*"],
     "maxAgeSeconds": 3600
