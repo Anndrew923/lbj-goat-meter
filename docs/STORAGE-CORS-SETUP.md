@@ -27,7 +27,7 @@ BUCKET="lbj-goat-meter.appspot.com"
 cat << 'CORSEOF' > /tmp/cors.json
 [
   {
-    "origin": ["http://localhost:2323", "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:2323", "http://127.0.0.1:5173", "https://localhost", "capacitor://localhost", "ionic://localhost", "https://lbj-goat-meter.web.app", "https://lbj-goat-meter.firebaseapp.com"],
+    "origin": ["http://localhost:2323", "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:2323", "http://127.0.0.1:5173", "https://localhost", "capacitor://localhost", "ionic://localhost", "https://lbj-goat-meter.web.app", "https://lbj-goat-meter.firebaseapp.com", "https://lbj-goat-meter.netlify.app"],
     "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
     "responseHeader": ["Content-Type", "Authorization", "Content-Length", "User-Agent", "x-goog-resumable", "x-goog-meta-*"],
     "maxAgeSeconds": 3600
@@ -83,7 +83,7 @@ gsutil cors get gs://你的儲存貯體名稱
 
 部署上線後，請編輯 `storage-cors.json`，在 `origin` 陣列中加入正式網域（例如 `https://your-app.netlify.app`），再依上述任一方式重新套用 CORS。
 
-`storage-cors.json` 已含 **Capacitor** 常見來源（`https://localhost` 對應 `androidScheme: https`、`capacitor://localhost` 等），以便 App 內 WebView 以 `crossOrigin="anonymous"` 載入 **Firebase Storage** 圖片時不污染 canvas。若頭像來自 **Google 帳號** 託管網址（非 Storage），CORS 由 Google 端決定；若仍無法匯出，需改為經後端／Storage 轉存同網域圖片。
+`storage-cors.json` 已含 **Capacitor** 常見來源（`https://localhost` 對應 `androidScheme: https`、`capacitor://localhost` 等），以便 App 內 WebView 以 `crossOrigin="anonymous"` 載入 **Firebase Storage** 圖片時不污染 canvas。**Netlify 正式站**（`https://lbj-goat-meter.netlify.app`）亦已列入；若使用自訂網域或 Deploy Preview 子網域，須手動將完整 `https://…` 加入 `origin` 後再套用 CORS（GCS 不支援 `*` 萬用字元）。若專案同時使用 **`*.appspot.com` 與 `*.firebasestorage.app` 兩個貯體**，請分別對兩個 bucket 執行一次 `npm run storage:cors`（或 `STORAGE_BUCKET=…`）。若頭像來自 **Google 帳號** 託管網址（非 Storage），CORS 由 Google 端決定；若仍無法匯出，需改為經後端／Storage 轉存同網域圖片。
 
 ---
 

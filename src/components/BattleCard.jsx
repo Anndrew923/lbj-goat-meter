@@ -252,6 +252,8 @@ const BattleCard = forwardRef(function BattleCard({
 
         // 預覽用 absolute + translate(-50%,-50%) scale：若只清 transform 仍會卡在容器 50%/50%，
         // foreignObject 內等同「只截到右下角」，必須一併重置定位與 overflow。
+        // skipFonts：生產環境若用 Google Fonts 外鏈，讀取 cssRules 會觸發跨域 SecurityError 導致整張圖失敗；
+        // 略過嵌入字體仍會用 clone 時的 computed font-family（瀏覽器已載入的字型可正常繪製）。
         const dataUrl = await toPng(cardEl, {
           width: CARD_SIZE,
           height: CARD_SIZE,
@@ -259,6 +261,7 @@ const BattleCard = forwardRef(function BattleCard({
           cacheBust: true,
           backgroundColor: "#000000",
           quality: 1,
+          skipFonts: true,
           style: {
             transform: "none",
             position: "relative",

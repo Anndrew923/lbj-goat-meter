@@ -10,7 +10,8 @@
       "capacitor://localhost",
       "ionic://localhost",
       "https://lbj-goat-meter.web.app",
-      "https://lbj-goat-meter.firebaseapp.com"
+      "https://lbj-goat-meter.firebaseapp.com",
+      "https://lbj-goat-meter.netlify.app"
     ],
     "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
     "responseHeader": [
