@@ -1,7 +1,7 @@
 /**
  * BattleCard — 戰報卡純 UI（由 BattleCardContainer 注入數據與主題）
  * Layer 1: 動態背景 + 浮水印 + 雜訊紋理 | Layer 2: 邊框光暈 | Layer 3: 稱號、力量標題、證詞、品牌鋼印、免責
- * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出以 html-to-image 擷取本 DOM（單一事實來源），輸出 1920×1920 PNG。
+ * 固定 1:1 (640×640)，scale-to-fit 縮放；匯出改由後端 SSR 產圖並返回下載 URL。
  * 完成後以 mirrorImg 切換為 <img>，便於行動裝置長按儲存／分享。
  * isExportReady：首次下載經廣告解鎖後由 VotingArena 觸發 saveToGallery。
  * 使用 createPortal 掛載至 document.body，脫離 VotePage 內 motion.main 的 stacking context，確保戰報卡顯示於頂部導航欄之上。
@@ -22,6 +22,7 @@ import { mixHex, hashStringToSeed, mulberry32, hexToRgb, rgbToHex } from "../uti
 import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 import { buildWallWordSpecs, getPowerStanceModel } from "../utils/battleCardMirrorShared";
+import { auth } from "../lib/firebase";
 
 const CARD_SIZE = 640;
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
@@ -184,15 +185,8 @@ const BattleCard = forwardRef(function BattleCard({
       }
 
       const isNative = Capacitor.isNativePlatform();
-      if (!isNative) {
-        await showNativeExportFailedAlert(
-          t("exportFailedTitle"),
-          t("exportFailedNativeRenderAnomalyAdvice"),
-        );
-        return;
-      }
 
-      if (typeof Media.checkPermissions === "function") {
+      if (isNative && typeof Media.checkPermissions === "function") {
         const check = await Media.checkPermissions();
         if (!isMediaPluginSavePermissionOk(check)) {
           const request = await Media.requestPermissions();
@@ -220,6 +214,7 @@ const BattleCard = forwardRef(function BattleCard({
 
         onExportStart?.();
         const exportPayload = {
+          uid: auth?.currentUser?.uid || "",
           photoURL,
           displayName: displayName || t("anonymousWarrior"),
           voterTeam,
@@ -245,7 +240,7 @@ const BattleCard = forwardRef(function BattleCard({
         });
         return;
       } catch (err) {
-        console.error("[BattleCard] DOM battle report export failed", err);
+        console.error("[BattleCard] export route navigation failed", err);
         await showNativeExportFailedAlert(
           t("exportFailedTitle"),
           isNative ? t("exportFailedNativeRenderAnomalyAdvice") : t("exportFailedUnknown"),

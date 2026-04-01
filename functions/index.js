@@ -12,6 +12,11 @@ import { defineSecret } from "firebase-functions/params";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import admin from "firebase-admin";
+import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 
 import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
 import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
@@ -22,6 +27,18 @@ import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionInd
 import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventLocalizedText.js";
 import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
 import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
+import {
+  BATTLE_CARD_ASSETS,
+  BATTLE_CARD_AVATAR_LAYOUT,
+  BATTLE_CARD_BAR_COMMON,
+  BATTLE_CARD_CANVAS,
+  BATTLE_CARD_DIMENSIONS,
+  BATTLE_CARD_NAME_LAYOUT,
+  BATTLE_CARD_PALETTE,
+} from "./config/battleCardLayout.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -51,6 +68,57 @@ const Timestamp = admin.firestore.Timestamp;
 const STAR_ID = (process.env.STAR_ID || process.env.GOAT_STAR_ID || "lbj").trim() || "lbj";
 const GLOBAL_SUMMARY_DOC_ID = "global_summary";
 
+const DISPLAY_FONT_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.fonts.display.path);
+const SANS_FONT_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.fonts.sans.path);
+const BATTLE_CARD_BACKGROUND_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.backgroundImagePath);
+const BATTLE_CARD_DEFAULT_AVATAR_PATH = path.resolve(__dirname, "assets/default-avatar.png");
+
+let battleCardBackgroundImagePromise = null;
+let battleCardDefaultAvatarImagePromise = null;
+let battleCardFontsRegistered = false;
+
+function ensureBattleCardGlobalAssets() {
+  if (!fs.existsSync(DISPLAY_FONT_PATH)) {
+    throw new Error(`MISSING_ASSET: ${DISPLAY_FONT_PATH}`);
+  }
+  if (!fs.existsSync(SANS_FONT_PATH)) {
+    throw new Error(`MISSING_ASSET: ${SANS_FONT_PATH}`);
+  }
+  if (!fs.existsSync(BATTLE_CARD_BACKGROUND_PATH)) {
+    throw new Error(`MISSING_ASSET: ${BATTLE_CARD_BACKGROUND_PATH}`);
+  }
+  if (!fs.existsSync(BATTLE_CARD_DEFAULT_AVATAR_PATH)) {
+    throw new Error(`MISSING_ASSET: ${BATTLE_CARD_DEFAULT_AVATAR_PATH}`);
+  }
+  if (!battleCardFontsRegistered) {
+    try {
+      const displayOk = GlobalFonts.registerFromPath(DISPLAY_FONT_PATH, BATTLE_CARD_ASSETS.fonts.display.family);
+      const sansOk = GlobalFonts.registerFromPath(SANS_FONT_PATH, BATTLE_CARD_ASSETS.fonts.sans.family);
+      if (!displayOk || !sansOk) {
+        throw new Error("Font register returned false");
+      }
+    } catch (fontErr) {
+      console.error("[generateBattleCard] Font Load Failed:", fontErr?.message || String(fontErr));
+      throw fontErr;
+    }
+    battleCardFontsRegistered = true;
+  }
+  if (!battleCardBackgroundImagePromise) {
+    battleCardBackgroundImagePromise = loadImage(BATTLE_CARD_BACKGROUND_PATH);
+  }
+  if (!battleCardDefaultAvatarImagePromise) {
+    battleCardDefaultAvatarImagePromise = loadImage(BATTLE_CARD_DEFAULT_AVATAR_PATH);
+  }
+  return Promise.all([battleCardBackgroundImagePromise, battleCardDefaultAvatarImagePromise]);
+}
+
+// 在全域 scope 預先註冊字型與啟動底圖載入，避免每次 Callable 觸發都重複觸發磁碟 I/O。
+ensureBattleCardGlobalAssets().catch((err) => {
+  functions.logger.error("[battleCard] global assets preload failed", {
+    message: err?.message || String(err),
+  });
+});
+
 /**
  * 是否允許略過嚴格安全驗證（僅限本地開發）。
  * 正式環境：僅允許來自 localhost 的請求略過；來自 Netlify 等正式網域的請求一律執行 reCAPTCHA／廣告驗證，驗證失敗即拋出 low-score-robot。
@@ -68,6 +136,216 @@ function requireAuth(context) {
     });
   }
 }
+
+const BATTLE_CARD_LABEL_KEYS = ["GOAT", "FRAUD", "KING", "MERCENARY", "MACHINE", "STAT_PADDER"];
+
+function parseGenerateBattleCardPayload(data, authUid) {
+  if (!data || typeof data !== "object") {
+    throw new HttpsError("invalid-argument", "Payload is required");
+  }
+
+  const uid = typeof data.uid === "string" ? data.uid.trim() : "";
+  const displayName = typeof data.displayName === "string" ? data.displayName.trim() : "";
+  const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
+  const labels = data.labels && typeof data.labels === "object" ? data.labels : null;
+
+  if (!uid || uid !== authUid) {
+    throw new HttpsError("invalid-argument", "uid is invalid");
+  }
+  if (!displayName) {
+    throw new HttpsError("invalid-argument", "displayName is required");
+  }
+  if (!avatarUrl || !/^https?:\/\//i.test(avatarUrl)) {
+    throw new HttpsError("invalid-argument", "avatarUrl must be a valid http(s) URL");
+  }
+  if (!labels) {
+    throw new HttpsError("invalid-argument", "labels is required");
+  }
+
+  const parsedLabels = {};
+  for (const key of BATTLE_CARD_LABEL_KEYS) {
+    const value = Number(labels[key]);
+    if (!Number.isFinite(value)) {
+      throw new HttpsError("invalid-argument", `labels.${key} must be a number`);
+    }
+    parsedLabels[key] = value;
+  }
+
+  return { uid, displayName, avatarUrl, labels: parsedLabels };
+}
+
+export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppCheck: false }, async (request) => {
+  console.log(">>> V2_PROD_RENDER_START_20260401_FINAL <<<");
+  requireAuth(request);
+
+  let canvas = null;
+  let ctx = null;
+
+  try {
+    const payload = parseGenerateBattleCardPayload(request.data, request.auth.uid);
+
+    const [baseImage, defaultAvatarImage] = await ensureBattleCardGlobalAssets();
+    canvas = createCanvas(BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    ctx = canvas.getContext("2d");
+    ctx.fillStyle = BATTLE_CARD_CANVAS.backgroundColor;
+    ctx.fillRect(0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    if (!baseImage) {
+      throw new Error("CRITICAL_ERROR: Background asset not found in functions/assets/");
+    }
+    ctx.drawImage(baseImage, 0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    console.log("[generateBattleCard] ctx.drawImage baseImage Done");
+
+    let avatarImage = defaultAvatarImage;
+    try {
+      const avatarResponse = await fetch(payload.avatarUrl, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!avatarResponse.ok) {
+        throw new Error(`avatar fetch failed: ${avatarResponse.status}`);
+      }
+      const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
+      avatarImage = await loadImage(avatarBuffer);
+    } catch (avatarErr) {
+      functions.logger.warn("[generateBattleCard] avatar fallback to default", {
+        avatarUrl: payload.avatarUrl,
+        reason: avatarErr?.message || String(avatarErr),
+      });
+    }
+
+    // [Layout Math] 以頭像中心點 + 半徑定義裁切幾何，讓頭像縮放或換版時只需改 Layout Config。
+    const avatarDiameter = BATTLE_CARD_AVATAR_LAYOUT.radius * 2;
+    const avatarX = BATTLE_CARD_AVATAR_LAYOUT.centerX - BATTLE_CARD_AVATAR_LAYOUT.radius;
+    const avatarY = BATTLE_CARD_AVATAR_LAYOUT.centerY - BATTLE_CARD_AVATAR_LAYOUT.radius;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(
+      BATTLE_CARD_AVATAR_LAYOUT.centerX,
+      BATTLE_CARD_AVATAR_LAYOUT.centerY,
+      BATTLE_CARD_AVATAR_LAYOUT.radius,
+      0,
+      Math.PI * 2
+    );
+    // [Intent] 先 clip 再 drawImage，可保證任何來源長寬比都被限制在圓形戰報框內，不污染外圍 HUD。
+    ctx.clip();
+    ctx.drawImage(avatarImage, avatarX, avatarY, avatarDiameter, avatarDiameter);
+    ctx.restore();
+    console.log("[generateBattleCard] ctx.drawImage avatar Done");
+
+    ctx.strokeStyle = BATTLE_CARD_PALETTE.avatarRing;
+    ctx.lineWidth = BATTLE_CARD_AVATAR_LAYOUT.ringWidth;
+    ctx.beginPath();
+    ctx.arc(
+      BATTLE_CARD_AVATAR_LAYOUT.centerX,
+      BATTLE_CARD_AVATAR_LAYOUT.centerY,
+      BATTLE_CARD_AVATAR_LAYOUT.radius + BATTLE_CARD_AVATAR_LAYOUT.ringWidth / 2,
+      0,
+      Math.PI * 2
+    );
+    ctx.stroke();
+
+    // [Intent] 名稱使用 display font + middle baseline，維持視覺中心穩定，避免字型 ascender 導致垂直抖動。
+    ctx.font = `700 ${BATTLE_CARD_NAME_LAYOUT.fontSize}px "${BATTLE_CARD_ASSETS.fonts.display.family}"`;
+    ctx.fillStyle = BATTLE_CARD_NAME_LAYOUT.color;
+    ctx.textAlign = BATTLE_CARD_NAME_LAYOUT.align;
+    ctx.textBaseline = BATTLE_CARD_NAME_LAYOUT.baseline;
+    ctx.fillText(payload.displayName, BATTLE_CARD_NAME_LAYOUT.x, BATTLE_CARD_NAME_LAYOUT.y, BATTLE_CARD_NAME_LAYOUT.maxWidth);
+
+    for (const dimension of BATTLE_CARD_DIMENSIONS) {
+      const numericValue = Number(payload.labels[dimension.key]) || 0;
+      const labelValue = Math.max(0, Math.min(100, numericValue));
+      const y = BATTLE_CARD_BAR_COMMON.topY + dimension.order * BATTLE_CARD_BAR_COMMON.rowGap;
+
+      const trackY = y - BATTLE_CARD_BAR_COMMON.height / 2;
+      ctx.fillStyle = BATTLE_CARD_BAR_COMMON.trackColor;
+      ctx.fillRect(
+        BATTLE_CARD_BAR_COMMON.startX,
+        trackY,
+        BATTLE_CARD_BAR_COMMON.maxWidth,
+        BATTLE_CARD_BAR_COMMON.height
+      );
+
+      // [Layout Math] 公式固定為 value 比例 * maxWidth，確保 0~100 的資料域在任何版型下都線性映射到同一可視軌道。
+      const fillWidth = (labelValue / 100) * BATTLE_CARD_BAR_COMMON.maxWidth;
+      ctx.fillStyle = dimension.color;
+      ctx.fillRect(BATTLE_CARD_BAR_COMMON.startX, trackY, fillWidth, BATTLE_CARD_BAR_COMMON.height);
+
+      ctx.font = `700 ${BATTLE_CARD_BAR_COMMON.labelFontSize}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+      ctx.fillStyle = BATTLE_CARD_PALETTE.textSecondary;
+      ctx.textAlign = BATTLE_CARD_BAR_COMMON.labelAlign;
+      ctx.textBaseline = BATTLE_CARD_BAR_COMMON.textBaseline;
+      ctx.fillText(dimension.key, BATTLE_CARD_BAR_COMMON.labelX, y);
+
+      ctx.font = `700 ${BATTLE_CARD_BAR_COMMON.valueFontSize}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+      ctx.fillStyle = BATTLE_CARD_PALETTE.valueText;
+      ctx.textAlign = BATTLE_CARD_BAR_COMMON.valueAlign;
+      ctx.textBaseline = BATTLE_CARD_BAR_COMMON.textBaseline;
+      ctx.fillText(String(Math.round(labelValue)), BATTLE_CARD_BAR_COMMON.valueX, y);
+      console.log(`[generateBattleCard] Loop Dimension: ${dimension.key} Done`);
+    }
+    ctx.font = `600 26px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("BUILD_TIMESTAMP: 2026-04-01-V2", 50, 1870);
+
+    const pngBuffer = canvas.toBuffer("image/png");
+    const downloadBase64 = pngBuffer.toString("base64");
+    const bucket = admin.storage().bucket();
+    const objectPath = `exports/battlecards/${randomUUID()}.png`;
+    const file = bucket.file(objectPath);
+
+    await file.save(pngBuffer, {
+      metadata: {
+        contentType: "image/png",
+        cacheControl: "public, max-age=300",
+      },
+    });
+
+    let url = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
+    let downloadUrl = "";
+    try {
+      await file.makePublic();
+    } catch {
+      // 若 bucket 啟用 Uniform access，改回傳可讀取簽名連結。
+      const [signedUrl] = await file.getSignedUrl({
+        action: "read",
+        expires: "2100-01-01",
+      });
+      url = signedUrl;
+    }
+    // 提供「附件下載」專用連結，避免前端點擊後導向圖片頁而非直接下載。
+    try {
+      const [attachmentSignedUrl] = await file.getSignedUrl({
+        action: "read",
+        expires: Date.now() + 10 * 60 * 1000,
+        responseDisposition: 'attachment; filename="LBJ-GOAT-Meter.png"',
+        responseType: "image/png",
+      });
+      downloadUrl = attachmentSignedUrl;
+    } catch (signedErr) {
+      // Emulator / 特殊儲存層若不支援 responseDisposition 參數，退回一般 URL 讓前端降級下載。
+      functions.logger.warn("[generateBattleCard] downloadUrl signed fallback", {
+        reason: signedErr?.message || String(signedErr),
+      });
+      downloadUrl = url;
+    }
+
+    return { ok: true, url, downloadUrl, downloadBase64, path: objectPath };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    console.error("[generateBattleCard] unexpected error:", err?.message || String(err));
+    throw new HttpsError("internal", "Failed to generate battle card", {
+      code: "battlecard-generate-failed",
+    });
+  } finally {
+    // 防禦性釋放：解除像素緩衝區參考，降低長時間熱實例記憶體滯留風險。
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    ctx = null;
+  }
+});
 
 /**
  * 解析指紋用 pepper：優先 Gen2 secret.value()，失敗則 GOAT_FINGERPRINT_PEPPER（Emulator／本機）。

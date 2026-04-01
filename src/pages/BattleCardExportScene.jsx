@@ -1,161 +1,126 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Capacitor } from "@capacitor/core";
-import { Media } from "@capacitor-community/media";
 import { useTranslation } from "react-i18next";
-import crownIcon from "../assets/goat-crown-icon.png";
-import { STANCE_COLORS } from "../lib/constants";
-import { getStance } from "../i18n/i18n";
-import { prepareBattleAssets } from "../utils/svgAssetPreflight";
-import { buildBattleReportSvg } from "../utils/battleReportSvgTemplate";
+import { httpsCallable } from "firebase/functions";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, getFirebaseFunctions } from "../lib/firebase";
 
-const GOAT_ALBUM_NAME = "GOAT_Warzone";
-const EXPORT_SIZE_PX = 1920;
-const SVG_DESIGN_SIZE = 1080;
-const STRESS_TEST_QUERY_KEY = "stressTest";
+const DIMENSION_KEYS = ["GOAT", "FRAUD", "KING", "MERCENARY", "MACHINE", "STAT_PADDER"];
+const STANCE_TO_LABEL_KEY = {
+  goat: "GOAT",
+  fraud: "FRAUD",
+  king: "KING",
+  mercenary: "MERCENARY",
+  machine: "MACHINE",
+  stat_padder: "STAT_PADDER",
+};
 
-function applyExportCanvasQuality(ctx) {
-  // 統一匯出引擎參數：每次 drawImage 前先套用，確保多層繪製品質一致。
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
+function clampPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-function isMediaPluginSavePermissionOk(perm) {
-  if (!perm || typeof perm !== "object") return false;
-  const ok = (v) => v === "granted" || v === "limited";
-  if (ok(perm.photos)) return true;
-  if (ok(perm.publicStorage13Plus)) return true;
-  if (ok(perm.publicStorage)) return true;
-  return false;
-}
-
-async function ensureGoatAlbumIdentifier() {
-  const list = (await Media.getAlbums())?.albums ?? [];
-  let album = list.find((a) => a.name === GOAT_ALBUM_NAME);
-  if (!album) {
-    await Media.createAlbum({ name: GOAT_ALBUM_NAME });
-    await new Promise((r) => setTimeout(r, 350));
-    const list2 = (await Media.getAlbums())?.albums ?? [];
-    album = list2.find((a) => a.name === GOAT_ALBUM_NAME);
+function buildLabelPayloadFromWarzoneStats(warzoneStats, status) {
+  const totalVotes = Number(warzoneStats?.totalVotes);
+  const labels = {};
+  if (Number.isFinite(totalVotes) && totalVotes > 0) {
+    for (const key of DIMENSION_KEYS) {
+      const sourceKey = key === "STAT_PADDER" ? "stat_padder" : key.toLowerCase();
+      const count = Number(warzoneStats?.[sourceKey]) || 0;
+      labels[key] = clampPercent((count / totalVotes) * 100);
+    }
+  } else {
+    for (const key of DIMENSION_KEYS) labels[key] = 0;
+    const boostedKey = STANCE_TO_LABEL_KEY[status] || "GOAT";
+    labels[boostedKey] = 100;
   }
-  return album?.identifier;
+  return labels;
 }
 
-async function showBattleReportSavedToast(text) {
+function downloadBlob(blob) {
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = "LBJ-GOAT-Meter.png";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+async function triggerDownload(url, downloadBase64) {
+  if (typeof downloadBase64 === "string" && downloadBase64.length > 0) {
+    const raw = atob(downloadBase64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+    downloadBlob(new Blob([bytes], { type: "image/png" }));
+    return;
+  }
+
+  // 優先轉 blob：可避免跨網域 URL 在部分瀏覽器忽略 download 屬性而直接導頁。
   try {
-    const { Toast } = await import("@capacitor/toast");
-    await Toast.show({ text, duration: "short", position: "bottom" });
-  } catch {
-    // ignore toast fail
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`download fetch failed: ${res.status}`);
+    downloadBlob(await res.blob());
+    return;
+  } catch (e) {
+    console.error("Download Fallback Triggered", e);
+    throw new Error("Download failed in blob mode");
   }
 }
 
-function loadImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("svg image decode failed"));
-    img.src = dataUrl;
-  });
+const DIAGNOSTIC_ERROR_MAP = Object.freeze({
+  unauthenticated: "登入狀態失效 (401: Auth Required)",
+  "permission-denied": "伺服器拒絕訪問 (403: IAM/AppCheck Denied)",
+  "deadline-exceeded": "伺服器運算超時 (504: SSR Timeout)",
+  internal: "後端渲染引擎崩潰 (500: Internal Error)",
+});
+
+function normalizeFunctionsErrorCode(rawCode) {
+  const s = String(rawCode || "").trim();
+  if (!s) return "unknown";
+  return s.replace(/^functions\//, "");
 }
 
-async function assertExportImageSize(dataUrl) {
-  const renderedImage = await loadImage(dataUrl);
-  const width = renderedImage.naturalWidth || renderedImage.width;
-  const height = renderedImage.naturalHeight || renderedImage.height;
-  if (width !== EXPORT_SIZE_PX || height !== EXPORT_SIZE_PX) {
-    throw new Error(
-      `[battleReportExport] dimension assertion failed: expected ${EXPORT_SIZE_PX}x${EXPORT_SIZE_PX}, got ${width}x${height}`,
-    );
-  }
-}
-
-async function renderSvgMarkupToPngDataUrl(svgMarkup) {
-  // [ARCH_LOCK] Pure SVG path. DO NOT re-introduce screenshots.
-  const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
-  const svgBlobUrl = URL.createObjectURL(svgBlob);
-  try {
-    const decodedSvgImage = await loadImage(svgBlobUrl);
-    const canvas = document.createElement("canvas");
-    canvas.width = EXPORT_SIZE_PX;
-    canvas.height = EXPORT_SIZE_PX;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("2d context unavailable");
-    applyExportCanvasQuality(ctx);
-    ctx.drawImage(decodedSvgImage, 0, 0, SVG_DESIGN_SIZE, SVG_DESIGN_SIZE, 0, 0, EXPORT_SIZE_PX, EXPORT_SIZE_PX);
-    return canvas.toDataURL("image/png", 1.0);
-  } finally {
-    URL.revokeObjectURL(svgBlobUrl);
-  }
-}
-
-function buildBattleReportInput(safePayload, t) {
-  const stanceDisplayName =
-    (getStance(safePayload.status)?.primary ?? (safePayload.status ? String(safePayload.status).toUpperCase() : "GOAT"))
-      .toUpperCase()
-      .trim() || "GOAT";
-  const wallText = String(safePayload.voterTeam || "LAL").toUpperCase().trim() || "LAL";
-  const regionText = [safePayload.country, safePayload.city].filter(Boolean).join(" · ") || t("global");
+function toDiagnosticError(err) {
+  const normalizedCode = normalizeFunctionsErrorCode(err?.code);
+  const mappedMessage = DIAGNOSTIC_ERROR_MAP[normalizedCode] || "SSR 匯出失敗，請稍後重試";
+  const rawMessage = typeof err?.message === "string" && err.message.trim() ? err.message.trim() : "Unknown error";
   return {
-    photoURL: safePayload.photoURL,
-    displayName: safePayload.displayName || t("anonymousWarrior"),
-    teamColors: safePayload.teamColors,
-    stanceColor: safePayload.stanceColor,
-    battleSubtitle: safePayload.battleSubtitle || "",
-    battleTitle: safePayload.battleTitle || "",
-    isTitleUppercase: Boolean(safePayload.isTitleUppercase),
-    reasonLabels: Array.isArray(safePayload.reasonLabels) ? safePayload.reasonLabels : [],
-    wallText,
-    stanceDisplayName,
-    teamLineText: safePayload.teamLabel ? String(safePayload.teamLabel).toUpperCase() : "—",
-    regionText,
-    rankLineText: safePayload.rankLabel || t("rankLabel"),
-    brandLine: "The GOAT Meter",
-    metaFooterLine: t("globalStats"),
-    disclaimerLine: t("disclaimerCommunity"),
+    code: normalizedCode,
+    message: rawMessage,
+    mappedMessage,
+    timestamp: new Date().toISOString(),
+    details: err?.details ?? null,
   };
 }
 
-async function generateBattleReportPngDataUrl(reportInput) {
-  const preparedAssets = await prepareBattleAssets({
-    photoURL: reportInput.photoURL,
-    crownIconSrc: crownIcon,
-  });
-  if (preparedAssets.avatarDataUri === preparedAssets.fallbackSilhouetteDataUri) {
-    console.warn("[battleReportExport] avatar fallback used due to CORS/cache fetch limitation");
-  }
-  const svgMarkup = buildBattleReportSvg(reportInput, {
-    ...preparedAssets,
-    colorWash: "",
-  });
-  try {
-    const export1920DataUrl = await renderSvgMarkupToPngDataUrl(svgMarkup);
-    await assertExportImageSize(export1920DataUrl);
-    return export1920DataUrl;
-  } catch (error) {
-    throw new Error(`[battleReportExport] SVG render failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
+function makeAuthExpiredDiagnostic() {
+  return {
+    code: "unauthenticated",
+    message: "檢測到登入狀態過期，請重新登入後再試",
+    mappedMessage: DIAGNOSTIC_ERROR_MAP.unauthenticated,
+    timestamp: new Date().toISOString(),
+    details: null,
+  };
 }
 
-function buildStressTestPayload(t) {
-  return {
-    photoURL: "",
-    displayName: "THE-LONGEST-LEGACY-NAME-OF-THE-ARENA-CHAMPION-2026",
-    voterTeam: "LAL",
-    teamLabel: "LAKERS ELITE SUPPORTERS CHAPTER",
-    status: "goat",
-    reasonLabels: ["Playmaking gravity", "Playoff durability", "Era-defining IQ"],
-    city: "Los Angeles",
-    country: "USA",
-    rankLabel: t("rankLabel"),
-    teamColors: { primary: "#FF0000", secondary: "#BF57FF" },
-    battleTitle:
-      "THE KING REWRITES BASKETBALL HISTORY WITH TWO-LINE PRESSURE TEST FOR VERTICAL FLOW",
-    battleSubtitle: "STRESS TEST MODE",
-    warzoneStats: null,
-    isTitleUppercase: true,
-    fileBaseWeb: `GOAT-Stress-Test-${Date.now()}`,
-  };
+function waitForAuthenticatedUser(timeoutMs = 8000) {
+  if (!auth) return Promise.resolve(null);
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      unsub();
+      resolve(null);
+    }, timeoutMs);
+    const unsub = onAuthStateChanged(auth, (user) => {
+      clearTimeout(timer);
+      unsub();
+      resolve(user ?? null);
+    });
+  });
 }
 
 export default function BattleCardExportScene() {
@@ -163,88 +128,104 @@ export default function BattleCardExportScene() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isRunning, setIsRunning] = useState(true);
+  const [diagnosticError, setDiagnosticError] = useState(null);
   const runningRef = useRef(false);
-  const stressTestMode = import.meta.env.DEV && new URLSearchParams(location.search).get(STRESS_TEST_QUERY_KEY) === "1";
-  const exportPayload = location.state?.exportPayload ?? (stressTestMode ? buildStressTestPayload(t) : null);
-  const action = location.state?.action === "download" ? "download" : "save";
+
+  const exportPayload = location.state?.exportPayload ?? null;
   const returnTo = typeof location.state?.returnTo === "string" ? location.state.returnTo : "/vote";
 
-  const safePayload = useMemo(() => {
+  const callablePayload = useMemo(() => {
     if (!exportPayload) return null;
-    const status = exportPayload.status;
-    const stanceColor = status
-      ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat)
-      : (exportPayload.stanceColor ?? STANCE_COLORS.goat);
     return {
-      ...exportPayload,
-      stanceColor,
-      isExportReady: true,
-      arenaAnimationsPaused: true,
-      onRequestRewardAd: undefined,
-      onExportUnlock: undefined,
-      onExportStart: undefined,
-      onExportEnd: undefined,
+      displayName: exportPayload.displayName || t("anonymousWarrior"),
+      avatarUrl: exportPayload.photoURL || "",
+      labels: buildLabelPayloadFromWarzoneStats(exportPayload.warzoneStats, exportPayload.status),
     };
-  }, [exportPayload]);
+  }, [exportPayload, t]);
 
   useEffect(() => {
-    if (!safePayload || runningRef.current) return;
+    if (!exportPayload) {
+      setIsRunning(false);
+      setDiagnosticError({
+        code: "internal",
+        message: "Missing export payload",
+        mappedMessage: DIAGNOSTIC_ERROR_MAP.internal,
+        timestamp: new Date().toISOString(),
+        details: null,
+      });
+      return;
+    }
+    if (!callablePayload) {
+      setIsRunning(false);
+      setDiagnosticError(makeAuthExpiredDiagnostic());
+      return;
+    }
+    if (!callablePayload || runningRef.current) return;
     runningRef.current = true;
 
     const run = async () => {
       try {
-        const isNative = Capacitor.isNativePlatform();
-        if (isNative && action === "save" && typeof Media.checkPermissions === "function") {
-          const check = await Media.checkPermissions();
-          if (!isMediaPluginSavePermissionOk(check)) {
-            const request = await Media.requestPermissions();
-            if (!isMediaPluginSavePermissionOk(request)) {
-              console.warn("[BattleCardExportScene] save permission denied");
-              navigate(returnTo, { replace: true });
-              return;
-            }
-          }
+        const user = await waitForAuthenticatedUser();
+        if (!user) {
+          throw makeAuthExpiredDiagnostic();
+        }
+        await user.getIdToken();
+        if (!auth?.currentUser || auth.currentUser.uid !== user.uid) {
+          throw makeAuthExpiredDiagnostic();
         }
 
-        const reportInput = buildBattleReportInput(safePayload, t);
-        const export1920DataUrl = await generateBattleReportPngDataUrl(reportInput);
-
-        if (action === "save") {
-          const albumIdentifier = await ensureGoatAlbumIdentifier();
-          await Media.savePhoto({
-            path: export1920DataUrl,
-            albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
-            fileName: `GOAT-Card-${Date.now()}`,
-          });
-          await showBattleReportSavedToast(t("battleReportSavedToGallery"));
-        } else {
-          const a = document.createElement("a");
-          a.href = export1920DataUrl;
-          const fileBase = safePayload.fileBaseWeb || `GOAT-Card-${Date.now()}`;
-          a.download = `${fileBase}.png`;
-          a.click();
+        const fns = getFirebaseFunctions();
+        if (!fns) {
+          throw new Error("Firebase Functions unavailable");
         }
+        const callable = httpsCallable(fns, "generateBattleCard");
+        const res = await callable({
+          ...callablePayload,
+          uid: user.uid,
+        });
+        const data = res?.data?.result ? res.data.result : res?.data;
+        const url = data?.downloadUrl || data?.url;
+        const downloadBase64 = data?.downloadBase64 || "";
+        if (!url || typeof url !== "string") {
+          throw new Error("Missing battle card URL");
+        }
+        await triggerDownload(url, downloadBase64);
+        navigate(returnTo, { replace: true });
       } catch (err) {
-        console.error("[BattleCardExportScene] SVG export failed", err);
+        const parsed = toDiagnosticError(err);
+        setDiagnosticError(parsed);
+        console.error("[BattleCardExportScene] SSR export failed", {
+          error: err,
+          code: parsed.code,
+          message: parsed.message,
+          details: parsed.details,
+          timestamp: parsed.timestamp,
+        });
       } finally {
         setIsRunning(false);
-        navigate(returnTo, { replace: true });
       }
     };
 
     run();
-  }, [safePayload, action, navigate, returnTo, t]);
-  if (!safePayload) return null;
+  }, [callablePayload, exportPayload, navigate, returnTo, t]);
+
+  if (!exportPayload) return null;
 
   return (
     <div className="fixed inset-0 z-[12000] bg-black flex items-center justify-center overflow-hidden">
-      {stressTestMode ? (
-        <div className="absolute top-4 left-4 px-2 py-1 rounded bg-white/10 text-white/70 text-xs">
-          Stress Test Mode
-        </div>
-      ) : null}
       {isRunning ? (
         <div className="absolute bottom-6 text-white/70 text-sm">{t("generatingHighResReport")}</div>
+      ) : null}
+      {!isRunning && diagnosticError ? (
+        <div className="absolute bottom-6 px-3 py-3 rounded bg-red-950/80 border border-red-400/50 text-red-200 text-xs max-w-[92vw]">
+          <p className="font-semibold mb-1">生成失敗：{diagnosticError.mappedMessage}</p>
+          <pre className="whitespace-pre-wrap leading-relaxed text-[11px] text-red-100/95">
+{`[Diagnostic Info]
+Code: ${diagnosticError.code}
+Message: ${diagnosticError.message}
+Timestamp: ${diagnosticError.timestamp}`}
+          </pre>
+        </div>
       ) : null}
     </div>
   );

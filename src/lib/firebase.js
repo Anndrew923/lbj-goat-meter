@@ -30,7 +30,7 @@
  */
 import { initializeApp } from 'firebase/app'
 import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
-import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth'
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions'
 import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
@@ -146,6 +146,10 @@ if (config) {
     }
 
     auth = getAuth(app)
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_AUTH_EMULATOR === 'true') {
+      connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true })
+      console.log('[Firebase] Auth Emulator localhost:9099（與 Functions Emulator 對齊）')
+    }
     // 《最強肉體》長輪詢配置：自動偵測長輪詢，減少 WebChannel 在開發環境的連線報錯
     // 緩存策略：改用 FirestoreSettings.localCache（persistentLocalCache）取代已棄用的 enableIndexedDbPersistence，優先讀取本地 IndexedDB
     db = initializeFirestore(app, {
@@ -165,6 +169,9 @@ if (config) {
       if (import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
         connectFunctionsEmulator(firebaseFunctions, 'localhost', 5001)
         console.log('[Firebase] Functions Emulator localhost:5001（與後端 Callable 同單例）')
+        if (import.meta.env.VITE_USE_AUTH_EMULATOR !== 'true') {
+          console.warn('[Firebase] Functions 走 Emulator 但 Auth 仍走雲端，可能造成身份橋接落差。可設定 VITE_USE_AUTH_EMULATOR=true。')
+        }
       } else if (import.meta.env.DEV && fnRegion) {
         console.log('[Firebase] Functions 區域:', fnRegion)
       }
