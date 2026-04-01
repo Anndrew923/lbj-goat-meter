@@ -3,7 +3,12 @@ import { useParams, useSearchParams } from "react-router-dom";
 import BattleCard from "../components/BattleCard";
 
 function resolveFunctionsBaseUrl() {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim();
+  // 與 .env / CI 注入一致；若建置漏帶 VITE_FIREBASE_PROJECT_ID，攝影棚仍須能打到同專案 HTTP function。
+  const projectId =
+    import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim() ||
+    (typeof window !== "undefined" && window.location?.hostname?.includes("lbj-goat-meter")
+      ? "lbj-goat-meter"
+      : "");
   const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim() || "us-central1";
   if (!projectId) return "";
   return `https://${region}-${projectId}.cloudfunctions.net`;
@@ -14,6 +19,7 @@ export default function RenderStudioPage() {
   const [searchParams] = useSearchParams();
   const [payload, setPayload] = useState(null);
   const token = (searchParams.get("token") || "").trim();
+  const puppeteerMode = (searchParams.get("mode") || "").trim() === "puppeteer";
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -25,6 +31,24 @@ export default function RenderStudioPage() {
     let cancelled = false;
     const run = async () => {
       if (!jobId.trim() || !token) return;
+
+      const boot =
+        typeof window !== "undefined" ? window.__RENDER_STUDIO_BOOT__ : null;
+      if (
+        boot &&
+        boot.jobId === jobId.trim() &&
+        boot.renderToken === token &&
+        boot.payload
+      ) {
+        if (!cancelled) setPayload(boot.payload);
+        try {
+          delete window.__RENDER_STUDIO_BOOT__;
+        } catch {
+          // 忽略：部分環境可能不可刪除
+        }
+        return;
+      }
+
       const base = resolveFunctionsBaseUrl();
       if (!base) return;
       const url = `${base}/getRenderStudioPayload?jobId=${encodeURIComponent(jobId.trim())}&token=${encodeURIComponent(token)}`;
@@ -42,6 +66,15 @@ export default function RenderStudioPage() {
 
   useEffect(() => {
     if (!payload || typeof window === "undefined") return;
+    // 後端 Puppeteer：不等待遠端頭像與 Web 字型（常拖數十秒）；版面與內建圖蓋完即截圖。
+    if (puppeteerMode) {
+      const id = window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          window.__RENDER_READY__ = true;
+        });
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
     const markReady = async () => {
       const imagePromises = Array.from(document.images || []).map((img) => {
         if (img.complete) return Promise.resolve();
@@ -57,7 +90,7 @@ export default function RenderStudioPage() {
     markReady().catch(() => {
       window.__RENDER_READY__ = true;
     });
-  }, [payload]);
+  }, [payload, puppeteerMode]);
 
   const reasonLabels = useMemo(() => {
     if (Array.isArray(payload?.reasonLabels) && payload.reasonLabels.length) return payload.reasonLabels;

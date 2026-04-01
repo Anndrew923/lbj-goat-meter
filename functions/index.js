@@ -133,8 +133,9 @@ function parseGenerateBattleCardPayload(data, authUid) {
   };
 }
 
+/** 優化後應多數在數十秒內完成；保留彈性上限給冷啟 + 大圖。 */
 export const generateBattleCard = onCall(
-  { memory: "2GiB", timeoutSeconds: 60, enforceAppCheck: false },
+  { memory: "2GiB", timeoutSeconds: 120, enforceAppCheck: false, cpu: 1 },
   async (request) => {
     requireAuth(request);
     const payload = parseGenerateBattleCardPayload(request.data, request.auth.uid);
@@ -148,7 +149,8 @@ export const generateBattleCard = onCall(
       process.env.FIREBASE_PROJECT_ID ||
       "lbj-goat-meter";
     const browserBaseUrl = (process.env.RENDER_STUDIO_BASE_URL || "").trim() || `https://${projectId}.web.app`;
-    const studioUrl = `${browserBaseUrl.replace(/\/+$/, "")}/render-studio/${encodeURIComponent(jobId)}?token=${encodeURIComponent(renderToken)}`;
+    // hash 路由：瀏覽器 path 為 /，與 Vite base:'./' 之 ./assets 解析一致；pathname /render-studio 會讓 bundle 404
+    const studioUrl = `${browserBaseUrl.replace(/\/+$/, "")}/#/render-studio/${encodeURIComponent(jobId)}?token=${encodeURIComponent(renderToken)}&mode=puppeteer`;
     let browser = null;
 
     try {
@@ -175,8 +177,39 @@ export const generateBattleCard = onCall(
         headless: chromium.headless,
       });
       const page = await browser.newPage();
-      await page.goto(studioUrl, { waitUntil: "networkidle2", timeout: 45000 });
-      await page.waitForFunction(() => window.__RENDER_READY__ === true, { timeout: 30000 });
+      await page.setRequestInterception(true);
+      page.on("request", (req) => {
+        const u = req.url();
+        if (
+          /google-analytics\.com|googletagmanager\.com|\/gtag\/|doubleclick\.net|facebook\.net|connect\.facebook|hotjar\.com|clarity\.ms/i.test(
+            u
+          )
+        ) {
+          void req.abort();
+          return;
+        }
+        void req.continue();
+      });
+      // 無頭頁面對 getRenderStudioPayload 的 fetch 可能被 App Check / 網路條件擋下，且前端 catch 會靜默失敗，導致 __RENDER_READY__ 永不為 true。
+      // 後端已持有 payload，於導頁前注入 window.__RENDER_STUDIO_BOOT__，攝影棚優先取用，不依賴第二次 HTTP。
+      const bootJson = JSON.stringify({
+        jobId,
+        renderToken,
+        payload: JSON.parse(JSON.stringify(payload)),
+      });
+      await page.evaluateOnNewDocument(
+        (serialized) => {
+          try {
+            window.__RENDER_STUDIO_BOOT__ = JSON.parse(serialized);
+          } catch {
+            window.__RENDER_STUDIO_BOOT__ = null;
+          }
+        },
+        bootJson
+      );
+      // SPA + Firebase 常駐連線會讓 networkidle(0/2) 幾乎永不成立；改以 load 後再等 __RENDER_READY__。
+      await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.waitForFunction(() => window.__RENDER_READY__ === true, { timeout: 60000 });
       const pngBuffer = await page.screenshot({ type: "png" });
       const bucket = admin.storage().bucket();
       const objectPath = `exports/battlecards/${randomUUID()}.png`;
