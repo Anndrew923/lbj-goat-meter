@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
 import { useParams, useSearchParams } from "react-router-dom";
 import BattleCard from "../components/BattleCard";
-import { db } from "../lib/firebase";
+
+function resolveFunctionsBaseUrl() {
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim();
+  const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim() || "us-central1";
+  if (!projectId) return "";
+  return `https://${region}-${projectId}.cloudfunctions.net`;
+}
 
 export default function RenderStudioPage() {
   const { jobId = "" } = useParams();
@@ -19,18 +24,15 @@ export default function RenderStudioPage() {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!db || !jobId.trim() || !token) return;
-      const tokenSnap = await getDoc(doc(db, "render_jobs", jobId.trim(), "tokens", token));
-      if (!tokenSnap.exists() || cancelled) return;
-      const tokenData = tokenSnap.data() || {};
-      if (
-        tokenData.jobId !== jobId.trim() ||
-        typeof tokenData.renderToken !== "string" ||
-        tokenData.renderToken !== token
-      ) {
-        return;
-      }
-      setPayload(tokenData.payload || null);
+      if (!jobId.trim() || !token) return;
+      const base = resolveFunctionsBaseUrl();
+      if (!base) return;
+      const url = `${base}/getRenderStudioPayload?jobId=${encodeURIComponent(jobId.trim())}&token=${encodeURIComponent(token)}`;
+      const res = await fetch(url, { method: "GET", credentials: "omit" });
+      if (!res.ok || cancelled) return;
+      const json = await res.json().catch(() => null);
+      if (!json || cancelled) return;
+      setPayload(json.payload ?? null);
     };
     run().catch(() => {});
     return () => {
@@ -79,8 +81,8 @@ export default function RenderStudioPage() {
           country=""
           rankLabel={payload.rankLabel || ""}
           teamColors={{
-            primary: payload?.theme?.primaryColor || "#C8102E",
-            secondary: payload?.theme?.secondaryColor || "#2E003E",
+            primary: payload.theme?.primaryColor ?? "#C8102E",
+            secondary: payload.theme?.secondaryColor ?? "#2E003E",
           }}
           battleTitle={payload.battleTitle || ""}
           battleSubtitle={payload.battleSubtitle || ""}

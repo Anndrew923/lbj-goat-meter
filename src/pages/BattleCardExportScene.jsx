@@ -223,7 +223,6 @@ export default function BattleCardExportScene() {
         if (!fns) {
           throw new Error("Firebase Functions unavailable");
         }
-        console.table(callablePayload.labels);
         const callable = httpsCallable(fns, "generateBattleCard");
         const res = await callable({
           ...callablePayload,

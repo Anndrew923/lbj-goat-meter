@@ -9,7 +9,7 @@
 
 import * as functions from "firebase-functions";
 import { defineSecret } from "firebase-functions/params";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import admin from "firebase-admin";
 import puppeteer from "puppeteer-core";
@@ -223,6 +223,59 @@ export const generateBattleCard = onCall(
   }
 );
 
+/**
+ * Render Studio 專用：以 Admin 讀取一次性 token 文件並回傳 payload。
+ *
+ * 設計意圖：Puppeteer 開啟的無頭頁面無法可靠取得 App Check token，導致客戶端 Firestore
+ * 讀取在「強制 App Check」下會失敗，`__RENDER_READY__` 永不為 true，generateBattleCard 因而 500。
+ * 此端點走 Admin SDK，不依賴瀏覽器 App Check；仍以 jobId + OTT 路徑驗證，並檢查過期時間。
+ */
+export const getRenderStudioPayload = onRequest(
+  {
+    region: process.env.FUNCTIONS_REGION || "us-central1",
+    cors: true,
+    memory: "256MiB",
+    timeoutSeconds: 15,
+  },
+  async (req, res) => {
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "GET") {
+      res.status(405).json({ error: "method_not_allowed" });
+      return;
+    }
+    const jobId = String(req.query.jobId || "").trim();
+    const token = String(req.query.token || "").trim();
+    if (!jobId || !token) {
+      res.status(400).json({ error: "missing_params" });
+      return;
+    }
+    try {
+      const snap = await db.doc(`render_jobs/${jobId}/tokens/${token}`).get();
+      if (!snap.exists) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const data = snap.data() || {};
+      if (data.jobId !== jobId || data.renderToken !== token) {
+        res.status(403).json({ error: "token_mismatch" });
+        return;
+      }
+      const exp = data.expiresAt;
+      if (exp && typeof exp.toMillis === "function" && exp.toMillis() < Date.now()) {
+        res.status(410).json({ error: "expired" });
+        return;
+      }
+      res.set("Cache-Control", "no-store");
+      res.status(200).json({ payload: data.payload ?? null });
+    } catch (err) {
+      console.error("[getRenderStudioPayload]", err?.message || err);
+      res.status(500).json({ error: "internal" });
+    }
+  }
+);
 
 /**
  * 解析指紋用 pepper：優先 Gen2 secret.value()，失敗則 GOAT_FINGERPRINT_PEPPER（Emulator／本機）。

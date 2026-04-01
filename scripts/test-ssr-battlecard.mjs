@@ -11,13 +11,19 @@
 const PROJECT_ID = process.env.GCLOUD_PROJECT || "lbj-goat-meter";
 const REGION = process.env.FUNCTIONS_REGION || "us-central1";
 const FUNCTIONS_HOST = process.env.FUNCTIONS_HOST || "127.0.0.1:5001";
+/** 與 Hosting 一致；Callable 走 fetch 時若無 Referer，部分 API Key Referrer 限制會擋下請求。 */
+const CALLABLE_REFERER = process.env.CALLABLE_REFERER || "https://lbj-goat-meter.web.app";
+const USE_PRODUCTION =
+  process.env.USE_PRODUCTION === "1" ||
+  process.env.USE_PRODUCTION === "true" ||
+  (process.env.CALLABLE_URL || "").trim().startsWith("https://");
 const OUTPUT_DIR = process.env.OUTPUT_DIR || "tmp";
 const FAILING_AVATAR_URL =
   process.env.FAILING_AVATAR_URL || "https://upload.wikimedia.org/wikipedia/commons/a/a7/LeBron_James_2023.jpg";
 const HEALTHY_AVATAR_URL = process.env.HEALTHY_AVATAR_URL || "https://avatars.githubusercontent.com/u/9919?v=4";
 
 const basePayload = {
-  uid: "test-admin-123",
+  uid: process.env.FIREBASE_UID || "test-admin-123",
   displayName: "The Chosen One",
   labels: {
     GOAT: 90,
@@ -45,9 +51,29 @@ function makeEmulatorJwt(uid) {
   return `${header}.${body}.`;
 }
 
+function resolveCallableUrl() {
+  const explicit = (process.env.CALLABLE_URL || "").trim();
+  if (explicit) return explicit;
+  if (USE_PRODUCTION) {
+    return `https://${REGION}-${PROJECT_ID}.cloudfunctions.net/generateBattleCard`;
+  }
+  return `http://${FUNCTIONS_HOST}/${PROJECT_ID}/${REGION}/generateBattleCard`;
+}
+
+function resolveAuthBearer() {
+  const fromEnv = (process.env.FIREBASE_ID_TOKEN || "").trim();
+  if (fromEnv) return fromEnv;
+  if (USE_PRODUCTION) {
+    throw new Error(
+      "USE_PRODUCTION 需要設定 FIREBASE_ID_TOKEN（Firebase Auth ID Token），且 payload.uid 必須與該 Token 的 uid 一致。"
+    );
+  }
+  return makeEmulatorJwt(basePayload.uid);
+}
+
 async function main() {
-  const url = `http://${FUNCTIONS_HOST}/${PROJECT_ID}/${REGION}/generateBattleCard`;
-  const token = makeEmulatorJwt(basePayload.uid);
+  const url = resolveCallableUrl();
+  const token = resolveAuthBearer();
 
   const runCase = async (label, avatarUrl) => {
     const payload = { ...basePayload, avatarUrl };
@@ -55,6 +81,7 @@ async function main() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Referer: CALLABLE_REFERER,
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ data: payload }),
