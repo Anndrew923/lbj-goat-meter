@@ -38,6 +38,45 @@ function buildLabelPayloadFromWarzoneStats(warzoneStats, status) {
   return labels;
 }
 
+function buildEvidenceText(reasonLabels) {
+  if (!Array.isArray(reasonLabels) || reasonLabels.length === 0) return "20 火力 All-NBA";
+  return reasonLabels.slice(0, 2).join(" / ");
+}
+
+function buildThemePayload(exportPayload) {
+  const teamColors = exportPayload?.teamColors && typeof exportPayload.teamColors === "object"
+    ? exportPayload.teamColors
+    : {};
+  const primaryColor = /^#[0-9a-fA-F]{6}$/.test(String(teamColors.primary || "").trim())
+    ? String(teamColors.primary).trim()
+    : "#C8102E";
+  const secondaryColor = /^#[0-9a-fA-F]{6}$/.test(String(teamColors.secondary || "").trim())
+    ? String(teamColors.secondary).trim()
+    : "#2E003E";
+  return {
+    primaryColor,
+    secondaryColor,
+    accentColor: "#FFD700",
+    backgroundGradient: {
+      start: primaryColor,
+      end: secondaryColor,
+    },
+  };
+}
+
+function resolveBgKey(exportPayload, theme) {
+  const teamHint = `${exportPayload?.teamLabel || ""} ${exportPayload?.voterTeam || ""}`.toLowerCase();
+  if (teamHint.includes("celtic") || teamHint.includes("bos")) return "celtics";
+  const primary = String(theme?.primaryColor || "").replace("#", "");
+  if (/^[0-9a-fA-F]{6}$/.test(primary)) {
+    const r = Number.parseInt(primary.slice(0, 2), 16);
+    const g = Number.parseInt(primary.slice(2, 4), 16);
+    const b = Number.parseInt(primary.slice(4, 6), 16);
+    if (g > r + 16 && g > b + 16) return "celtics";
+  }
+  return "base";
+}
+
 function downloadBlob(blob) {
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -136,10 +175,16 @@ export default function BattleCardExportScene() {
 
   const callablePayload = useMemo(() => {
     if (!exportPayload) return null;
+    const theme = buildThemePayload(exportPayload);
     return {
       displayName: exportPayload.displayName || t("anonymousWarrior"),
       avatarUrl: exportPayload.photoURL || "",
       labels: buildLabelPayloadFromWarzoneStats(exportPayload.warzoneStats, exportPayload.status),
+      battleSubtitle: exportPayload.battleSubtitle || t("battleCardTagline"),
+      evidenceText: buildEvidenceText(exportPayload.reasonLabels),
+      regionText: [exportPayload.city, exportPayload.country].filter(Boolean).join("・") || t("global"),
+      theme,
+      bgKey: exportPayload?.bgKey || resolveBgKey(exportPayload, theme),
     };
   }, [exportPayload, t]);
 
@@ -178,6 +223,7 @@ export default function BattleCardExportScene() {
         if (!fns) {
           throw new Error("Firebase Functions unavailable");
         }
+        console.table(callablePayload.labels);
         const callable = httpsCallable(fns, "generateBattleCard");
         const res = await callable({
           ...callablePayload,
@@ -208,8 +254,6 @@ export default function BattleCardExportScene() {
 
     run();
   }, [callablePayload, exportPayload, navigate, returnTo, t]);
-
-  if (!exportPayload) return null;
 
   return (
     <div className="fixed inset-0 z-[12000] bg-black flex items-center justify-center overflow-hidden">

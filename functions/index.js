@@ -27,14 +27,17 @@ import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionInd
 import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventLocalizedText.js";
 import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
 import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
+import { drawGlowEffect, drawSlantedRect } from "./utils/battleCardDrawing.js";
 import {
   BATTLE_CARD_ASSETS,
   BATTLE_CARD_AVATAR_LAYOUT,
   BATTLE_CARD_BAR_COMMON,
   BATTLE_CARD_CANVAS,
   BATTLE_CARD_DIMENSIONS,
+  BATTLE_CARD_HUD_LAYOUT,
   BATTLE_CARD_NAME_LAYOUT,
   BATTLE_CARD_PALETTE,
+  BATTLE_CARD_WORKSHEET_365,
 } from "./config/battleCardLayout.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,10 +75,18 @@ const DISPLAY_FONT_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.fonts.displ
 const SANS_FONT_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.fonts.sans.path);
 const BATTLE_CARD_BACKGROUND_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.backgroundImagePath);
 const BATTLE_CARD_DEFAULT_AVATAR_PATH = path.resolve(__dirname, "assets/default-avatar.png");
+const BATTLE_CARD_CROWN_ICON_PATH = path.resolve(__dirname, "assets/goat-crown-icon.png");
+const BATTLE_CARD_BACKGROUND_PATHS = Object.freeze({
+  base: BATTLE_CARD_BACKGROUND_PATH,
+  celtics: path.resolve(__dirname, "assets/backgrounds/battlecard-celtics.png"),
+});
+const BATTLE_CARD_SCALE = BATTLE_CARD_CANVAS.width / 365;
 
 let battleCardBackgroundImagePromise = null;
 let battleCardDefaultAvatarImagePromise = null;
+let battleCardCrownImagePromise = null;
 let battleCardFontsRegistered = false;
+const battleCardBackgroundImagePromiseByKey = new Map();
 
 function ensureBattleCardGlobalAssets() {
   if (!fs.existsSync(DISPLAY_FONT_PATH)) {
@@ -87,8 +98,13 @@ function ensureBattleCardGlobalAssets() {
   if (!fs.existsSync(BATTLE_CARD_BACKGROUND_PATH)) {
     throw new Error(`MISSING_ASSET: ${BATTLE_CARD_BACKGROUND_PATH}`);
   }
+  const stats = fs.statSync(BATTLE_CARD_BACKGROUND_PATH);
+  if (stats.size === 0) throw new Error("CRITICAL_ERROR: Asset file is empty!");
   if (!fs.existsSync(BATTLE_CARD_DEFAULT_AVATAR_PATH)) {
     throw new Error(`MISSING_ASSET: ${BATTLE_CARD_DEFAULT_AVATAR_PATH}`);
+  }
+  if (!fs.existsSync(BATTLE_CARD_CROWN_ICON_PATH)) {
+    throw new Error(`MISSING_ASSET: ${BATTLE_CARD_CROWN_ICON_PATH}`);
   }
   if (!battleCardFontsRegistered) {
     try {
@@ -109,7 +125,24 @@ function ensureBattleCardGlobalAssets() {
   if (!battleCardDefaultAvatarImagePromise) {
     battleCardDefaultAvatarImagePromise = loadImage(BATTLE_CARD_DEFAULT_AVATAR_PATH);
   }
-  return Promise.all([battleCardBackgroundImagePromise, battleCardDefaultAvatarImagePromise]);
+  if (!battleCardCrownImagePromise) {
+    battleCardCrownImagePromise = loadImage(BATTLE_CARD_CROWN_ICON_PATH);
+  }
+  return Promise.all([battleCardBackgroundImagePromise, battleCardDefaultAvatarImagePromise, battleCardCrownImagePromise]);
+}
+
+function ensureBattleCardBackgroundAssetByKey(bgKey) {
+  const key = typeof bgKey === "string" ? bgKey.trim().toLowerCase() : "base";
+  const targetPath = BATTLE_CARD_BACKGROUND_PATHS[key] || BATTLE_CARD_BACKGROUND_PATHS.base;
+  if (!fs.existsSync(targetPath)) {
+    throw new Error(`MISSING_ASSET: ${targetPath}`);
+  }
+  const stats = fs.statSync(targetPath);
+  if (stats.size === 0) throw new Error("CRITICAL_ERROR: Asset file is empty!");
+  if (!battleCardBackgroundImagePromiseByKey.has(targetPath)) {
+    battleCardBackgroundImagePromiseByKey.set(targetPath, loadImage(targetPath));
+  }
+  return battleCardBackgroundImagePromiseByKey.get(targetPath);
 }
 
 // 在全域 scope 預先註冊字型與啟動底圖載入，避免每次 Callable 觸發都重複觸發磁碟 I/O。
@@ -139,6 +172,54 @@ function requireAuth(context) {
 
 const BATTLE_CARD_LABEL_KEYS = ["GOAT", "FRAUD", "KING", "MERCENARY", "MACHINE", "STAT_PADDER"];
 
+function buildBattleTitle(labels) {
+  const ranked = BATTLE_CARD_DIMENSIONS
+    .map((dimension) => ({
+      key: dimension.key,
+      score: Number(labels?.[dimension.key]) || 0,
+    }))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.key || "GOAT";
+}
+
+function parseHexToRgba(hex, alpha = 1) {
+  const raw = String(hex || "").replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return `rgba(255, 215, 0, ${alpha})`;
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function parseTheme(theme) {
+  const fallback = {
+    primaryColor: "#C8102E",
+    secondaryColor: "#2E003E",
+    accentColor: "#FFD700",
+    backgroundGradient: { start: "#A50022", end: "#120018" },
+  };
+  if (!theme || typeof theme !== "object") return fallback;
+  const safeHex = (value, fb) => (/^#[0-9a-fA-F]{6}$/.test(String(value || "").trim()) ? String(value).trim() : fb);
+  const bg = theme.backgroundGradient && typeof theme.backgroundGradient === "object" ? theme.backgroundGradient : {};
+  return {
+    primaryColor: safeHex(theme.primaryColor, fallback.primaryColor),
+    secondaryColor: safeHex(theme.secondaryColor, fallback.secondaryColor),
+    accentColor: safeHex(theme.accentColor, fallback.accentColor),
+    backgroundGradient: {
+      start: safeHex(bg.start, fallback.backgroundGradient.start),
+      end: safeHex(bg.end, fallback.backgroundGradient.end),
+    },
+  };
+}
+
+function fillTextTracked(ctx, text, x, y, tracking) {
+  let cursor = x;
+  for (const ch of String(text || "")) {
+    ctx.fillText(ch, cursor, y);
+    cursor += ctx.measureText(ch).width + tracking;
+  }
+}
+
 function parseGenerateBattleCardPayload(data, authUid) {
   if (!data || typeof data !== "object") {
     throw new HttpsError("invalid-argument", "Payload is required");
@@ -148,6 +229,11 @@ function parseGenerateBattleCardPayload(data, authUid) {
   const displayName = typeof data.displayName === "string" ? data.displayName.trim() : "";
   const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
   const labels = data.labels && typeof data.labels === "object" ? data.labels : null;
+  const battleSubtitle = typeof data.battleSubtitle === "string" ? data.battleSubtitle.trim() : "戰區終道者";
+  const evidenceText = typeof data.evidenceText === "string" ? data.evidenceText.trim() : "20 火力 AII-NBA";
+  const regionText = typeof data.regionText === "string" ? data.regionText.trim() : "Taipei・專業戰線";
+  const theme = parseTheme(data.theme);
+  const bgKey = typeof data.bgKey === "string" ? data.bgKey.trim().toLowerCase() : "base";
 
   if (!uid || uid !== authUid) {
     throw new HttpsError("invalid-argument", "uid is invalid");
@@ -171,7 +257,17 @@ function parseGenerateBattleCardPayload(data, authUid) {
     parsedLabels[key] = value;
   }
 
-  return { uid, displayName, avatarUrl, labels: parsedLabels };
+  return {
+    uid,
+    displayName,
+    avatarUrl,
+    labels: parsedLabels,
+    battleSubtitle,
+    evidenceText,
+    regionText,
+    theme,
+    bgKey,
+  };
 }
 
 export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppCheck: false }, async (request) => {
@@ -184,7 +280,8 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
   try {
     const payload = parseGenerateBattleCardPayload(request.data, request.auth.uid);
 
-    const [baseImage, defaultAvatarImage] = await ensureBattleCardGlobalAssets();
+    const [, defaultAvatarImage, crownImage] = await ensureBattleCardGlobalAssets();
+    const baseImage = await ensureBattleCardBackgroundAssetByKey(payload.bgKey);
     canvas = createCanvas(BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
     ctx = canvas.getContext("2d");
     ctx.fillStyle = BATTLE_CARD_CANVAS.backgroundColor;
@@ -193,6 +290,20 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
       throw new Error("CRITICAL_ERROR: Background asset not found in functions/assets/");
     }
     ctx.drawImage(baseImage, 0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    const heroGradient = ctx.createLinearGradient(0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    heroGradient.addColorStop(0, parseHexToRgba(payload.theme.primaryColor, 0.56));
+    heroGradient.addColorStop(0.48, "rgba(0, 0, 0, 0.22)");
+    heroGradient.addColorStop(1, parseHexToRgba(payload.theme.secondaryColor, 0.70));
+    ctx.fillStyle = heroGradient;
+    ctx.fillRect(0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    const stripeGradient = ctx.createLinearGradient(0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    stripeGradient.addColorStop(0.492, "rgba(255,255,255,0)");
+    stripeGradient.addColorStop(0.498, "rgba(255,255,255,0.72)");
+    stripeGradient.addColorStop(0.502, "rgba(255,255,255,0.72)");
+    stripeGradient.addColorStop(0.508, "rgba(255,255,255,0)");
+    ctx.fillStyle = stripeGradient;
+    ctx.fillRect(0, 0, BATTLE_CARD_CANVAS.width, BATTLE_CARD_CANVAS.height);
+    console.log("RENDER_TRACE: Background drawn at 1920x1920");
     console.log("[generateBattleCard] ctx.drawImage baseImage Done");
 
     let avatarImage = defaultAvatarImage;
@@ -212,19 +323,32 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
       });
     }
 
+    const ws = BATTLE_CARD_WORKSHEET_365;
+    const sx = (v) => Math.round(v * ws.scaleBase);
+    const skewOffsetForHeight = (h) => Math.round(Math.tan((ws.skewDeg * Math.PI) / 180) * h);
+    const tracking = ws.letterSpacing * ws.scaleBase;
+    drawSlantedRect(
+      ctx,
+      sx(ws.identityPanel.x),
+      sx(ws.identityPanel.y),
+      sx(ws.identityPanel.width),
+      sx(ws.identityPanel.height),
+      skewOffsetForHeight(sx(ws.identityPanel.height))
+    );
+    ctx.fillStyle = "rgba(0,0,0,0.58)";
+    ctx.fill();
+    ctx.strokeStyle = parseHexToRgba(payload.theme.accentColor, 0.25);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
     // [Layout Math] 以頭像中心點 + 半徑定義裁切幾何，讓頭像縮放或換版時只需改 Layout Config。
-    const avatarDiameter = BATTLE_CARD_AVATAR_LAYOUT.radius * 2;
-    const avatarX = BATTLE_CARD_AVATAR_LAYOUT.centerX - BATTLE_CARD_AVATAR_LAYOUT.radius;
-    const avatarY = BATTLE_CARD_AVATAR_LAYOUT.centerY - BATTLE_CARD_AVATAR_LAYOUT.radius;
+    const avatarRadius = sx(ws.avatar.r);
+    const avatarDiameter = avatarRadius * 2;
+    const avatarX = sx(ws.avatar.cx) - avatarRadius;
+    const avatarY = sx(ws.avatar.cy) - avatarRadius;
     ctx.save();
     ctx.beginPath();
-    ctx.arc(
-      BATTLE_CARD_AVATAR_LAYOUT.centerX,
-      BATTLE_CARD_AVATAR_LAYOUT.centerY,
-      BATTLE_CARD_AVATAR_LAYOUT.radius,
-      0,
-      Math.PI * 2
-    );
+    ctx.arc(sx(ws.avatar.cx), sx(ws.avatar.cy), avatarRadius, 0, Math.PI * 2);
     // [Intent] 先 clip 再 drawImage，可保證任何來源長寬比都被限制在圓形戰報框內，不污染外圍 HUD。
     ctx.clip();
     ctx.drawImage(avatarImage, avatarX, avatarY, avatarDiameter, avatarDiameter);
@@ -235,58 +359,131 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
     ctx.lineWidth = BATTLE_CARD_AVATAR_LAYOUT.ringWidth;
     ctx.beginPath();
     ctx.arc(
-      BATTLE_CARD_AVATAR_LAYOUT.centerX,
-      BATTLE_CARD_AVATAR_LAYOUT.centerY,
-      BATTLE_CARD_AVATAR_LAYOUT.radius + BATTLE_CARD_AVATAR_LAYOUT.ringWidth / 2,
+      sx(ws.avatar.cx),
+      sx(ws.avatar.cy),
+      avatarRadius + 4,
       0,
       Math.PI * 2
     );
     ctx.stroke();
 
-    // [Intent] 名稱使用 display font + middle baseline，維持視覺中心穩定，避免字型 ascender 導致垂直抖動。
-    ctx.font = `700 ${BATTLE_CARD_NAME_LAYOUT.fontSize}px "${BATTLE_CARD_ASSETS.fonts.display.family}"`;
-    ctx.fillStyle = BATTLE_CARD_NAME_LAYOUT.color;
-    ctx.textAlign = BATTLE_CARD_NAME_LAYOUT.align;
-    ctx.textBaseline = BATTLE_CARD_NAME_LAYOUT.baseline;
-    ctx.fillText(payload.displayName, BATTLE_CARD_NAME_LAYOUT.x, BATTLE_CARD_NAME_LAYOUT.y, BATTLE_CARD_NAME_LAYOUT.maxWidth);
+    const battleTitle = buildBattleTitle(payload.labels);
+    ctx.font = `800 ${Math.round(6.6 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    ctx.fillStyle = parseHexToRgba(payload.theme.accentColor, 0.95);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    fillTextTracked(ctx, payload.battleSubtitle || "戰區終道者", sx(ws.title.subtitleX), sx(ws.title.subtitleY), tracking);
 
+    ctx.font = `800 ${Math.round(10.8 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.display.family}"`;
+    ctx.fillStyle = parseHexToRgba(payload.theme.accentColor, 1);
+    fillTextTracked(ctx, "戰區傾道者", sx(ws.title.headingX), sx(ws.title.headingY), tracking);
+
+    // [Intent] 名稱使用 display font + middle baseline，維持視覺中心穩定，避免字型 ascender 導致垂直抖動。
+    ctx.font = `800 ${Math.round(9.2 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.display.family}"`;
+    ctx.fillStyle = BATTLE_CARD_NAME_LAYOUT.color;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    fillTextTracked(ctx, payload.displayName, sx(ws.displayName.x), sx(ws.displayName.y), tracking);
+
+    drawSlantedRect(
+      ctx,
+      sx(ws.stancePanel.x),
+      sx(ws.stancePanel.y),
+      sx(ws.stancePanel.width),
+      sx(ws.stancePanel.height),
+      skewOffsetForHeight(sx(ws.stancePanel.height))
+    );
+    const centerPanelGradient = ctx.createLinearGradient(
+      sx(ws.stancePanel.x),
+      sx(ws.stancePanel.y),
+      sx(ws.stancePanel.x + ws.stancePanel.width),
+      sx(ws.stancePanel.y + ws.stancePanel.height)
+    );
+    centerPanelGradient.addColorStop(0, parseHexToRgba(payload.theme.primaryColor, 0.95));
+    centerPanelGradient.addColorStop(1, "rgba(0,0,0,0.74)");
+    ctx.fillStyle = centerPanelGradient;
+    ctx.fill();
+    ctx.drawImage(crownImage, sx(ws.crown.x), sx(ws.crown.y), sx(ws.crown.size), sx(ws.crown.size));
+    ctx.font = `900 ${Math.round(37 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.display.family}"`;
+    ctx.fillStyle = parseHexToRgba(payload.theme.accentColor, 1);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    drawGlowEffect(
+      ctx,
+      battleTitle,
+      sx(ws.title.stanceX),
+      sx(ws.title.stanceY),
+      parseHexToRgba(payload.theme.accentColor, 0.85)
+    );
+
+    // 底部壓縮條圖：中心區留給主標與證詞，不再佔據中段視覺主場。
     for (const dimension of BATTLE_CARD_DIMENSIONS) {
       const numericValue = Number(payload.labels[dimension.key]) || 0;
       const labelValue = Math.max(0, Math.min(100, numericValue));
-      const y = BATTLE_CARD_BAR_COMMON.topY + dimension.order * BATTLE_CARD_BAR_COMMON.rowGap;
+      const y = sx(ws.bars.startY) + dimension.order * sx(ws.bars.rowGap);
 
-      const trackY = y - BATTLE_CARD_BAR_COMMON.height / 2;
+      const trackY = y - sx(ws.bars.height / 2);
       ctx.fillStyle = BATTLE_CARD_BAR_COMMON.trackColor;
       ctx.fillRect(
-        BATTLE_CARD_BAR_COMMON.startX,
+        sx(ws.bars.startX),
         trackY,
-        BATTLE_CARD_BAR_COMMON.maxWidth,
-        BATTLE_CARD_BAR_COMMON.height
+        sx(ws.bars.width),
+        sx(ws.bars.height)
       );
 
       // [Layout Math] 公式固定為 value 比例 * maxWidth，確保 0~100 的資料域在任何版型下都線性映射到同一可視軌道。
-      const fillWidth = (labelValue / 100) * BATTLE_CARD_BAR_COMMON.maxWidth;
-      ctx.fillStyle = dimension.color;
-      ctx.fillRect(BATTLE_CARD_BAR_COMMON.startX, trackY, fillWidth, BATTLE_CARD_BAR_COMMON.height);
+      const fillWidth = (labelValue / 100) * sx(ws.bars.width);
+      ctx.fillStyle = dimension.key === "GOAT" ? payload.theme.accentColor : dimension.color;
+      ctx.fillRect(sx(ws.bars.startX), trackY, fillWidth, sx(ws.bars.height));
 
-      ctx.font = `700 ${BATTLE_CARD_BAR_COMMON.labelFontSize}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+      ctx.font = `800 ${Math.round(7 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
       ctx.fillStyle = BATTLE_CARD_PALETTE.textSecondary;
-      ctx.textAlign = BATTLE_CARD_BAR_COMMON.labelAlign;
-      ctx.textBaseline = BATTLE_CARD_BAR_COMMON.textBaseline;
-      ctx.fillText(dimension.key, BATTLE_CARD_BAR_COMMON.labelX, y);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      fillTextTracked(ctx, dimension.key, sx(ws.bars.labelX), y, tracking);
 
-      ctx.font = `700 ${BATTLE_CARD_BAR_COMMON.valueFontSize}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+      ctx.font = `800 ${Math.round(6.6 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
       ctx.fillStyle = BATTLE_CARD_PALETTE.valueText;
-      ctx.textAlign = BATTLE_CARD_BAR_COMMON.valueAlign;
-      ctx.textBaseline = BATTLE_CARD_BAR_COMMON.textBaseline;
-      ctx.fillText(String(Math.round(labelValue)), BATTLE_CARD_BAR_COMMON.valueX, y);
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(Math.round(labelValue)), sx(ws.bars.valueX), y);
+      console.log(`RENDER_TRACE: Drawing ${dimension.key} with value ${labelValue} at Y=${y}`);
       console.log(`[generateBattleCard] Loop Dimension: ${dimension.key} Done`);
     }
-    ctx.font = `600 26px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    drawSlantedRect(
+      ctx,
+      sx(ws.evidencePanel.x),
+      sx(ws.evidencePanel.y),
+      sx(ws.evidencePanel.width),
+      sx(ws.evidencePanel.height),
+      skewOffsetForHeight(sx(ws.evidencePanel.height))
+    );
+    ctx.fillStyle = "rgba(0, 0, 0, 0.78)";
+    ctx.fill();
+    ctx.font = `800 ${Math.round(4.6 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("裁決證詞：", sx(14), sx(196));
+    ctx.font = `800 ${Math.round(6.6 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    ctx.fillStyle = parseHexToRgba(payload.theme.accentColor, 0.95);
+    fillTextTracked(ctx, payload.evidenceText || "20 火力 AII-NBA", sx(14), sx(206), tracking);
+
+    ctx.font = `800 ${Math.round(5.2 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("BUILD_TIMESTAMP: 2026-04-01-V2", 50, 1870);
+    ctx.fillText("TW ・ Taipei", sx(ws.footer.leftMetaX), sx(ws.footer.leftMetaY));
+    ctx.font = `800 ${Math.round(5.4 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    ctx.fillStyle = "#FFFFFF";
+    fillTextTracked(ctx, payload.regionText || "Taipei・專業戰線", sx(ws.footer.regionX), sx(ws.footer.regionY), tracking);
+    ctx.font = `800 ${Math.round(4.8 * ws.scaleBase)}px "${BATTLE_CARD_ASSETS.fonts.sans.family}"`;
+    ctx.textAlign = "right";
+    ctx.fillStyle = parseHexToRgba(payload.theme.accentColor, 0.95);
+    fillTextTracked(ctx, "THE GOAT METER", sx(ws.footer.brandX), sx(ws.footer.brandY), tracking);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText("BUILD_TIMESTAMP: 2026-04-01-V4", sx(ws.footer.buildX), sx(ws.footer.buildY));
 
     const pngBuffer = canvas.toBuffer("image/png");
     const downloadBase64 = pngBuffer.toString("base64");
