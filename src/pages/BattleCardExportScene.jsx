@@ -9,7 +9,13 @@ import { STANCE_COLORS } from "../lib/constants";
 import BattleCard from "../components/BattleCard";
 
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
-const EXPORT_SIZE_PX = 1080;
+const EXPORT_SIZE_PX = 1920;
+
+function applyExportCanvasQuality(ctx) {
+  // 統一匯出引擎參數：每次 drawImage 前先套用，確保多層繪製品質一致。
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+}
 
 function isMediaPluginSavePermissionOk(perm) {
   if (!perm || typeof perm !== "object") return false;
@@ -99,8 +105,7 @@ async function cropScreenshotToExportSquare(rawScreenshotDataUrl, exportRect, vi
   canvas.height = EXPORT_SIZE_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("2d context unavailable");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
+  applyExportCanvasQuality(ctx);
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, EXPORT_SIZE_PX, EXPORT_SIZE_PX);
   return canvas.toDataURL("image/png", 1.0);
 }
