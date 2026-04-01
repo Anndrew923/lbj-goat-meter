@@ -223,6 +223,7 @@ export const generateBattleCard = onCall(
   }
 );
 
+
 /**
  * 解析指紋用 pepper：優先 Gen2 secret.value()，失敗則 GOAT_FINGERPRINT_PEPPER（Emulator／本機）。
  * Cloud Run 上若兩者皆空會略過 24h 查重，故在 K_SERVICE 存在時寫 warn 便於營運發現未掛 Secret。

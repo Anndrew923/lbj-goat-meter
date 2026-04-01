@@ -30,8 +30,6 @@ export default function RenderStudioPage() {
       ) {
         return;
       }
-      // 設計意圖：以一次性權杖綁定 render job，前端需雙重驗證 (path + field) 才允許渲染，
-      // 避免任意猜測 jobId 造成未授權取圖。
       setPayload(tokenData.payload || null);
     };
     run().catch(() => {});
