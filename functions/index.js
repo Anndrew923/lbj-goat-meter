@@ -285,8 +285,9 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
     canvas = createCanvas(1920, 1920);
     ctx = canvas.getContext("2d");
     
-    // 比例尺映射：嚴格依據 BattleCard.jsx 的 640px 基準放大至 1920px
-    const SCALE = 1920 / 640;
+    // 比例尺映射：強制採用 worksheet 365 座標系，避免 640 基準造成幾何漂移
+    const ws = BATTLE_CARD_WORKSHEET_365;
+    const SCALE = 1920 / 365;
     const sx = (n) => Math.round(n * SCALE);
 
     const stanceColor = STANCE_COLORS[payload.status.toLowerCase()] || "#FFD700";
@@ -296,14 +297,16 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
 
     // 1. 繪製背景與 115deg 漸層戰場分色
     ctx.drawImage(baseImage, 0, 0, 1920, 1920);
-    const bgGrad = ctx.createLinearGradient(0, 0, 1920, 1000);
-    bgGrad.addColorStop(0, parseHexToRgba(payload.theme.primaryColor, 1));
-    bgGrad.addColorStop(0.45, parseHexToRgba(payload.theme.primaryColor, 0.9));
-    bgGrad.addColorStop(0.5, "rgba(0,0,0,0.8)");
-    bgGrad.addColorStop(0.55, parseHexToRgba(payload.theme.secondaryColor, 0.9));
-    bgGrad.addColorStop(1, parseHexToRgba(payload.theme.secondaryColor, 1));
+    const bgGrad = ctx.createLinearGradient(0, 0, 1920, 1920);
+    bgGrad.addColorStop(0, payload.theme.primaryColor);
+    bgGrad.addColorStop(0.48, payload.theme.primaryColor);
+    bgGrad.addColorStop(0.52, "#000000");
+    bgGrad.addColorStop(1, payload.theme.secondaryColor);
+    ctx.globalAlpha = 0.85;
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, 1920, 1920);
+    ctx.globalAlpha = 1.0;
+    const getSlant = (h) => sx(h) * 0.2125;
 
     // 頭像處理
     let avatarImage = defaultAvatarImage;
@@ -324,18 +327,33 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
     ctx.fillStyle = parseHexToRgba(stanceColor, 0.8);
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    fillTextTracked(ctx, payload.battleSubtitle, sx(320), sx(45), sx(2.8));
+    fillTextTracked(ctx, payload.battleSubtitle, sx(ws.title.subtitleX), sx(ws.title.subtitleY), sx(2.8));
 
     ctx.font = `900 italic ${sx(36)}px "${displayFont}"`;
     ctx.fillStyle = stanceColor;
+    ctx.strokeStyle = stanceColor;
+    ctx.lineWidth = sx(1.5);
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    drawGlowEffect(ctx, payload.battleTitle, sx(320), sx(85), parseHexToRgba(stanceColor, 0.6));
+    ctx.strokeText(payload.battleTitle, sx(ws.title.headingX), sx(ws.title.headingY));
+    drawGlowEffect(
+      ctx,
+      payload.battleTitle,
+      sx(ws.title.headingX),
+      sx(ws.title.headingY),
+      parseHexToRgba(stanceColor, 0.6)
+    );
 
     // 3. 身份面板 (Identity Panel)
     ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.beginPath();
-    ctx.roundRect(sx(20), sx(125), sx(600), sx(64), sx(12));
-    ctx.fill();
+    drawSlantedRect(
+      ctx,
+      sx(ws.identityPanel.x),
+      sx(ws.identityPanel.y),
+      sx(ws.identityPanel.width),
+      sx(ws.identityPanel.height),
+      getSlant(ws.identityPanel.height)
+    );
 
     // 圓形頭像裁切與繪製
     ctx.save();
@@ -367,23 +385,36 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
     ctx.fillStyle = "rgba(0,0,0,0.75)";
     ctx.shadowColor = "rgba(0,0,0,0.5)";
     ctx.shadowBlur = sx(50);
-    ctx.beginPath();
-    ctx.roundRect(sx(16), sx(200), sx(608), sx(100), sx(16));
-    ctx.fill();
+    drawSlantedRect(
+      ctx,
+      sx(ws.stancePanel.x),
+      sx(ws.stancePanel.y),
+      sx(ws.stancePanel.width),
+      sx(ws.stancePanel.height),
+      getSlant(ws.stancePanel.height)
+    );
     ctx.shadowBlur = 0;
 
     ctx.font = `900 italic ${sx(48)}px "${displayFont}"`;
     ctx.fillStyle = stanceColor;
+    ctx.strokeStyle = stanceColor;
+    ctx.lineWidth = sx(1.5);
     ctx.textAlign = "center";
-    drawGlowEffect(ctx, stanceText, sx(320), sx(250), stanceColor);
+    ctx.strokeText(stanceText, sx(ws.title.stanceX), sx(ws.title.stanceY));
+    drawGlowEffect(ctx, stanceText, sx(ws.title.stanceX), sx(ws.title.stanceY), stanceColor);
 
     // 5. 證詞區 (Evidence Panel)
     const reasonsText = payload.evidenceText || payload.reasonLabels.join(" / ");
     if (reasonsText) {
       ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.beginPath();
-      ctx.roundRect(sx(20), sx(310), sx(600), sx(80), sx(8));
-      ctx.fill();
+      drawSlantedRect(
+        ctx,
+        sx(ws.evidencePanel.x),
+        sx(ws.evidencePanel.y),
+        sx(ws.evidencePanel.width),
+        sx(ws.evidencePanel.height),
+        getSlant(ws.evidencePanel.height)
+      );
       
       ctx.strokeStyle = "rgba(255,255,255,0.1)";
       ctx.lineWidth = sx(1);
@@ -416,8 +447,19 @@ export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppChec
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillText(payload.rankLabel, sx(20), sx(592));
 
-    // 品牌鋼印與皇冠
-    ctx.drawImage(crownImage, sx(564 - 56), sx(556), sx(56), sx(56));
+    // 品牌鋼印與皇冠（依中央立場區動態偏移）
+    const stancePanelCenterX = sx(ws.stancePanel.x + ws.stancePanel.width / 2);
+    const stancePanelY = sx(ws.stancePanel.y);
+    const crownSize = sx(ws.crown.size);
+    const crownOffsetX = sx(ws.crown.x - ws.title.stanceX);
+    const crownOffsetY = sx(ws.crown.y - ws.stancePanel.y);
+    ctx.drawImage(
+      crownImage,
+      Math.round(stancePanelCenterX + crownOffsetX - crownSize / 2),
+      Math.round(stancePanelY + crownOffsetY),
+      crownSize,
+      crownSize
+    );
     ctx.font = `normal ${sx(12)}px "${sansFont}"`;
     ctx.fillStyle = "#D4AF37";
     ctx.textAlign = "right";
