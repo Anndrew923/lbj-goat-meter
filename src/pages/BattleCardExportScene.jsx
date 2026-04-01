@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
-import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
-import { Screenshot } from "capacitor-screenshot";
 import { useTranslation } from "react-i18next";
+import crownIcon from "../assets/goat-crown-icon.png";
 import { STANCE_COLORS } from "../lib/constants";
-import BattleCard from "../components/BattleCard";
+import { getStance } from "../i18n/i18n";
+import { prepareBattleAssets } from "../utils/svgAssetPreflight";
+import { buildBattleReportSvg } from "../utils/battleReportSvgTemplate";
 
 const GOAT_ALBUM_NAME = "GOAT_Warzone";
 const EXPORT_SIZE_PX = 1920;
+const SVG_DESIGN_SIZE = 1080;
+const STRESS_TEST_QUERY_KEY = "stressTest";
 
 function applyExportCanvasQuality(ctx) {
   // 統一匯出引擎參數：每次 drawImage 前先套用，確保多層繪製品質一致。
@@ -47,73 +50,112 @@ async function showBattleReportSavedToast(text) {
   }
 }
 
-function normalizeScreenshotDataUrl(result) {
-  if (!result) return "";
-  if (typeof result.base64 === "string" && result.base64) return `data:image/png;base64,${result.base64}`;
-  if (typeof result.webPath === "string" && result.webPath) return result.webPath;
-  if (typeof result.path === "string" && result.path) return result.path;
-  return "";
-}
-
-async function takeViewportScreenshotDataUrl() {
-  const screenshot = await Screenshot.take();
-  return normalizeScreenshotDataUrl(screenshot);
-}
-
 function loadImage(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("screenshot decode failed"));
+    img.onerror = () => reject(new Error("svg image decode failed"));
     img.src = dataUrl;
   });
 }
 
-function clamp(val, min, max) {
-  return Math.max(min, Math.min(max, val));
+async function assertExportImageSize(dataUrl) {
+  const renderedImage = await loadImage(dataUrl);
+  const width = renderedImage.naturalWidth || renderedImage.width;
+  const height = renderedImage.naturalHeight || renderedImage.height;
+  if (width !== EXPORT_SIZE_PX || height !== EXPORT_SIZE_PX) {
+    throw new Error(
+      `[battleReportExport] dimension assertion failed: expected ${EXPORT_SIZE_PX}x${EXPORT_SIZE_PX}, got ${width}x${height}`,
+    );
+  }
 }
 
-function getViewportSnapshot() {
-  const vv = window.visualViewport;
-  if (!vv) {
-    return {
-      width: Math.max(1, window.innerWidth),
-      height: Math.max(1, window.innerHeight),
-      offsetLeft: 0,
-      offsetTop: 0,
-    };
+async function renderSvgMarkupToPngDataUrl(svgMarkup) {
+  // [ARCH_LOCK] Pure SVG path. DO NOT re-introduce screenshots.
+  const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+  const svgBlobUrl = URL.createObjectURL(svgBlob);
+  try {
+    const decodedSvgImage = await loadImage(svgBlobUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = EXPORT_SIZE_PX;
+    canvas.height = EXPORT_SIZE_PX;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("2d context unavailable");
+    applyExportCanvasQuality(ctx);
+    ctx.drawImage(decodedSvgImage, 0, 0, SVG_DESIGN_SIZE, SVG_DESIGN_SIZE, 0, 0, EXPORT_SIZE_PX, EXPORT_SIZE_PX);
+    return canvas.toDataURL("image/png", 1.0);
+  } finally {
+    URL.revokeObjectURL(svgBlobUrl);
   }
+}
+
+function buildBattleReportInput(safePayload, t) {
+  const stanceDisplayName =
+    (getStance(safePayload.status)?.primary ?? (safePayload.status ? String(safePayload.status).toUpperCase() : "GOAT"))
+      .toUpperCase()
+      .trim() || "GOAT";
+  const wallText = String(safePayload.voterTeam || "LAL").toUpperCase().trim() || "LAL";
+  const regionText = [safePayload.country, safePayload.city].filter(Boolean).join(" · ") || t("global");
   return {
-    width: Math.max(1, vv.width),
-    height: Math.max(1, vv.height),
-    offsetLeft: vv.offsetLeft ?? 0,
-    offsetTop: vv.offsetTop ?? 0,
+    photoURL: safePayload.photoURL,
+    displayName: safePayload.displayName || t("anonymousWarrior"),
+    teamColors: safePayload.teamColors,
+    stanceColor: safePayload.stanceColor,
+    battleSubtitle: safePayload.battleSubtitle || "",
+    battleTitle: safePayload.battleTitle || "",
+    isTitleUppercase: Boolean(safePayload.isTitleUppercase),
+    reasonLabels: Array.isArray(safePayload.reasonLabels) ? safePayload.reasonLabels : [],
+    wallText,
+    stanceDisplayName,
+    teamLineText: safePayload.teamLabel ? String(safePayload.teamLabel).toUpperCase() : "—",
+    regionText,
+    rankLineText: safePayload.rankLabel || t("rankLabel"),
+    brandLine: "The GOAT Meter",
+    metaFooterLine: t("globalStats"),
+    disclaimerLine: t("disclaimerCommunity"),
   };
 }
 
-async function cropScreenshotToExportSquare(rawScreenshotDataUrl, exportRect, viewport) {
-  const img = await loadImage(rawScreenshotDataUrl);
-  const scaleX = img.width / viewport.width;
-  const scaleY = img.height / viewport.height;
-  const sx = clamp(Math.round((exportRect.left + viewport.offsetLeft) * scaleX), 0, img.width - 1);
-  const sy = clamp(Math.round((exportRect.top + viewport.offsetTop) * scaleY), 0, img.height - 1);
-  const sw = clamp(Math.round(exportRect.width * scaleX), 1, img.width - sx);
-  const sh = clamp(Math.round(exportRect.height * scaleY), 1, img.height - sy);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = EXPORT_SIZE_PX;
-  canvas.height = EXPORT_SIZE_PX;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("2d context unavailable");
-  applyExportCanvasQuality(ctx);
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, EXPORT_SIZE_PX, EXPORT_SIZE_PX);
-  return canvas.toDataURL("image/png", 1.0);
+async function generateBattleReportPngDataUrl(reportInput) {
+  const preparedAssets = await prepareBattleAssets({
+    photoURL: reportInput.photoURL,
+    crownIconSrc: crownIcon,
+  });
+  if (preparedAssets.avatarDataUri === preparedAssets.fallbackSilhouetteDataUri) {
+    console.warn("[battleReportExport] avatar fallback used due to CORS/cache fetch limitation");
+  }
+  const svgMarkup = buildBattleReportSvg(reportInput, {
+    ...preparedAssets,
+    colorWash: "",
+  });
+  try {
+    const export1920DataUrl = await renderSvgMarkupToPngDataUrl(svgMarkup);
+    await assertExportImageSize(export1920DataUrl);
+    return export1920DataUrl;
+  } catch (error) {
+    throw new Error(`[battleReportExport] SVG render failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
-async function waitFrames(count) {
-  for (let i = 0; i < count; i += 1) {
-    await new Promise((r) => requestAnimationFrame(r));
-  }
+function buildStressTestPayload(t) {
+  return {
+    photoURL: "",
+    displayName: "THE-LONGEST-LEGACY-NAME-OF-THE-ARENA-CHAMPION-2026",
+    voterTeam: "LAL",
+    teamLabel: "LAKERS ELITE SUPPORTERS CHAPTER",
+    status: "goat",
+    reasonLabels: ["Playmaking gravity", "Playoff durability", "Era-defining IQ"],
+    city: "Los Angeles",
+    country: "USA",
+    rankLabel: t("rankLabel"),
+    teamColors: { primary: "#FF0000", secondary: "#BF57FF" },
+    battleTitle:
+      "THE KING REWRITES BASKETBALL HISTORY WITH TWO-LINE PRESSURE TEST FOR VERTICAL FLOW",
+    battleSubtitle: "STRESS TEST MODE",
+    warzoneStats: null,
+    isTitleUppercase: true,
+    fileBaseWeb: `GOAT-Stress-Test-${Date.now()}`,
+  };
 }
 
 export default function BattleCardExportScene() {
@@ -122,9 +164,8 @@ export default function BattleCardExportScene() {
   const navigate = useNavigate();
   const [isRunning, setIsRunning] = useState(true);
   const runningRef = useRef(false);
-  const exportSquareRef = useRef(null);
-  const exportCardRectRef = useRef(null);
-  const exportPayload = location.state?.exportPayload ?? null;
+  const stressTestMode = import.meta.env.DEV && new URLSearchParams(location.search).get(STRESS_TEST_QUERY_KEY) === "1";
+  const exportPayload = location.state?.exportPayload ?? (stressTestMode ? buildStressTestPayload(t) : null);
   const action = location.state?.action === "download" ? "download" : "save";
   const returnTo = typeof location.state?.returnTo === "string" ? location.state.returnTo : "/vote";
 
@@ -152,77 +193,39 @@ export default function BattleCardExportScene() {
 
     const run = async () => {
       try {
-        if (!Capacitor.isNativePlatform()) {
-          await Dialog.alert({
-            title: t("exportFailedTitle"),
-            message: t("exportFailedNativeRenderAnomalyAdvice"),
-          });
-          navigate(returnTo, { replace: true });
-          return;
-        }
-        if (typeof Media.checkPermissions === "function") {
+        const isNative = Capacitor.isNativePlatform();
+        if (isNative && action === "save" && typeof Media.checkPermissions === "function") {
           const check = await Media.checkPermissions();
           if (!isMediaPluginSavePermissionOk(check)) {
             const request = await Media.requestPermissions();
             if (!isMediaPluginSavePermissionOk(request)) {
-              await Dialog.alert({
-                title: t("galleryPermissionTitle"),
-                message: t("needPhotoPermissionToSave"),
-              });
+              console.warn("[BattleCardExportScene] save permission denied");
               navigate(returnTo, { replace: true });
               return;
             }
           }
         }
 
-        if (typeof document !== "undefined" && document.fonts?.ready) {
-          await document.fonts.ready;
-        }
-        // Smart Wait: fonts ready + multi-frame，確保濾鏡合成與最終版面穩定。
-        await waitFrames(3);
-        await new Promise((r) => setTimeout(r, 120));
-
-        let cropped1080DataUrl = "";
-        let lastError = null;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          try {
-                    await waitFrames(2 + attempt);
-            const exportRect = exportCardRectRef.current?.getBoundingClientRect?.();
-            if (!exportRect || exportRect.width <= 0 || exportRect.height <= 0) {
-              throw new Error("invalid export rect");
-            }
-            const viewport = getViewportSnapshot();
-            const screenshotData = await takeViewportScreenshotDataUrl();
-            if (!screenshotData) throw new Error("empty screenshot data");
-            cropped1080DataUrl = await cropScreenshotToExportSquare(screenshotData, exportRect, viewport);
-            if (cropped1080DataUrl) break;
-          } catch (e) {
-            lastError = e;
-          }
-        }
-        if (!cropped1080DataUrl) throw lastError ?? new Error("capture retry exhausted");
+        const reportInput = buildBattleReportInput(safePayload, t);
+        const export1920DataUrl = await generateBattleReportPngDataUrl(reportInput);
 
         if (action === "save") {
           const albumIdentifier = await ensureGoatAlbumIdentifier();
           await Media.savePhoto({
-            path: cropped1080DataUrl,
+            path: export1920DataUrl,
             albumIdentifier: albumIdentifier ?? GOAT_ALBUM_NAME,
             fileName: `GOAT-Card-${Date.now()}`,
           });
           await showBattleReportSavedToast(t("battleReportSavedToGallery"));
         } else {
           const a = document.createElement("a");
-          a.href = cropped1080DataUrl;
+          a.href = export1920DataUrl;
           const fileBase = safePayload.fileBaseWeb || `GOAT-Card-${Date.now()}`;
           a.download = `${fileBase}.png`;
           a.click();
         }
       } catch (err) {
-        await Dialog.alert({
-          title: t("exportFailedTitle"),
-          message: t("exportFailedNativeRenderAnomalyAdvice"),
-        });
-        console.error("[BattleCardExportScene] capture failed", err);
+        console.error("[BattleCardExportScene] SVG export failed", err);
       } finally {
         setIsRunning(false);
         navigate(returnTo, { replace: true });
@@ -231,69 +234,15 @@ export default function BattleCardExportScene() {
 
     run();
   }, [safePayload, action, navigate, returnTo, t]);
-
-  useEffect(() => {
-    if (!safePayload) return;
-    const root = exportSquareRef.current;
-    if (!root) return;
-    const syncCardRectTarget = () => {
-      const card = root.querySelector('[data-ref="battle-card-ref"]');
-      exportCardRectRef.current = card instanceof HTMLElement ? card : null;
-    };
-    syncCardRectTarget();
-    const observer = new MutationObserver(syncCardRectTarget);
-    observer.observe(root, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [safePayload]);
-
   if (!safePayload) return null;
 
   return (
     <div className="fixed inset-0 z-[12000] bg-black flex items-center justify-center overflow-hidden">
-      <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-        <div
-          ref={exportSquareRef}
-          style={{
-            width: `${EXPORT_SIZE_PX}px`,
-            height: `${EXPORT_SIZE_PX}px`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <BattleCard
-            open
-            onClose={() => {}}
-            onRevote={undefined}
-            revoking={false}
-            revoteError={null}
-            onRevoteReload={undefined}
-            photoURL={safePayload.photoURL}
-            displayName={safePayload.displayName}
-            voterTeam={safePayload.voterTeam}
-            teamLabel={safePayload.teamLabel}
-            status={safePayload.status}
-            reasonLabels={safePayload.reasonLabels}
-            city={safePayload.city}
-            country={safePayload.country}
-            rankLabel={safePayload.rankLabel}
-            exit={{ opacity: 1, scale: 1 }}
-            teamColors={safePayload.teamColors}
-            battleTitle={safePayload.battleTitle}
-            battleSubtitle={safePayload.battleSubtitle}
-            warzoneStats={safePayload.warzoneStats}
-            isTitleUppercase={safePayload.isTitleUppercase}
-            isExportReady
-            onExportUnlock={undefined}
-            onRequestRewardAd={undefined}
-            onExportStart={undefined}
-            onExportEnd={undefined}
-            arenaAnimationsPaused
-            exportSceneMode
-            disablePortal
-          />
+      {stressTestMode ? (
+        <div className="absolute top-4 left-4 px-2 py-1 rounded bg-white/10 text-white/70 text-xs">
+          Stress Test Mode
         </div>
-      </div>
+      ) : null}
       {isRunning ? (
         <div className="absolute bottom-6 text-white/70 text-sm">{t("generatingHighResReport")}</div>
       ) : null}
