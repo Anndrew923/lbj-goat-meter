@@ -88,6 +88,8 @@ const BattleCard = forwardRef(function BattleCard({
   exportSceneMode = false,
   disablePortal = false,
   renderScale = 1,
+  /** Render Studio / Puppeteer：版面與字型、圖片就緒時觸發一次（供 #render-ready-signal） */
+  onReady,
 }, ref) {
   const { t } = useTranslation("common");
   const navigate = useNavigate();
@@ -110,6 +112,9 @@ const BattleCard = forwardRef(function BattleCard({
   /** 非同步匯出完成時讀取「目前」是否仍開啟戰報（避免閉包抓到舊的 open） */
   const openRef = useRef(open);
   openRef.current = open;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const exportReadyOnceRef = useRef(false);
   const stanceColor = status
     ? (STANCE_COLORS[status] ?? STANCE_COLORS.goat)
     : STANCE_COLORS.goat;
@@ -169,6 +174,34 @@ const BattleCard = forwardRef(function BattleCard({
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!exportSceneMode || !open) {
+      if (!open) exportReadyOnceRef.current = false;
+      return;
+    }
+    // 無 onReady 時不阻塞：避免一般匯出場景白跑字型／圖片等待
+    if (!onReady) return;
+    let cancelled = false;
+    const run = async () => {
+      const imagePromises = Array.from(document.images || []).map((img) => {
+        if (img.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          img.addEventListener("load", resolve, { once: true });
+          img.addEventListener("error", resolve, { once: true });
+        });
+      });
+      await Promise.allSettled([document.fonts?.ready, Promise.allSettled(imagePromises)]);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (cancelled || exportReadyOnceRef.current) return;
+      exportReadyOnceRef.current = true;
+      onReadyRef.current?.();
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [exportSceneMode, open, onReady]);
 
   const stableMetaTimestamp = useRef(Date.now());
 

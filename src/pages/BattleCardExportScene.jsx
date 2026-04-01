@@ -223,7 +223,7 @@ export default function BattleCardExportScene() {
         if (!fns) {
           throw new Error("Firebase Functions unavailable");
         }
-        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 130000 });
+        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 60000 });
         const res = await callable({
           ...callablePayload,
           uid: user.uid,

@@ -133,9 +133,19 @@ function parseGenerateBattleCardPayload(data, authUid) {
   };
 }
 
-/** 優化後應多數在數十秒內完成；保留彈性上限給冷啟 + 大圖。 */
+/**
+ * 戰報卡 SSR：minInstances 降低 Chromium 冷啟；concurrency:1 避免同實例多開 Puppeteer（計費與配額需專案自行評估）。
+ */
 export const generateBattleCard = onCall(
-  { memory: "2GiB", timeoutSeconds: 120, enforceAppCheck: false, cpu: 1 },
+  {
+    memory: "2GiB",
+    timeoutSeconds: 30,
+    enforceAppCheck: false,
+    cpu: 2,
+    minInstances: 3,
+    /** 單實例僅處理一個 Chromium 工作階段，避免 2GiB 內多開瀏覽器 OOM */
+    concurrency: 1,
+  },
   async (request) => {
     requireAuth(request);
     const payload = parseGenerateBattleCardPayload(request.data, request.auth.uid);
@@ -149,8 +159,9 @@ export const generateBattleCard = onCall(
       process.env.FIREBASE_PROJECT_ID ||
       "lbj-goat-meter";
     const browserBaseUrl = (process.env.RENDER_STUDIO_BASE_URL || "").trim() || `https://${projectId}.web.app`;
-    // hash 路由：瀏覽器 path 為 /，與 Vite base:'./' 之 ./assets 解析一致；pathname /render-studio 會讓 bundle 404
-    const studioUrl = `${browserBaseUrl.replace(/\/+$/, "")}/#/render-studio/${encodeURIComponent(jobId)}?token=${encodeURIComponent(renderToken)}&mode=puppeteer`;
+    const base = browserBaseUrl.replace(/\/+$/, "");
+    /** Hash 路由：path 維持 `/`，相對資產可載入；mode 放 # 前讓 main.jsx 辨識 headless；hash 內帶 token + mode 供 HashRouter。 */
+    const studioUrl = `${base}/?mode=puppeteer#/render-studio/${encodeURIComponent(jobId)}?token=${encodeURIComponent(renderToken)}&mode=puppeteer`;
     let browser = null;
 
     try {
@@ -171,12 +182,20 @@ export const generateBattleCard = onCall(
       });
 
       browser = await puppeteer.launch({
-        args: [...chromium.args, "--no-sandbox", "--disable-setuid-sandbox"],
-        defaultViewport: { width: 1920, height: 1920, deviceScaleFactor: 1 },
+        args: [
+          ...chromium.args,
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-web-security", // 允許無頭環境載入跨網域頭像
+        ],
+        defaultViewport: null,
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
+        /** 須低於雲函式 timeout，避免 CDP 截圖先掛 */
+        protocolTimeout: 25_000,
       });
       const page = await browser.newPage();
+      await page.setViewport({ width: 1080, height: 1080, deviceScaleFactor: 1 });
       await page.setRequestInterception(true);
       page.on("request", (req) => {
         const u = req.url();
@@ -190,33 +209,28 @@ export const generateBattleCard = onCall(
         }
         void req.continue();
       });
-      // 無頭頁面對 getRenderStudioPayload 的 fetch 可能被 App Check / 網路條件擋下，且前端 catch 會靜默失敗，導致 __RENDER_READY__ 永不為 true。
-      // 後端已持有 payload，於導頁前注入 window.__RENDER_STUDIO_BOOT__，攝影棚優先取用，不依賴第二次 HTTP。
-      const bootJson = JSON.stringify({
-        jobId,
-        renderToken,
-        payload: JSON.parse(JSON.stringify(payload)),
+      await page.addStyleTag({
+        content: "* { transition: none !important; animation: none !important; }",
       });
-      await page.evaluateOnNewDocument(
-        (serialized) => {
-          try {
-            window.__RENDER_STUDIO_BOOT__ = JSON.parse(serialized);
-          } catch {
-            window.__RENDER_STUDIO_BOOT__ = null;
-          }
-        },
-        bootJson
-      );
-      // SPA + Firebase 常駐連線會讓 networkidle(0/2) 幾乎永不成立；改以 load 後再等 __RENDER_READY__。
-      await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
-      await page.waitForFunction(() => window.__RENDER_READY__ === true, { timeout: 60000 });
-      const pngBuffer = await page.screenshot({ type: "png" });
+
+      await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 8000 });
+
+      // 訊號在「OTT 取得 + React 掛載」後才延遲 1.5s 發射；計時須從 domcontentloaded 後涵蓋整段
+      await page.waitForSelector("#render-ready-signal", { timeout: 6500 }).catch(() => {
+        console.warn("[generateBattleCard] render-ready-signal not seen within 6.5s, capturing anyway");
+      });
+
+      const imageBuffer = await page.screenshot({
+        type: "jpeg",
+        quality: 80,
+        optimizeForSpeed: true,
+      });
       const bucket = admin.storage().bucket();
-      const objectPath = `exports/battlecards/${randomUUID()}.png`;
+      const objectPath = `exports/battlecards/${randomUUID()}.jpg`;
       const file = bucket.file(objectPath);
 
-      await file.save(pngBuffer, {
-        metadata: { contentType: "image/png", cacheControl: "public, max-age=300" },
+      await file.save(imageBuffer, {
+        metadata: { contentType: "image/jpeg", cacheControl: "public, max-age=300" },
       });
 
       let url = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
@@ -260,7 +274,9 @@ export const generateBattleCard = onCall(
  * Render Studio 專用：以 Admin 讀取一次性 token 文件並回傳 payload。
  *
  * 設計意圖：Puppeteer 開啟的無頭頁面無法可靠取得 App Check token，導致客戶端 Firestore
- * 讀取在「強制 App Check」下會失敗，`__RENDER_READY__` 永不為 true，generateBattleCard 因而 500。
+ * 讀取在「強制 App Check」下會失敗時，舊版無頭頁曾無法設好 `__RENDER_READY__`。
+ * 現行 generateBattleCard 以 `/?mode=puppeteer#/render-studio/:jobId?...` 載入攝影棚，並等待
+ * `#render-ready-signal`（見 RenderStudioPage；payload 就緒後 1.5s 發射，後端約 6.5s 內等待）。
  * 此端點走 Admin SDK，不依賴瀏覽器 App Check；仍以 jobId + OTT 路徑驗證，並檢查過期時間。
  */
 export const getRenderStudioPayload = onRequest(

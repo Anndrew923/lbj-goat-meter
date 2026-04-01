@@ -61,7 +61,8 @@ export default function App() {
   pathnameRef.current = location.pathname
   exitModalOpenRef.current = isExitModalOpen
   const isBattleCardExportScene = location.pathname === '/battlecard-export'
-  const isRenderStudioScene = location.pathname.startsWith('/render-studio/')
+  const isRenderStudioScene =
+    location.pathname === '/render-studio' || location.pathname.startsWith('/render-studio/')
 
   useEffect(() => {
     initializeAdMob().catch(() => {})
@@ -278,6 +279,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/render-studio" element={<RenderStudioPage />} />
         <Route path="/render-studio/:jobId" element={<RenderStudioPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

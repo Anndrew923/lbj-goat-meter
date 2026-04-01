@@ -19,7 +19,10 @@ function isHeadlessRenderStudio() {
   const normalized = raw.startsWith('/') ? raw : `/${raw}`
   if (!normalized.startsWith('/render-studio/')) return false
   const qs = normalized.includes('?') ? normalized.split('?').slice(1).join('?') : ''
-  return new URLSearchParams(qs).get('mode') === 'puppeteer'
+  const hashMode = new URLSearchParams(qs).get('mode')
+  if (hashMode === 'puppeteer') return true
+  // 後端 Puppeteer：mode 可放在 # 前（/?mode=puppeteer#/render-studio/...）以兼容 Vite base 與資產路徑
+  return new URLSearchParams(window.location.search || '').get('mode') === 'puppeteer'
 }
 
 const headlessStudio = isHeadlessRenderStudio()
