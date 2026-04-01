@@ -5,44 +5,12 @@ import {
   buildWallWordSpecs,
   getPowerStanceModel,
 } from "./battleCardMirrorShared.js";
+import { applySvgExportAccentHex, applySvgExportTeamColors } from "./battleCardExportColors.js";
 
 /**
- * Web 匯出 SVG 套版：戰報 PNG 由此模板 rasterize；隊色／點綴色需套用 Overdrive 映射後再進漸層與濾鏡。
+ * SVG 套版：僅供腳本產生 fixture／預設圖；App 執行時匯出已改為 BattleCard DOM 單一路徑。
  */
 const CANVAS_SIZE = 1080;
-
-/** 匯出專用飽和終點色（與 preset-c overdrive 對齊）；鍵為 canonical 主題 6-digit hex */
-const SVG_EXPORT_OVERDRIVE_MAP = Object.freeze({
-  "#8B0000": "#FF0000",
-  "#552583": "#BF57FF",
-  "#D4AF37": "#FFD700",
-  "#008348": "#00FF41",
-  "#006BB6": "#0099FF",
-  "#7A0026": "#FF0000",
-  "#3A0CA3": "#BF57FF",
-});
-
-function normalizeHex6(hex) {
-  const s = String(hex ?? "").trim();
-  if (/^#[0-9A-Fa-f]{8}$/i.test(s)) return `#${s.slice(1, 7).toUpperCase()}`;
-  if (/^#[0-9A-Fa-f]{6}$/i.test(s)) return s.toUpperCase();
-  return "#000000";
-}
-
-/** @param {{ primary: string, secondary: string }} teamColors */
-function applySvgExportTeamColors(teamColors) {
-  const p = normalizeHex6(teamColors?.primary);
-  const s = normalizeHex6(teamColors?.secondary);
-  return {
-    primary: SVG_EXPORT_OVERDRIVE_MAP[p] ?? teamColors?.primary ?? "#FF0000",
-    secondary: SVG_EXPORT_OVERDRIVE_MAP[s] ?? teamColors?.secondary ?? "#BF57FF",
-  };
-}
-
-function applySvgExportAccentHex(hex) {
-  const n = normalizeHex6(hex);
-  return SVG_EXPORT_OVERDRIVE_MAP[n] ?? hex;
-}
 const TITLE_MAX_CHARS_PER_LINE = 22;
 const TITLE_MAX_LINES = 4;
 const EVIDENCE_MAX_CHARS_PER_LINE = 58;
@@ -61,6 +29,11 @@ const P6 = Math.round(24 * SCALE);
 const GAP_1 = Math.round(4 * SCALE);
 const H_16 = Math.round(64 * SCALE);
 const H_20 = Math.round(80 * SCALE);
+
+/** 身份列顯示名基線：+10px 與頭頂皇冠留空 */
+const DISPLAY_NAME_LINE_OFFSET_Y = Math.round(28 * SCALE) + 10;
+/** 身份列隊伍／城市列（teamLineText）基線 */
+const TEAM_AFFILIATION_LINE_OFFSET_Y = Math.round(47 * SCALE);
 
 const TOP_SUBTITLE_FONT_SIZE = Math.round(14 * SCALE);
 const TOP_TITLE_FONT_SIZE = Math.round(56 * SCALE);
@@ -163,7 +136,7 @@ function buildWatermarkTextWall({ wallText, battleTitle, teamColors }) {
         })
         .join("");
       const triple = `${letters}<tspan> </tspan>${letters}<tspan> </tspan>${letters}`;
-      return `<text x="${x}" y="${y}" fill-opacity="${alpha}" font-size="${Math.round(spec.sizePx * SCALE)}" font-style="italic" font-weight="${weight}" letter-spacing="2">${triple}</text>`;
+      return `<text x="${x}" y="${y}" fill-opacity="${alpha}" font-size="${Math.round(spec.sizePx * SCALE)}" font-style="italic" font-weight="${weight}" style="letter-spacing: 0.02em;">${triple}</text>`;
     })
     .join("");
 }
@@ -191,7 +164,11 @@ export function buildBattleReportSvg(input, assets) {
   const subtitleLineHeight = Math.round(20 * SCALE);
   const subtitleOverflowCompensation = Math.max(0, subtitleLineHeight - TOP_SUBTITLE_FONT_SIZE);
   const titleY = subtitleY + TOP_SUBTITLE_FONT_SIZE + subtitleOverflowCompensation + GAP_1;
-  const titleBottomY = titleY + Math.max(0, titleLines.length - 1) * titleStep + TOP_TITLE_FONT_SIZE;
+  /** 稱號＋戰報主標整體下移 20px，撐開頂部標題區（對應 stanceNameY 335 級距） */
+  const STANCE_TITLE_STACK_SHIFT_Y = 20;
+  const subtitleYDraw = subtitleY + STANCE_TITLE_STACK_SHIFT_Y;
+  const titleYDraw = titleY + STANCE_TITLE_STACK_SHIFT_Y;
+  const titleBottomY = titleYDraw + Math.max(0, titleLines.length - 1) * titleStep + TOP_TITLE_FONT_SIZE;
 
   const idY = titleBottomY + CONTENT_GAP;
   const idTextX = CONTENT_PX + Math.round(76 * SCALE);
@@ -240,14 +217,14 @@ export function buildBattleReportSvg(input, assets) {
   const titleMarkup = titleLines
     .map(
       (line, idx) =>
-        `<text x="${CANVAS_SIZE / 2}" y="${titleY + idx * titleStep}" text-anchor="middle" fill="${stanceColor}" font-size="${TOP_TITLE_FONT_SIZE}" font-style="${input.isTitleUppercase ? "italic" : "normal"}" font-weight="900" filter="url(#fx-neon-overdrive)">${escapeXml(line)}</text>`,
+        `<text x="${CANVAS_SIZE / 2}" y="${titleYDraw + idx * titleStep}" text-anchor="middle" fill="${stanceColor}" font-size="${TOP_TITLE_FONT_SIZE}" font-style="${input.isTitleUppercase ? "italic" : "normal"}" font-weight="900" filter="url(#fx-neon-overdrive)" style="letter-spacing: 0.02em;">${escapeXml(line)}</text>`,
     )
     .join("");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" text-rendering="geometricPrecision">
     <defs>
       <style>
-        text { text-rendering: geometricPrecision; }
+        text { text-rendering: geometricPrecision; letter-spacing: 0.02em; }
       </style>
       <linearGradient id="bg-grad" x1="0%" y1="0%" x2="42.3%" y2="90.6%">
         <stop offset="0%" stop-color="${hexWithAlpha(teamColors.primary, "FF")}" />
@@ -306,7 +283,7 @@ export function buildBattleReportSvg(input, assets) {
       </filter>
 
       <filter id="wall-chrome-overlay" x="-22%" y="-22%" width="144%" height="144%" color-interpolation-filters="sRGB">
-        <feFlood flood-color="${wallChromeSpray}" flood-opacity="0.5" result="spray" />
+        <feFlood flood-color="${wallChromeSpray}" flood-opacity="0.2" result="spray" />
         <feBlend in="SourceGraphic" in2="spray" mode="overlay" result="step1" />
         <feFlood flood-color="${wallOverlayBed}" flood-opacity="0.52" result="bed" />
         <feBlend in="step1" in2="bed" mode="overlay" />
@@ -332,10 +309,14 @@ export function buildBattleReportSvg(input, assets) {
     <rect width="1080" height="1080" fill="url(#bg-grad)" />
     <rect width="1080" height="1080" fill="url(#center-glow)" />
     <rect x="0" y="-108" width="1080" height="1296" fill="url(#reflective-sweep)" opacity="0.9" />
-    <rect x="0" y="-108" width="1080" height="1296" fill="url(#reflective-sweep-145)" opacity="0.78" />
-    <rect width="1080" height="1080" fill="${mixHex(teamColors.primary, teamColors.secondary, 0.5)}" fill-opacity="0.2" />
-    <rect width="1080" height="1080" fill="url(#noise-pattern)" opacity="0.22" />
+    <rect x="0" y="-108" width="1080" height="1296" fill="url(#reflective-sweep-145)" opacity="0.78" style="mix-blend-mode: screen;" />
+    <rect width="1080" height="1080" fill="url(#noise-pattern)" opacity="0.06" />
     <rect width="1080" height="1080" filter="url(#export-fe-turbulence-noise)" opacity="0.42" />
+    ${
+      assets.colorWash
+        ? `<image href="${escapeXml(assets.colorWash)}" x="0" y="0" width="1080" height="1080" preserveAspectRatio="none" opacity="0.2" style="filter: saturate(1.25);" />`
+        : `<rect width="1080" height="1080" fill="${mixHex(teamColors.primary, teamColors.secondary, 0.5)}" fill-opacity="0.2" style="filter: saturate(1.25);" />`
+    }
     ${Array.from({ length: 54 })
       .map((_, i) => `<line x1="0" y1="${i * 20}" x2="1080" y2="${i * 20}" stroke="rgba(255,255,255,0.02)" stroke-width="1" />`)
       .join("")}
@@ -352,39 +333,39 @@ export function buildBattleReportSvg(input, assets) {
     <line x1="${laserMain.x1}" y1="${laserMain.y1}" x2="${laserMain.x2}" y2="${laserMain.y2}" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="3" />
     <line x1="${laserSecondary.x1}" y1="${laserSecondary.y1}" x2="${laserSecondary.x2}" y2="${laserSecondary.y2}" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="12" />
 
-    <text x="${CANVAS_SIZE / 2}" y="${subtitleY}" text-anchor="middle" fill="${hexWithAlpha(stanceColor, "CC")}" font-size="${TOP_SUBTITLE_FONT_SIZE}" font-weight="700" letter-spacing="6">${escapeXml(input.battleSubtitle)}</text>
+    <text x="${CANVAS_SIZE / 2}" y="${subtitleYDraw}" text-anchor="middle" fill="${hexWithAlpha(stanceColor, "CC")}" font-size="${TOP_SUBTITLE_FONT_SIZE}" font-weight="700" style="letter-spacing: 0.35em;">${escapeXml(input.battleSubtitle)}</text>
     ${titleMarkup}
     <image href="${assets.crownDataUri}" x="${idHeaderCrownX}" y="${idHeaderCrownY}" width="${idHeaderCrownSize}" height="${idHeaderCrownSize}" preserveAspectRatio="xMidYMid meet" />
 
     <rect x="${CONTENT_PX}" y="${idY}" width="${CANVAS_SIZE - CONTENT_PX * 2}" height="${H_16}" rx="18" fill="rgba(0,0,0,0.45)" />
     <image href="${assets.avatarDataUri}" x="${idAvatarX}" y="${idAvatarY}" width="${idAvatarSize}" height="${idAvatarSize}" clip-path="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice" />
     <circle cx="${idAvatarX + idAvatarSize / 2}" cy="${idAvatarY + idAvatarSize / 2}" r="${idAvatarSize / 2}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="3" />
-    <text x="${idTextX}" y="${idY + Math.round(28 * SCALE)}" fill="#FFFFFF" font-size="${Math.round(14 * SCALE)}" font-weight="700">${escapeXml(input.displayName)}</text>
-    <text x="${idTextX}" y="${idY + Math.round(47 * SCALE)}" fill="${teamColors.primary}" font-size="${Math.round(14 * SCALE)}" font-weight="700">${escapeXml(input.teamLineText)}</text>
+    <text x="${idTextX}" y="${idY + DISPLAY_NAME_LINE_OFFSET_Y}" fill="#FFFFFF" font-size="${Math.round(14 * SCALE)}" font-weight="700" style="letter-spacing: 0.02em;">${escapeXml(input.displayName)}</text>
+    <text x="${idTextX}" y="${idY + TEAM_AFFILIATION_LINE_OFFSET_Y}" fill="${teamColors.primary}" font-size="${Math.round(14 * SCALE)}" font-weight="700" style="letter-spacing: 0.02em;">${escapeXml(input.teamLineText)}</text>
 
     <rect x="${P6 - Math.round(16 * SCALE)}" y="${powerY}" width="${CANVAS_SIZE - (P6 - Math.round(16 * SCALE)) * 2}" height="${powerH}" rx="32" fill="rgba(0,0,0,0.75)" />
     ${
       powerStanceModel.isMultiLine
-        ? `<text x="${CANVAS_SIZE / 2}" y="${powerTextY}" text-anchor="middle" fill="${stanceColor}" font-size="${Math.round(powerStanceModel.svgFontPx * SCALE)}" font-weight="900" font-style="italic" filter="url(#fx-neon-overdrive)">${escapeXml(powerStanceModel.line1)}</text>
-    ${powerStanceModel.line2 ? `<text x="${CANVAS_SIZE / 2}" y="${powerTextY + Math.round(powerStanceModel.svgLineHeightPx * SCALE)}" text-anchor="middle" fill="${stanceColor}" font-size="${Math.round(powerStanceModel.svgFontPx * SCALE)}" font-weight="900" font-style="italic" filter="url(#fx-neon-overdrive)">${escapeXml(powerStanceModel.line2)}</text>` : ""}`
-        : `<text x="${CANVAS_SIZE / 2}" y="${powerTextY}" text-anchor="middle" fill="${stanceColor}" font-size="${Math.round(powerStanceModel.svgFontPx * SCALE)}" font-weight="900" font-style="italic" filter="url(#fx-neon-overdrive)">${escapeXml(powerStanceModel.line1)}</text>`
+        ? `<text x="${CANVAS_SIZE / 2}" y="${powerTextY}" text-anchor="middle" fill="${stanceColor}" font-size="${Math.round(powerStanceModel.svgFontPx * SCALE)}" font-weight="900" font-style="italic" filter="url(#fx-neon-overdrive)" style="letter-spacing: 0.02em;">${escapeXml(powerStanceModel.line1)}</text>
+    ${powerStanceModel.line2 ? `<text x="${CANVAS_SIZE / 2}" y="${powerTextY + Math.round(powerStanceModel.svgLineHeightPx * SCALE)}" text-anchor="middle" fill="${stanceColor}" font-size="${Math.round(powerStanceModel.svgFontPx * SCALE)}" font-weight="900" font-style="italic" filter="url(#fx-neon-overdrive)" style="letter-spacing: 0.02em;">${escapeXml(powerStanceModel.line2)}</text>` : ""}`
+        : `<text x="${CANVAS_SIZE / 2}" y="${powerTextY}" text-anchor="middle" fill="${stanceColor}" font-size="${Math.round(powerStanceModel.svgFontPx * SCALE)}" font-weight="900" font-style="italic" filter="url(#fx-neon-overdrive)" style="letter-spacing: 0.02em;">${escapeXml(powerStanceModel.line1)}</text>`
     }
 
     ${
       hasEvidence
         ? `<rect x="${CONTENT_PX}" y="${evidenceY}" width="${CANVAS_SIZE - CONTENT_PX * 2}" height="${H_20}" rx="12" fill="rgba(10,10,12,0.88)" />
-    <text x="${CONTENT_PX + Math.round(12 * SCALE)}" y="${evidenceY + Math.round(16 * SCALE)}" fill="rgba(255,255,255,0.62)" font-size="${Math.round(10 * SCALE)}" font-weight="600">${escapeXml(input.evidenceLabel || "裁決證明：")}</text>
-    <text x="${CONTENT_PX + Math.round(12 * SCALE)}" y="${evidenceLine1Y}" fill="${hexWithAlpha(stanceColor, "E8")}" font-size="${Math.round(13 * SCALE)}" font-weight="600">${evidenceInlineTextPrimary}</text>
-    ${evidenceInlineTextSecondary ? `<text x="${CONTENT_PX + Math.round(12 * SCALE)}" y="${evidenceLine2Y}" fill="${hexWithAlpha(stanceColor, "D4")}" font-size="${Math.round(12 * SCALE)}" font-weight="600">${evidenceInlineTextSecondary}</text>` : ""}`
+    <text x="${CONTENT_PX + Math.round(12 * SCALE)}" y="${evidenceY + Math.round(16 * SCALE)}" fill="rgba(255,255,255,0.62)" font-size="${Math.round(10 * SCALE)}" font-weight="600" style="letter-spacing: 0.02em;">${escapeXml(input.evidenceLabel || "裁決證明：")}</text>
+    <text x="${CONTENT_PX + Math.round(12 * SCALE)}" y="${evidenceLine1Y}" fill="${hexWithAlpha(stanceColor, "E8")}" font-size="${Math.round(13 * SCALE)}" font-weight="600" style="letter-spacing: 0.02em;">${evidenceInlineTextPrimary}</text>
+    ${evidenceInlineTextSecondary ? `<text x="${CONTENT_PX + Math.round(12 * SCALE)}" y="${evidenceLine2Y}" fill="${hexWithAlpha(stanceColor, "D4")}" font-size="${Math.round(12 * SCALE)}" font-weight="600" style="letter-spacing: 0.02em;">${evidenceInlineTextSecondary}</text>` : ""}`
         : ""
     }
 
     <line x1="${CONTENT_PX}" y1="${footerY - Math.round(8 * SCALE)}" x2="${CANVAS_SIZE - CONTENT_PX}" y2="${footerY - Math.round(8 * SCALE)}" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
-    <text x="${CONTENT_PX}" y="${footerBaselineY}" fill="${teamColors.primary}" font-size="${Math.round(12 * SCALE)}" font-weight="700">${regionLine}</text>
-    <text x="${CONTENT_PX}" y="${footerRankY}" fill="rgba(255,255,255,0.85)" font-size="${Math.round(12 * SCALE)}" font-weight="500">${rankLine}</text>
+    <text x="${CONTENT_PX}" y="${footerBaselineY}" fill="${teamColors.primary}" font-size="${Math.round(12 * SCALE)}" font-weight="700" style="letter-spacing: 0.02em;">${regionLine}</text>
+    <text x="${CONTENT_PX}" y="${footerRankY}" fill="rgba(255,255,255,0.85)" font-size="${Math.round(12 * SCALE)}" font-weight="500" style="letter-spacing: 0.02em;">${rankLine}</text>
 
     <image href="${assets.crownDataUri}" x="${crownX}" y="${crownY}" width="${crownSize}" height="${crownSize}" preserveAspectRatio="xMidYMid meet" />
-    <text x="${brandTextX}" y="${crownCenterY}" dominant-baseline="middle" text-anchor="end" fill="${stanceColor}" font-size="${Math.round(12 * SCALE)}" font-weight="700">${brandLine || "The GOAT Meter"}</text>
+    <text x="${brandTextX}" y="${crownCenterY}" dominant-baseline="middle" text-anchor="end" fill="${stanceColor}" font-size="${Math.round(12 * SCALE)}" font-weight="700" style="letter-spacing: 0.02em;">${brandLine || "The GOAT Meter"}</text>
     <g opacity="0.88">
       <line x1="0" y1="0" x2="${Math.round(34 * SCALE)}" y2="0" stroke="${hexWithAlpha(teamColors.primary, "F0")}" stroke-width="1" />
       <line x1="0" y1="0" x2="0" y2="${Math.round(34 * SCALE)}" stroke="${hexWithAlpha(teamColors.primary, "F0")}" stroke-width="1" />
@@ -396,8 +377,8 @@ export function buildBattleReportSvg(input, assets) {
       <line x1="${CANVAS_SIZE}" y1="${CANVAS_SIZE}" x2="${CANVAS_SIZE}" y2="${CANVAS_SIZE - Math.round(34 * SCALE)}" stroke="${hexWithAlpha(teamColors.secondary, "F0")}" stroke-width="1" />
     </g>
 
-    <text x="${CANVAS_SIZE / 2}" y="${metaBaseY}" text-anchor="middle" fill="rgba(255,255,255,0.58)" font-size="${FOOTER_META_FONT_SIZE}">${escapeXml(input.metaFooterLine)}</text>
-    <text x="${CANVAS_SIZE / 2}" y="${metaBaseY + Math.round(12 * SCALE)}" text-anchor="middle" fill="rgba(255,255,255,0.64)" font-size="${FOOTER_DISCLAIMER_FONT_SIZE}">${escapeXml(input.disclaimerLine)}</text>
+    <text x="${CANVAS_SIZE / 2}" y="${metaBaseY}" text-anchor="middle" fill="rgba(255,255,255,0.58)" font-size="${FOOTER_META_FONT_SIZE}" style="letter-spacing: 0.02em;">${escapeXml(input.metaFooterLine)}</text>
+    <text x="${CANVAS_SIZE / 2}" y="${metaBaseY + Math.round(12 * SCALE)}" text-anchor="middle" fill="rgba(255,255,255,0.64)" font-size="${FOOTER_DISCLAIMER_FONT_SIZE}" style="letter-spacing: 0.02em;">${escapeXml(input.disclaimerLine)}</text>
     </g>
   </svg>`;
 }

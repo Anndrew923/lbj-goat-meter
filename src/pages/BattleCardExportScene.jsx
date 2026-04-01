@@ -49,6 +49,11 @@ function normalizeScreenshotDataUrl(result) {
   return "";
 }
 
+async function takeViewportScreenshotDataUrl() {
+  const screenshot = await Screenshot.take();
+  return normalizeScreenshotDataUrl(screenshot);
+}
+
 function loadImage(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -62,14 +67,30 @@ function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
 
-async function cropScreenshotToExportSquare(rawScreenshotDataUrl, exportRect) {
+function getViewportSnapshot() {
+  const vv = window.visualViewport;
+  if (!vv) {
+    return {
+      width: Math.max(1, window.innerWidth),
+      height: Math.max(1, window.innerHeight),
+      offsetLeft: 0,
+      offsetTop: 0,
+    };
+  }
+  return {
+    width: Math.max(1, vv.width),
+    height: Math.max(1, vv.height),
+    offsetLeft: vv.offsetLeft ?? 0,
+    offsetTop: vv.offsetTop ?? 0,
+  };
+}
+
+async function cropScreenshotToExportSquare(rawScreenshotDataUrl, exportRect, viewport) {
   const img = await loadImage(rawScreenshotDataUrl);
-  const viewportW = Math.max(1, window.innerWidth);
-  const viewportH = Math.max(1, window.innerHeight);
-  const scaleX = img.width / viewportW;
-  const scaleY = img.height / viewportH;
-  const sx = clamp(Math.round(exportRect.left * scaleX), 0, img.width - 1);
-  const sy = clamp(Math.round(exportRect.top * scaleY), 0, img.height - 1);
+  const scaleX = img.width / viewport.width;
+  const scaleY = img.height / viewport.height;
+  const sx = clamp(Math.round((exportRect.left + viewport.offsetLeft) * scaleX), 0, img.width - 1);
+  const sy = clamp(Math.round((exportRect.top + viewport.offsetTop) * scaleY), 0, img.height - 1);
   const sw = clamp(Math.round(exportRect.width * scaleX), 1, img.width - sx);
   const sh = clamp(Math.round(exportRect.height * scaleY), 1, img.height - sy);
 
@@ -84,6 +105,12 @@ async function cropScreenshotToExportSquare(rawScreenshotDataUrl, exportRect) {
   return canvas.toDataURL("image/png", 1.0);
 }
 
+async function waitFrames(count) {
+  for (let i = 0; i < count; i += 1) {
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+}
+
 export default function BattleCardExportScene() {
   const { t } = useTranslation("common");
   const location = useLocation();
@@ -91,6 +118,7 @@ export default function BattleCardExportScene() {
   const [isRunning, setIsRunning] = useState(true);
   const runningRef = useRef(false);
   const exportSquareRef = useRef(null);
+  const exportCardRectRef = useRef(null);
   const exportPayload = location.state?.exportPayload ?? null;
   const action = location.state?.action === "download" ? "download" : "save";
   const returnTo = typeof location.state?.returnTo === "string" ? location.state.returnTo : "/vote";
@@ -118,12 +146,15 @@ export default function BattleCardExportScene() {
     runningRef.current = true;
 
     const run = async () => {
-      if (!Capacitor.isNativePlatform()) {
-        navigate(returnTo, { replace: true });
-        return;
-      }
-
       try {
+        if (!Capacitor.isNativePlatform()) {
+          await Dialog.alert({
+            title: t("exportFailedTitle"),
+            message: t("exportFailedNativeRenderAnomalyAdvice"),
+          });
+          navigate(returnTo, { replace: true });
+          return;
+        }
         if (typeof Media.checkPermissions === "function") {
           const check = await Media.checkPermissions();
           if (!isMediaPluginSavePermissionOk(check)) {
@@ -142,22 +173,29 @@ export default function BattleCardExportScene() {
         if (typeof document !== "undefined" && document.fonts?.ready) {
           await document.fonts.ready;
         }
-        // Smart Wait: fonts ready + 2 frames，確保霓虹濾鏡完成合成後再快門。
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        // Smart Wait: fonts ready + multi-frame，確保濾鏡合成與最終版面穩定。
+        await waitFrames(3);
         await new Promise((r) => setTimeout(r, 120));
 
-        const screenshot = await Screenshot.take();
-        const screenshotData = normalizeScreenshotDataUrl(screenshot);
-        const exportRect = exportSquareRef.current?.getBoundingClientRect?.();
-        if (!screenshotData || !exportRect || exportRect.width <= 0 || exportRect.height <= 0) {
-          await Dialog.alert({
-            title: t("exportFailedTitle"),
-            message: t("exportFailedNativeRenderAnomalyAdvice"),
-          });
-          navigate(returnTo, { replace: true });
-          return;
+        let cropped1080DataUrl = "";
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+                    await waitFrames(2 + attempt);
+            const exportRect = exportCardRectRef.current?.getBoundingClientRect?.();
+            if (!exportRect || exportRect.width <= 0 || exportRect.height <= 0) {
+              throw new Error("invalid export rect");
+            }
+            const viewport = getViewportSnapshot();
+            const screenshotData = await takeViewportScreenshotDataUrl();
+            if (!screenshotData) throw new Error("empty screenshot data");
+            cropped1080DataUrl = await cropScreenshotToExportSquare(screenshotData, exportRect, viewport);
+            if (cropped1080DataUrl) break;
+          } catch (e) {
+            lastError = e;
+          }
         }
-        const cropped1080DataUrl = await cropScreenshotToExportSquare(screenshotData, exportRect);
+        if (!cropped1080DataUrl) throw lastError ?? new Error("capture retry exhausted");
 
         if (action === "save") {
           const albumIdentifier = await ensureGoatAlbumIdentifier();
@@ -170,7 +208,8 @@ export default function BattleCardExportScene() {
         } else {
           const a = document.createElement("a");
           a.href = cropped1080DataUrl;
-          a.download = `GOAT-Card-${Date.now()}.png`;
+          const fileBase = safePayload.fileBaseWeb || `GOAT-Card-${Date.now()}`;
+          a.download = `${fileBase}.png`;
           a.click();
         }
       } catch (err) {
@@ -188,6 +227,20 @@ export default function BattleCardExportScene() {
     run();
   }, [safePayload, action, navigate, returnTo, t]);
 
+  useEffect(() => {
+    if (!safePayload) return;
+    const root = exportSquareRef.current;
+    if (!root) return;
+    const syncCardRectTarget = () => {
+      const card = root.querySelector('[data-ref="battle-card-ref"]');
+      exportCardRectRef.current = card instanceof HTMLElement ? card : null;
+    };
+    syncCardRectTarget();
+    const observer = new MutationObserver(syncCardRectTarget);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [safePayload]);
+
   if (!safePayload) return null;
 
   return (
@@ -198,6 +251,9 @@ export default function BattleCardExportScene() {
           style={{
             width: `${EXPORT_SIZE_PX}px`,
             height: `${EXPORT_SIZE_PX}px`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
           <BattleCard
