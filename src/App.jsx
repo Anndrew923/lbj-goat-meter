@@ -14,6 +14,7 @@ import PrivacyPage from './pages/PrivacyPage'
 import UniversalAdmin from './pages/UniversalAdmin'
 import BreakingHistoryPage from './pages/BreakingHistoryPage'
 import BattleCardExportScene from './pages/BattleCardExportScene'
+import RenderStudioPage from './pages/RenderStudioPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import ExitConfirmModal from './components/ExitConfirmModal'
@@ -60,6 +61,7 @@ export default function App() {
   pathnameRef.current = location.pathname
   exitModalOpenRef.current = isExitModalOpen
   const isBattleCardExportScene = location.pathname === '/battlecard-export'
+  const isRenderStudioScene = location.pathname.startsWith('/render-studio/')
 
   useEffect(() => {
     initializeAdMob().catch(() => {})
@@ -276,15 +278,16 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/render-studio/:jobId" element={<RenderStudioPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </BreakingVoteProvider>
-      {!isBattleCardExportScene && toastMessage && (
+      {!isBattleCardExportScene && !isRenderStudioScene && toastMessage && (
         <div role="status" aria-live="polite" style={toastStyle}>
           {toastMessage}
         </div>
       )}
-      {!isBattleCardExportScene ? (
+      {!isBattleCardExportScene && !isRenderStudioScene ? (
         <>
           <ExitConfirmModal
             open={isExitModalOpen}

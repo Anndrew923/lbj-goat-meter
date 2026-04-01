@@ -1,0 +1,97 @@
+import { useEffect, useMemo, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { useParams, useSearchParams } from "react-router-dom";
+import BattleCard from "../components/BattleCard";
+import { db } from "../lib/firebase";
+
+export default function RenderStudioPage() {
+  const { jobId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const [payload, setPayload] = useState(null);
+  const token = (searchParams.get("token") || "").trim();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.__RENDER_READY__ = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!db || !jobId.trim() || !token) return;
+      const tokenSnap = await getDoc(doc(db, "render_jobs", jobId.trim(), "tokens", token));
+      if (!tokenSnap.exists() || cancelled) return;
+      const tokenData = tokenSnap.data() || {};
+      if (
+        tokenData.jobId !== jobId.trim() ||
+        typeof tokenData.renderToken !== "string" ||
+        tokenData.renderToken !== token
+      ) {
+        return;
+      }
+      // 設計意圖：以一次性權杖綁定 render job，前端需雙重驗證 (path + field) 才允許渲染，
+      // 避免任意猜測 jobId 造成未授權取圖。
+      setPayload(tokenData.payload || null);
+    };
+    run().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, token]);
+
+  useEffect(() => {
+    if (!payload || typeof window === "undefined") return;
+    const markReady = async () => {
+      const imagePromises = Array.from(document.images || []).map((img) => {
+        if (img.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          img.addEventListener("load", resolve, { once: true });
+          img.addEventListener("error", resolve, { once: true });
+        });
+      });
+      await Promise.allSettled([document.fonts?.ready, Promise.allSettled(imagePromises)]);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      window.__RENDER_READY__ = true;
+    };
+    markReady().catch(() => {
+      window.__RENDER_READY__ = true;
+    });
+  }, [payload]);
+
+  const reasonLabels = useMemo(() => {
+    if (Array.isArray(payload?.reasonLabels) && payload.reasonLabels.length) return payload.reasonLabels;
+    if (typeof payload?.evidenceText === "string" && payload.evidenceText.trim()) return [payload.evidenceText.trim()];
+    return [];
+  }, [payload]);
+
+  return (
+    <div id="render-studio-root" className="fixed inset-0 m-0 p-0 bg-black overflow-hidden">
+      {payload ? (
+        <BattleCard
+          open
+          onClose={() => {}}
+          photoURL={payload.avatarUrl || ""}
+          displayName={payload.displayName || ""}
+          voterTeam={payload.teamLabel || ""}
+          teamLabel={payload.teamLabel || ""}
+          status={(payload.status || "GOAT").toLowerCase()}
+          reasonLabels={reasonLabels}
+          city=""
+          country=""
+          rankLabel={payload.rankLabel || ""}
+          teamColors={{
+            primary: payload?.theme?.primaryColor || "#C8102E",
+            secondary: payload?.theme?.secondaryColor || "#2E003E",
+          }}
+          battleTitle={payload.battleTitle || ""}
+          battleSubtitle={payload.battleSubtitle || ""}
+          exportSceneMode
+          disablePortal
+          renderScale={3}
+          isExportReady
+        />
+      ) : null}
+    </div>
+  );
+}

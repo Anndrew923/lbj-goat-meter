@@ -12,11 +12,9 @@ import { defineSecret } from "firebase-functions/params";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import admin from "firebase-admin";
-import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import fs from "node:fs";
 
 import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
 import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
@@ -27,21 +25,6 @@ import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionInd
 import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventLocalizedText.js";
 import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
 import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
-import { drawGlowEffect, drawSlantedRect } from "./utils/battleCardDrawing.js";
-import {
-  BATTLE_CARD_ASSETS,
-  BATTLE_CARD_AVATAR_LAYOUT,
-  BATTLE_CARD_BAR_COMMON,
-  BATTLE_CARD_CANVAS,
-  BATTLE_CARD_DIMENSIONS,
-  BATTLE_CARD_HUD_LAYOUT,
-  BATTLE_CARD_NAME_LAYOUT,
-  BATTLE_CARD_PALETTE,
-  BATTLE_CARD_WORKSHEET_365,
-} from "./config/battleCardLayout.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -71,87 +54,6 @@ const Timestamp = admin.firestore.Timestamp;
 const STAR_ID = (process.env.STAR_ID || process.env.GOAT_STAR_ID || "lbj").trim() || "lbj";
 const GLOBAL_SUMMARY_DOC_ID = "global_summary";
 
-const DISPLAY_FONT_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.fonts.display.path);
-const SANS_FONT_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.fonts.sans.path);
-const BATTLE_CARD_BACKGROUND_PATH = path.resolve(__dirname, BATTLE_CARD_ASSETS.backgroundImagePath);
-const BATTLE_CARD_DEFAULT_AVATAR_PATH = path.resolve(__dirname, "assets/default-avatar.png");
-const BATTLE_CARD_CROWN_ICON_PATH = path.resolve(__dirname, "assets/goat-crown-icon.png");
-const BATTLE_CARD_BACKGROUND_PATHS = Object.freeze({
-  base: BATTLE_CARD_BACKGROUND_PATH,
-  celtics: path.resolve(__dirname, "assets/backgrounds/battlecard-celtics.png"),
-});
-const BATTLE_CARD_SCALE = BATTLE_CARD_CANVAS.width / 365;
-
-let battleCardBackgroundImagePromise = null;
-let battleCardDefaultAvatarImagePromise = null;
-let battleCardCrownImagePromise = null;
-let battleCardFontsRegistered = false;
-const battleCardBackgroundImagePromiseByKey = new Map();
-
-function ensureBattleCardGlobalAssets() {
-  if (!fs.existsSync(DISPLAY_FONT_PATH)) {
-    throw new Error(`MISSING_ASSET: ${DISPLAY_FONT_PATH}`);
-  }
-  if (!fs.existsSync(SANS_FONT_PATH)) {
-    throw new Error(`MISSING_ASSET: ${SANS_FONT_PATH}`);
-  }
-  if (!fs.existsSync(BATTLE_CARD_BACKGROUND_PATH)) {
-    throw new Error(`MISSING_ASSET: ${BATTLE_CARD_BACKGROUND_PATH}`);
-  }
-  const stats = fs.statSync(BATTLE_CARD_BACKGROUND_PATH);
-  if (stats.size === 0) throw new Error("CRITICAL_ERROR: Asset file is empty!");
-  if (!fs.existsSync(BATTLE_CARD_DEFAULT_AVATAR_PATH)) {
-    throw new Error(`MISSING_ASSET: ${BATTLE_CARD_DEFAULT_AVATAR_PATH}`);
-  }
-  if (!fs.existsSync(BATTLE_CARD_CROWN_ICON_PATH)) {
-    throw new Error(`MISSING_ASSET: ${BATTLE_CARD_CROWN_ICON_PATH}`);
-  }
-  if (!battleCardFontsRegistered) {
-    try {
-      const displayOk = GlobalFonts.registerFromPath(DISPLAY_FONT_PATH, BATTLE_CARD_ASSETS.fonts.display.family);
-      const sansOk = GlobalFonts.registerFromPath(SANS_FONT_PATH, BATTLE_CARD_ASSETS.fonts.sans.family);
-      if (!displayOk || !sansOk) {
-        throw new Error("Font register returned false");
-      }
-    } catch (fontErr) {
-      console.error("[generateBattleCard] Font Load Failed:", fontErr?.message || String(fontErr));
-      throw fontErr;
-    }
-    battleCardFontsRegistered = true;
-  }
-  if (!battleCardBackgroundImagePromise) {
-    battleCardBackgroundImagePromise = loadImage(BATTLE_CARD_BACKGROUND_PATH);
-  }
-  if (!battleCardDefaultAvatarImagePromise) {
-    battleCardDefaultAvatarImagePromise = loadImage(BATTLE_CARD_DEFAULT_AVATAR_PATH);
-  }
-  if (!battleCardCrownImagePromise) {
-    battleCardCrownImagePromise = loadImage(BATTLE_CARD_CROWN_ICON_PATH);
-  }
-  return Promise.all([battleCardBackgroundImagePromise, battleCardDefaultAvatarImagePromise, battleCardCrownImagePromise]);
-}
-
-function ensureBattleCardBackgroundAssetByKey(bgKey) {
-  const key = typeof bgKey === "string" ? bgKey.trim().toLowerCase() : "base";
-  const targetPath = BATTLE_CARD_BACKGROUND_PATHS[key] || BATTLE_CARD_BACKGROUND_PATHS.base;
-  if (!fs.existsSync(targetPath)) {
-    throw new Error(`MISSING_ASSET: ${targetPath}`);
-  }
-  const stats = fs.statSync(targetPath);
-  if (stats.size === 0) throw new Error("CRITICAL_ERROR: Asset file is empty!");
-  if (!battleCardBackgroundImagePromiseByKey.has(targetPath)) {
-    battleCardBackgroundImagePromiseByKey.set(targetPath, loadImage(targetPath));
-  }
-  return battleCardBackgroundImagePromiseByKey.get(targetPath);
-}
-
-// 在全域 scope 預先註冊字型與啟動底圖載入，避免每次 Callable 觸發都重複觸發磁碟 I/O。
-ensureBattleCardGlobalAssets().catch((err) => {
-  functions.logger.error("[battleCard] global assets preload failed", {
-    message: err?.message || String(err),
-  });
-});
-
 /**
  * 是否允許略過嚴格安全驗證（僅限本地開發）。
  * 正式環境：僅允許來自 localhost 的請求略過；來自 Netlify 等正式網域的請求一律執行 reCAPTCHA／廣告驗證，驗證失敗即拋出 low-score-robot。
@@ -168,27 +70,6 @@ function requireAuth(context) {
       code: "auth-required",
     });
   }
-}
-
-const BATTLE_CARD_LABEL_KEYS = ["GOAT", "FRAUD", "KING", "MERCENARY", "MACHINE", "STAT_PADDER"];
-
-function buildBattleTitle(labels) {
-  const ranked = BATTLE_CARD_DIMENSIONS
-    .map((dimension) => ({
-      key: dimension.key,
-      score: Number(labels?.[dimension.key]) || 0,
-    }))
-    .sort((a, b) => b.score - a.score);
-  return ranked[0]?.key || "GOAT";
-}
-
-function parseHexToRgba(hex, alpha = 1) {
-  const raw = String(hex || "").replace("#", "").trim();
-  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return `rgba(255, 215, 0, ${alpha})`;
-  const r = Number.parseInt(raw.slice(0, 2), 16);
-  const g = Number.parseInt(raw.slice(2, 4), 16);
-  const b = Number.parseInt(raw.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function parseTheme(theme) {
@@ -211,23 +92,6 @@ function parseTheme(theme) {
     },
   };
 }
-
-function fillTextTracked(ctx, text, x, y, tracking) {
-  let cursor = x;
-  for (const ch of String(text || "")) {
-    ctx.fillText(ch, cursor, y);
-    cursor += ctx.measureText(ch).width + tracking;
-  }
-}
-
-const STANCE_COLORS = {
-  goat: "#FFD700",
-  fraud: "#FF2D55",
-  king: "#00E5FF",
-  mercenary: "#B388FF",
-  machine: "#00E676",
-  stat_padder: "#FF9100",
-};
 
 function parseGenerateBattleCardPayload(data, authUid) {
   if (!data || typeof data !== "object") {
@@ -269,233 +133,95 @@ function parseGenerateBattleCardPayload(data, authUid) {
   };
 }
 
-export const generateBattleCard = onCall({ ...CALLABLE_HTTP_OPTS, enforceAppCheck: false }, async (request) => {
-  console.log(">>> V5_PIXEL_PERFECT_UI_CLONE_START <<<");
-  requireAuth(request);
-
-  let canvas = null;
-  let ctx = null;
-
-  try {
+export const generateBattleCard = onCall(
+  { memory: "2GiB", timeoutSeconds: 60, enforceAppCheck: false },
+  async (request) => {
+    requireAuth(request);
     const payload = parseGenerateBattleCardPayload(request.data, request.auth.uid);
-    const [, defaultAvatarImage, crownImage] = await ensureBattleCardGlobalAssets();
-    const baseImage = await ensureBattleCardBackgroundAssetByKey(payload.bgKey);
-    
-    // 初始化 1920x1920 畫布
-    canvas = createCanvas(1920, 1920);
-    ctx = canvas.getContext("2d");
-    
-    // 比例尺映射：強制採用 worksheet 365 座標系，避免 640 基準造成幾何漂移
-    const ws = BATTLE_CARD_WORKSHEET_365;
-    const SCALE = 1920 / 365;
-    const sx = (n) => Math.round(n * SCALE);
+    const jobId = randomUUID();
+    const renderToken = randomUUID();
+    const jobRef = db.collection("render_jobs").doc(jobId);
+    const tokenRef = jobRef.collection("tokens").doc(renderToken);
+    const projectId =
+      process.env.GCLOUD_PROJECT ||
+      process.env.GCP_PROJECT ||
+      process.env.FIREBASE_PROJECT_ID ||
+      "lbj-goat-meter";
+    const browserBaseUrl = (process.env.RENDER_STUDIO_BASE_URL || "").trim() || `https://${projectId}.web.app`;
+    const studioUrl = `${browserBaseUrl.replace(/\/+$/, "")}/render-studio/${encodeURIComponent(jobId)}?token=${encodeURIComponent(renderToken)}`;
+    let browser = null;
 
-    const stanceColor = STANCE_COLORS[payload.status.toLowerCase()] || "#FFD700";
-    const stanceText = payload.status.toUpperCase();
-    const displayFont = BATTLE_CARD_ASSETS.fonts.display.family;
-    const sansFont = BATTLE_CARD_ASSETS.fonts.sans.family;
-
-    // 1. 繪製背景與 115deg 漸層戰場分色
-    ctx.drawImage(baseImage, 0, 0, 1920, 1920);
-    const bgGrad = ctx.createLinearGradient(0, 0, 1920, 1920);
-    bgGrad.addColorStop(0, payload.theme.primaryColor);
-    bgGrad.addColorStop(0.48, payload.theme.primaryColor);
-    bgGrad.addColorStop(0.52, "#000000");
-    bgGrad.addColorStop(1, payload.theme.secondaryColor);
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, 1920, 1920);
-    ctx.globalAlpha = 1.0;
-    const getSlant = (h) => sx(h) * 0.2125;
-
-    // 頭像處理
-    let avatarImage = defaultAvatarImage;
-    if (payload.avatarUrl) {
-      try {
-        const avatarResponse = await fetch(payload.avatarUrl, { signal: AbortSignal.timeout(5000) });
-        if (avatarResponse.ok) {
-          const avatarBuffer = Buffer.from(await avatarResponse.arrayBuffer());
-          avatarImage = await loadImage(avatarBuffer);
-        }
-      } catch (e) {
-        console.warn("Avatar fetch failed, using default");
-      }
-    }
-
-    // 2. 稱號與主標題 (對應 top 區域)
-    ctx.font = `600 ${sx(14)}px "${sansFont}"`;
-    ctx.fillStyle = parseHexToRgba(stanceColor, 0.8);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    fillTextTracked(ctx, payload.battleSubtitle, sx(ws.title.subtitleX), sx(ws.title.subtitleY), sx(2.8));
-
-    ctx.font = `900 italic ${sx(36)}px "${displayFont}"`;
-    ctx.fillStyle = stanceColor;
-    ctx.strokeStyle = stanceColor;
-    ctx.lineWidth = sx(1.5);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.strokeText(payload.battleTitle, sx(ws.title.headingX), sx(ws.title.headingY));
-    drawGlowEffect(
-      ctx,
-      payload.battleTitle,
-      sx(ws.title.headingX),
-      sx(ws.title.headingY),
-      parseHexToRgba(stanceColor, 0.6)
-    );
-
-    // 3. 身份面板 (Identity Panel)
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    drawSlantedRect(
-      ctx,
-      sx(ws.identityPanel.x),
-      sx(ws.identityPanel.y),
-      sx(ws.identityPanel.width),
-      sx(ws.identityPanel.height),
-      getSlant(ws.identityPanel.height)
-    );
-
-    // 圓形頭像裁切與繪製
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(sx(20 + 8 + 24), sx(125 + 8 + 24), sx(24), 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(avatarImage, sx(28), sx(133), sx(48), sx(48));
-    ctx.restore();
-    
-    // 頭像白透光邊框
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = sx(2);
-    ctx.beginPath();
-    ctx.arc(sx(52), sx(157), sx(24), 0, Math.PI * 2);
-    ctx.stroke();
-
-    // 名稱與隊伍標籤
-    ctx.font = `bold ${sx(14)}px "${sansFont}"`;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(payload.displayName || "Anonymous Warrior", sx(88), sx(145));
-
-    ctx.font = `normal ${sx(14)}px "${sansFont}"`;
-    ctx.fillStyle = payload.theme.primaryColor;
-    ctx.fillText(payload.teamLabel, sx(88), sx(165));
-
-    // 4. 立場區 (Power Stance Panel)
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.shadowColor = "rgba(0,0,0,0.5)";
-    ctx.shadowBlur = sx(50);
-    drawSlantedRect(
-      ctx,
-      sx(ws.stancePanel.x),
-      sx(ws.stancePanel.y),
-      sx(ws.stancePanel.width),
-      sx(ws.stancePanel.height),
-      getSlant(ws.stancePanel.height)
-    );
-    ctx.shadowBlur = 0;
-
-    ctx.font = `900 italic ${sx(48)}px "${displayFont}"`;
-    ctx.fillStyle = stanceColor;
-    ctx.strokeStyle = stanceColor;
-    ctx.lineWidth = sx(1.5);
-    ctx.textAlign = "center";
-    ctx.strokeText(stanceText, sx(ws.title.stanceX), sx(ws.title.stanceY));
-    drawGlowEffect(ctx, stanceText, sx(ws.title.stanceX), sx(ws.title.stanceY), stanceColor);
-
-    // 5. 證詞區 (Evidence Panel)
-    const reasonsText = payload.evidenceText || payload.reasonLabels.join(" / ");
-    if (reasonsText) {
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
-      drawSlantedRect(
-        ctx,
-        sx(ws.evidencePanel.x),
-        sx(ws.evidencePanel.y),
-        sx(ws.evidencePanel.width),
-        sx(ws.evidencePanel.height),
-        getSlant(ws.evidencePanel.height)
-      );
-      
-      ctx.strokeStyle = "rgba(255,255,255,0.1)";
-      ctx.lineWidth = sx(1);
-      ctx.stroke();
-
-      ctx.font = `normal ${sx(10)}px "${sansFont}"`;
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      fillTextTracked(ctx, "裁決證詞", sx(32), sx(322), sx(2));
-
-      ctx.font = `500 ${sx(14)}px "${sansFont}"`;
-      ctx.fillStyle = stanceColor;
-      ctx.fillText(reasonsText, sx(32), sx(350));
-    }
-
-    // 6. 底部區 (Footer)
-    ctx.strokeStyle = "rgba(255,255,255,0.1)";
-    ctx.lineWidth = sx(1);
-    ctx.beginPath();
-    ctx.moveTo(sx(20), sx(560));
-    ctx.lineTo(sx(620), sx(560));
-    ctx.stroke();
-
-    ctx.font = `normal ${sx(12)}px "${sansFont}"`;
-    ctx.fillStyle = payload.theme.primaryColor;
-    ctx.textBaseline = "top";
-    ctx.fillText(payload.regionText, sx(20), sx(572));
-
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillText(payload.rankLabel, sx(20), sx(592));
-
-    // 品牌鋼印與皇冠（依中央立場區動態偏移）
-    const stancePanelCenterX = sx(ws.stancePanel.x + ws.stancePanel.width / 2);
-    const stancePanelY = sx(ws.stancePanel.y);
-    const crownSize = sx(ws.crown.size);
-    const crownOffsetX = sx(ws.crown.x - ws.title.stanceX);
-    const crownOffsetY = sx(ws.crown.y - ws.stancePanel.y);
-    ctx.drawImage(
-      crownImage,
-      Math.round(stancePanelCenterX + crownOffsetX - crownSize / 2),
-      Math.round(stancePanelY + crownOffsetY),
-      crownSize,
-      crownSize
-    );
-    ctx.font = `normal ${sx(12)}px "${sansFont}"`;
-    ctx.fillStyle = "#D4AF37";
-    ctx.textAlign = "right";
-    fillTextTracked(ctx, "THE GOAT METER", sx(620), sx(580), sx(2));
-
-    // 儲存邏輯
-    const pngBuffer = canvas.toBuffer("image/png");
-    const downloadBase64 = pngBuffer.toString("base64");
-    const bucket = admin.storage().bucket();
-    const objectPath = `exports/battlecards/${randomUUID()}.png`;
-    const file = bucket.file(objectPath);
-
-    await file.save(pngBuffer, {
-      metadata: { contentType: "image/png", cacheControl: "public, max-age=300" },
-    });
-
-    let url = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
-    let downloadUrl = url;
     try {
-      await file.makePublic();
-    } catch {
-      const [signedUrl] = await file.getSignedUrl({ action: "read", expires: "2100-01-01" });
-      url = signedUrl;
-      downloadUrl = signedUrl;
+      await jobRef.set({
+        payload,
+        renderToken,
+        createdBy: request.auth.uid,
+        status: "queued",
+        createdAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+      });
+      await tokenRef.set({
+        jobId,
+        renderToken,
+        payload,
+        createdAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+      });
+
+      browser = await puppeteer.launch({
+        args: [...chromium.args, "--no-sandbox", "--disable-setuid-sandbox"],
+        defaultViewport: { width: 1920, height: 1920, deviceScaleFactor: 1 },
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      });
+      const page = await browser.newPage();
+      await page.goto(studioUrl, { waitUntil: "networkidle2", timeout: 45000 });
+      await page.waitForFunction(() => window.__RENDER_READY__ === true, { timeout: 30000 });
+      const pngBuffer = await page.screenshot({ type: "png" });
+      const bucket = admin.storage().bucket();
+      const objectPath = `exports/battlecards/${randomUUID()}.png`;
+      const file = bucket.file(objectPath);
+
+      await file.save(pngBuffer, {
+        metadata: { contentType: "image/png", cacheControl: "public, max-age=300" },
+      });
+
+      let url = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
+      let downloadUrl = url;
+      try {
+        await file.makePublic();
+      } catch {
+        const [signedUrl] = await file.getSignedUrl({ action: "read", expires: "2100-01-01" });
+        url = signedUrl;
+        downloadUrl = signedUrl;
+      }
+
+      await jobRef.set(
+        { status: "completed", outputPath: objectPath, completedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      return { ok: true, url, downloadUrl, path: objectPath, jobId };
+    } catch (err) {
+      await jobRef.set(
+        {
+          status: "failed",
+          errorMessage: err?.message || "unknown",
+          failedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      if (err instanceof HttpsError) throw err;
+      console.error("[generateBattleCard] Puppeteer render failed:", err);
+      throw new HttpsError("internal", "Failed to generate battle card");
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+      await tokenRef.delete().catch(() => {});
+      await jobRef.delete().catch(() => {});
     }
-    
-    return { ok: true, url, downloadUrl, downloadBase64, path: objectPath };
-  } catch (err) {
-    if (err instanceof HttpsError) throw err;
-    console.error("Generate failed:", err);
-    throw new HttpsError("internal", "Failed to generate battle card");
-  } finally {
-    if (canvas) { canvas.width = 0; canvas.height = 0; }
-    ctx = null;
   }
-});
+);
 
 /**
  * 解析指紋用 pepper：優先 Gen2 secret.value()，失敗則 GOAT_FINGERPRINT_PEPPER（Emulator／本機）。

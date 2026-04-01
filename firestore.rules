@@ -50,6 +50,21 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // 4b. 隱藏攝影棚 render jobs：
+    // - 主文件僅允許建立者（已登入）讀取，避免開放全域 read。
+    // - OTT 子文件採「路徑即權杖」策略，僅持有正確 token 的請求可匿名讀取，並要求 token/jobId 欄位一致與未過期。
+    match /render_jobs/{jobId} {
+      allow read: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
+      allow create, update, delete: if false;
+
+      match /tokens/{token} {
+        allow get: if resource.data.jobId == jobId
+                   && resource.data.renderToken == token
+                   && request.time < resource.data.expiresAt;
+        allow list, create, update, delete: if false;
+      }
+    }
+
     // 5. 專業分析數據
     match /analytics_pro/{cacheKey} {
       allow read: if isAuthenticated();

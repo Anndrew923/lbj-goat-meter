@@ -87,6 +87,7 @@ const BattleCard = forwardRef(function BattleCard({
   arenaAnimationsPaused = false,
   exportSceneMode = false,
   disablePortal = false,
+  renderScale = 1,
 }, ref) {
   const { t } = useTranslation("common");
   const navigate = useNavigate();
@@ -138,6 +139,7 @@ const BattleCard = forwardRef(function BattleCard({
       : 1;
   // 匯出場景固定 1:1，避免裝置 viewport 參與縮放造成裁切/定位漂移
   const scale = exportSceneMode ? 1 : computedScale;
+  const studioScale = exportSceneMode ? Math.max(1, Number(renderScale) || 1) : scale;
 
   useEffect(() => {
     if (!open) {
@@ -441,7 +443,9 @@ const BattleCard = forwardRef(function BattleCard({
       ) : null}
       <motion.div
         ref={overlayRef}
-        className="framer-motion-stabilizer absolute inset-0 flex flex-col items-center bg-black/90 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto"
+        className={`framer-motion-stabilizer absolute inset-0 flex flex-col items-center bg-black/90 overflow-y-auto ${
+          exportSceneMode ? "p-0 pb-0" : "p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+        }`}
         data-arena-paused={arenaAnimationsPaused ? "1" : undefined}
         role="dialog"
         aria-modal="true"
@@ -469,8 +473,8 @@ const BattleCard = forwardRef(function BattleCard({
           <div className="relative w-full flex items-center justify-center">
             <div
               style={{
-                width: CARD_SIZE * scale,
-                height: CARD_SIZE * scale,
+                width: CARD_SIZE * studioScale,
+                height: CARD_SIZE * studioScale,
               }}
               className="relative flex-shrink-0 overflow-hidden"
             >
@@ -500,7 +504,8 @@ const BattleCard = forwardRef(function BattleCard({
                 style={{
                   width: CARD_SIZE,
                   height: CARD_SIZE,
-                  transform: exportSceneMode ? "none" : `translate(-50%, -50%) scale(${scale})`,
+                  transform: exportSceneMode ? `scale(${studioScale})` : `translate(-50%, -50%) scale(${scale})`,
+                  transformOrigin: exportSceneMode ? "top left" : "center",
                   left: exportSceneMode ? 0 : undefined,
                   top: exportSceneMode ? 0 : undefined,
                   borderColor: "transparent",
