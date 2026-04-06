@@ -1,11 +1,9 @@
 /**
- * Emulator PoC: 驗證 generateBattleCard 的雙路徑：
- * 1) 外部頭像失效時使用後端預設頭像 fallback，仍可成功產圖。
- * 2) 外部頭像可讀時照常繪製。
+ * Emulator PoC: 驗證 generateBattleCard（戰報資料僅由後端讀取 profiles/{uid}，請求 body 可為空 data）。
  *
  * 設計意圖：
  * - 使用 Functions Emulator 的測試授權 JWT，模擬「帶 auth 的 callable 請求」。
- * - 預設 payload 對齊架構鎖定格式；可透過 AVATAR_URL 覆寫頭像網址，便於快速切換測試圖源。
+ * - 請先在 Emulator Firestore 建立 profiles/{FIREBASE_UID}（含 photoURL / currentStance / warzoneId 等）再執行。
  */
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT || "lbj-goat-meter";
@@ -18,22 +16,7 @@ const USE_PRODUCTION =
   process.env.USE_PRODUCTION === "true" ||
   (process.env.CALLABLE_URL || "").trim().startsWith("https://");
 const OUTPUT_DIR = process.env.OUTPUT_DIR || "tmp";
-const FAILING_AVATAR_URL =
-  process.env.FAILING_AVATAR_URL || "https://upload.wikimedia.org/wikipedia/commons/a/a7/LeBron_James_2023.jpg";
-const HEALTHY_AVATAR_URL = process.env.HEALTHY_AVATAR_URL || "https://avatars.githubusercontent.com/u/9919?v=4";
-
-const basePayload = {
-  uid: process.env.FIREBASE_UID || "test-admin-123",
-  displayName: "The Chosen One",
-  labels: {
-    GOAT: 90,
-    FRAUD: 5,
-    KING: 95,
-    MERCENARY: 10,
-    MACHINE: 85,
-    STAT_PADDER: 20,
-  },
-};
+const TEST_UID = process.env.FIREBASE_UID || "test-admin-123";
 
 function makeEmulatorJwt(uid) {
   const now = Math.floor(Date.now() / 1000);
@@ -65,57 +48,51 @@ function resolveAuthBearer() {
   if (fromEnv) return fromEnv;
   if (USE_PRODUCTION) {
     throw new Error(
-      "USE_PRODUCTION 需要設定 FIREBASE_ID_TOKEN（Firebase Auth ID Token），且 payload.uid 必須與該 Token 的 uid 一致。"
+      "USE_PRODUCTION 需要設定 FIREBASE_ID_TOKEN（Firebase Auth ID Token），且 Firestore 須存在 profiles/{該 Token 的 uid}。"
     );
   }
-  return makeEmulatorJwt(basePayload.uid);
+  return makeEmulatorJwt(TEST_UID);
 }
 
 async function main() {
   const url = resolveCallableUrl();
   const token = resolveAuthBearer();
 
-  const runCase = async (label, avatarUrl) => {
-    const payload = { ...basePayload, avatarUrl };
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Referer: CALLABLE_REFERER,
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ data: payload }),
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Referer: CALLABLE_REFERER,
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ data: {} }),
+  });
+
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // noop
+  }
+
+  if (!res.ok) {
+    throw new Error(`request failed (${res.status}): ${JSON.stringify(json || text)}`);
+  }
+  const result = json?.result || json?.data || json;
+  if (!result?.url) {
+    throw new Error("missing url in response");
+  }
+  if (typeof result?.downloadBase64 === "string" && result.downloadBase64.length > 0) {
+    await import("node:fs/promises").then(async ({ mkdir, writeFile }) => {
+      await mkdir(OUTPUT_DIR, { recursive: true });
+      const outputPath = `${OUTPUT_DIR}/ssr-battlecard.png`;
+      await writeFile(outputPath, Buffer.from(result.downloadBase64, "base64"));
+      console.log(`[SSR BattleCard PoC] image saved: ${outputPath}`);
     });
-
-    const text = await res.text();
-    let json = null;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      // noop
-    }
-
-    if (!res.ok) {
-      throw new Error(`[${label}] request failed (${res.status}): ${JSON.stringify(json || text)}`);
-    }
-    const result = json?.result || json?.data || json;
-    if (!result?.url) {
-      throw new Error(`[${label}] missing url in response`);
-    }
-    if (typeof result?.downloadBase64 === "string" && result.downloadBase64.length > 0) {
-      await import("node:fs/promises").then(async ({ mkdir, writeFile }) => {
-        await mkdir(OUTPUT_DIR, { recursive: true });
-        const outputPath = `${OUTPUT_DIR}/ssr-${label}.png`;
-        await writeFile(outputPath, Buffer.from(result.downloadBase64, "base64"));
-        console.log(`[SSR BattleCard PoC] ${label} image saved: ${outputPath}`);
-      });
-    }
-    console.log(`[SSR BattleCard PoC] ${label} success`);
-    console.log(JSON.stringify(result, null, 2));
-  };
-
-  await runCase("fallback-avatar", FAILING_AVATAR_URL);
-  await runCase("remote-avatar", HEALTHY_AVATAR_URL);
+  }
+  console.log("[SSR BattleCard PoC] success");
+  console.log(JSON.stringify(result, null, 2));
 }
 
 main().catch((err) => {

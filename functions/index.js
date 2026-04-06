@@ -25,6 +25,8 @@ import { normalizeBreakingOptionIndex } from "./utils/normalizeBreakingOptionInd
 import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventLocalizedText.js";
 import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
 import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
+import { SSR_BATTLE_CARD_STANCE_PRIMARY } from "./battleCardConstants.js";
+import { buildBattleCardMinimalHtmlDocument } from "./battleCardPuppeteerDocument.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -93,109 +95,105 @@ function parseTheme(theme) {
   };
 }
 
-function parseGenerateBattleCardPayload(data, authUid) {
-  if (!data || typeof data !== "object") {
-    throw new HttpsError("invalid-argument", "Payload is required");
+/** 與前端戰報匯出一致：優先 theme 物件，否則從 teamColors 組出 parseTheme 輸入。 */
+function parseThemeFromProfile(userData) {
+  if (userData?.theme && typeof userData.theme === "object") {
+    return parseTheme(userData.theme);
   }
-
-  const uid = typeof data.uid === "string" ? data.uid.trim() : "";
-  const displayName = typeof data.displayName === "string" ? data.displayName.trim() : "";
-  const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
-  const battleSubtitle = typeof data.battleSubtitle === "string" ? data.battleSubtitle.trim() : "戰區終道者";
-  const battleTitle = typeof data.battleTitle === "string" ? data.battleTitle.trim() : "戰區傾道者";
-  const evidenceText = typeof data.evidenceText === "string" ? data.evidenceText.trim() : "";
-  const reasonLabels = Array.isArray(data.reasonLabels) ? data.reasonLabels : [];
-  const regionText = typeof data.regionText === "string" ? data.regionText.trim() : "Taipei・專業戰線";
-  const rankLabel = typeof data.rankLabel === "string" ? data.rankLabel.trim() : "Verified Global Data";
-  const teamLabel = typeof data.teamLabel === "string" ? data.teamLabel.trim() : "—";
-  const status = typeof data.status === "string" ? data.status.trim() : "GOAT";
-  const theme = parseTheme(data.theme);
-  const bgKey = typeof data.bgKey === "string" ? data.bgKey.trim().toLowerCase() : "base";
-
-  if (!uid || uid !== authUid) {
-    throw new HttpsError("invalid-argument", "uid is invalid");
+  const tc = userData?.teamColors;
+  if (tc && typeof tc === "object") {
+    return parseTheme({
+      primaryColor: tc.primary,
+      secondaryColor: tc.secondary,
+      accentColor: "#FFD700",
+      backgroundGradient: { start: tc.primary, end: tc.secondary },
+    });
   }
-
-  return {
-    uid,
-    displayName,
-    avatarUrl,
-    battleSubtitle,
-    battleTitle,
-    evidenceText,
-    reasonLabels,
-    regionText,
-    rankLabel,
-    teamLabel,
-    status,
-    theme,
-    bgKey,
-  };
+  return parseTheme(null);
 }
 
+/** 戰報卡 SSR 逾時：45s 為絕對死線；須小於前端 httpsCallable timeout（見 BattleCardExportScene）。 */
+const GENERATE_BATTLE_CARD_TIMEOUT_SEC = 45;
+/** 在地 HTML 極小；過長無益且擠壓 launch／截圖／上傳時間。 */
+const BATTLE_CARD_SET_CONTENT_TIMEOUT_MS = 10_000;
+/** 含遠端頭像載入與雙 rAF；須與 SET_CONTENT、launch、截圖、上傳併算 ≤ 雲端 timeout。 */
+const BATTLE_CARD_READY_SIGNAL_MS = 22_000;
+
 /**
- * 戰報卡 SSR：minInstances 降低 Chromium 冷啟；concurrency:1 避免同實例多開 Puppeteer（計費與配額需專案自行評估）。
+ * 戰報卡 SSR：payload 僅來自 Admin 讀取 profiles；以最小 HTML + window.__DATA__ 在地繪製，避免 page.goto Hosting 冷載入整站。
  */
 export const generateBattleCard = onCall(
   {
+    /** Chromium 無頭在 1GiB 易抖動變慢；2GiB 可顯著降低 OOM 與長尾延遲。 */
     memory: "2GiB",
-    timeoutSeconds: 30,
-    enforceAppCheck: false,
+    timeoutSeconds: GENERATE_BATTLE_CARD_TIMEOUT_SEC,
     cpu: 2,
-    minInstances: 3,
-    /** 單實例僅處理一個 Chromium 工作階段，避免 2GiB 內多開瀏覽器 OOM */
+    minInstances: 0,
     concurrency: 1,
+    enforceAppCheck: false,
   },
   async (request) => {
     requireAuth(request);
-    const payload = parseGenerateBattleCardPayload(request.data, request.auth.uid);
-    const jobId = randomUUID();
-    const renderToken = randomUUID();
-    const jobRef = db.collection("render_jobs").doc(jobId);
-    const tokenRef = jobRef.collection("tokens").doc(renderToken);
-    const projectId =
-      process.env.GCLOUD_PROJECT ||
-      process.env.GCP_PROJECT ||
-      process.env.FIREBASE_PROJECT_ID ||
-      "lbj-goat-meter";
-    const browserBaseUrl = (process.env.RENDER_STUDIO_BASE_URL || "").trim() || `https://${projectId}.web.app`;
-    const base = browserBaseUrl.replace(/\/+$/, "");
-    /** Hash 路由：path 維持 `/`，相對資產可載入；mode 放 # 前讓 main.jsx 辨識 headless；hash 內帶 token + mode 供 HashRouter。 */
-    const studioUrl = `${base}/?mode=puppeteer#/render-studio/${encodeURIComponent(jobId)}?token=${encodeURIComponent(renderToken)}&mode=puppeteer`;
+    if (request.data?.prewarm === true) {
+      return { ok: true, status: "warmed" };
+    }
+
+    const authUid = request.auth.uid;
+
+    const userDoc = await db.doc(`profiles/${authUid}`).get();
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "Profile missing");
+    }
+    const userData = userDoc.data() || {};
+
+    const displayName =
+      typeof userData.displayName === "string" && userData.displayName.trim()
+        ? userData.displayName.trim()
+        : "Warrior";
+    const avatarUrl =
+      (typeof userData.avatarUrl === "string" && userData.avatarUrl.trim()) ||
+      (typeof userData.photoURL === "string" && userData.photoURL.trim()) ||
+      "";
+    const stanceRaw = String(userData.currentStance || "GOAT").trim() || "GOAT";
+    const stanceKey = stanceRaw.toLowerCase();
+    const teamLabel =
+      String(userData.warzoneId || userData.voterTeam || "LAL")
+        .trim()
+        .toUpperCase() || "LAL";
+    const reasonLabels = Array.isArray(userData.currentReasons)
+      ? userData.currentReasons.map((r) => String(r)).filter(Boolean)
+      : [];
+
+    const validatedPayload = {
+      uid: authUid,
+      displayName,
+      avatarUrl,
+      status: stanceKey,
+      stanceDisplayPrimary: SSR_BATTLE_CARD_STANCE_PRIMARY[stanceKey] || stanceRaw.toUpperCase(),
+      teamLabel,
+      reasonLabels,
+      battleTitle: "戰區權威裁決",
+      battleSubtitle: "VERIFIED HISTORICAL DATA",
+      rankLabel: "Verified Global Data",
+      theme: parseThemeFromProfile(userData),
+    };
+
+    const minimalHtml = buildBattleCardMinimalHtmlDocument(validatedPayload);
+
     let browser = null;
-
     try {
-      await jobRef.set({
-        payload,
-        renderToken,
-        createdBy: request.auth.uid,
-        status: "queued",
-        createdAt: FieldValue.serverTimestamp(),
-        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
-      });
-      await tokenRef.set({
-        jobId,
-        renderToken,
-        payload,
-        createdAt: FieldValue.serverTimestamp(),
-        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
-      });
-
       browser = await puppeteer.launch({
-        args: [
-          ...chromium.args,
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-web-security", // 允許無頭環境載入跨網域頭像
-        ],
+        args: [...chromium.args, "--no-sandbox", "--disable-setuid-sandbox", "--disable-web-security"],
         defaultViewport: null,
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
-        /** 須低於雲函式 timeout，避免 CDP 截圖先掛 */
-        protocolTimeout: 25_000,
+        /** 須低於雲函式 timeout；避免 launch / CDP 長尾先失敗 */
+        protocolTimeout: Math.min((GENERATE_BATTLE_CARD_TIMEOUT_SEC - 5) * 1000, 120_000),
       });
+
       const page = await browser.newPage();
       await page.setViewport({ width: 1080, height: 1080, deviceScaleFactor: 1 });
+
       await page.setRequestInterception(true);
       page.on("request", (req) => {
         const u = req.url();
@@ -209,26 +207,22 @@ export const generateBattleCard = onCall(
         }
         void req.continue();
       });
-      await page.addStyleTag({
-        content: "* { transition: none !important; animation: none !important; }",
-      });
 
-      await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 8000 });
+      await page.setContent(minimalHtml, { waitUntil: "load", timeout: BATTLE_CARD_SET_CONTENT_TIMEOUT_MS });
 
-      // 訊號在「OTT 取得 + React 掛載」後才延遲 1.5s 發射；計時須從 domcontentloaded 後涵蓋整段
-      await page.waitForSelector("#render-ready-signal", { timeout: 6500 }).catch(() => {
-        console.warn("[generateBattleCard] render-ready-signal not seen within 6.5s, capturing anyway");
+      await page.waitForSelector("#render-ready-signal", { timeout: BATTLE_CARD_READY_SIGNAL_MS }).catch(() => {
+        console.warn("[generateBattleCard] Signal timeout, force capture.");
       });
 
       const imageBuffer = await page.screenshot({
         type: "jpeg",
-        quality: 80,
+        quality: 85,
         optimizeForSpeed: true,
       });
+
       const bucket = admin.storage().bucket();
       const objectPath = `exports/battlecards/${randomUUID()}.jpg`;
       const file = bucket.file(objectPath);
-
       await file.save(imageBuffer, {
         metadata: { contentType: "image/jpeg", cacheControl: "public, max-age=300" },
       });
@@ -243,20 +237,8 @@ export const generateBattleCard = onCall(
         downloadUrl = signedUrl;
       }
 
-      await jobRef.set(
-        { status: "completed", outputPath: objectPath, completedAt: FieldValue.serverTimestamp() },
-        { merge: true }
-      );
-      return { ok: true, url, downloadUrl, path: objectPath, jobId };
+      return { ok: true, url, downloadUrl, path: objectPath };
     } catch (err) {
-      await jobRef.set(
-        {
-          status: "failed",
-          errorMessage: err?.message || "unknown",
-          failedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
       if (err instanceof HttpsError) throw err;
       console.error("[generateBattleCard] Puppeteer render failed:", err);
       throw new HttpsError("internal", "Failed to generate battle card");
@@ -264,8 +246,6 @@ export const generateBattleCard = onCall(
       if (browser) {
         await browser.close().catch(() => {});
       }
-      await tokenRef.delete().catch(() => {});
-      await jobRef.delete().catch(() => {});
     }
   }
 );
@@ -275,9 +255,8 @@ export const generateBattleCard = onCall(
  *
  * 設計意圖：Puppeteer 開啟的無頭頁面無法可靠取得 App Check token，導致客戶端 Firestore
  * 讀取在「強制 App Check」下會失敗時，舊版無頭頁曾無法設好 `__RENDER_READY__`。
- * 現行 generateBattleCard 以 `/?mode=puppeteer#/render-studio/:jobId?...` 載入攝影棚，並等待
- * `#render-ready-signal`（見 RenderStudioPage；payload 就緒後 1.5s 發射，後端約 6.5s 內等待）。
- * 此端點走 Admin SDK，不依賴瀏覽器 App Check；仍以 jobId + OTT 路徑驗證，並檢查過期時間。
+ * generateBattleCard 已改為 Puppeteer setContent 最小 HTML（window.__DATA__），一般不需此端點；仍保留供手動除錯或舊連結以 OTT 讀取 payload。
+ * 此端點走 Admin SDK，不依賴瀏覽器 App Check；以 jobId + token 驗證並檢查過期時間。
  */
 export const getRenderStudioPayload = onRequest(
   {

@@ -7,7 +7,7 @@
  * - FIREBASE_WEB_API_KEY：Firebase Web API Key（與前端 VITE_FIREBASE_API_KEY 相同）
  *
  * 選用：
- * - ACCEPTANCE_UID（預設 acceptance-ssr-bot）：Custom Token 的 uid，須與 payload.uid 一致
+ * - ACCEPTANCE_UID（預設 acceptance-ssr-bot）：Custom Token 的 uid；Firestore 須存在 profiles/{uid}（generateBattleCard 僅讀後端 profile）
  */
 
 import admin from "firebase-admin";
@@ -48,27 +48,6 @@ async function idTokenFromCustomToken(customToken) {
   return idToken;
 }
 
-const payload = {
-  uid: UID,
-  displayName: "Acceptance Bot",
-  avatarUrl: "https://avatars.githubusercontent.com/u/9919?v=4",
-  battleTitle: "戰區傾道者",
-  battleSubtitle: "戰區終道者",
-  evidenceText: "",
-  reasonLabels: ["結案驗收"],
-  regionText: "Taipei・專業戰線",
-  rankLabel: "Verified Global Data",
-  teamLabel: "LAL",
-  status: "GOAT",
-  theme: {
-    primaryColor: "#C8102E",
-    secondaryColor: "#2E003E",
-    accentColor: "#FFD700",
-    backgroundGradient: { start: "#A50022", end: "#120018" },
-  },
-  bgKey: "base",
-};
-
 async function main() {
   const idTokenFromEnv = (process.env.FIREBASE_ID_TOKEN || "").trim();
   const idToken = idTokenFromEnv
@@ -82,7 +61,7 @@ async function main() {
       Referer: CALLABLE_REFERER,
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ data: payload }),
+    body: JSON.stringify({ data: {} }),
   });
 
   const text = await res.text();

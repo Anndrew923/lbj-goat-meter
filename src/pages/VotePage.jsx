@@ -15,6 +15,7 @@ import LiveTicker from "../components/LiveTicker";
 import UniversalBreakingBanner from "../components/UniversalBreakingBanner";
 import PulseMap from "../components/PulseMap";
 import LanguageToggle from "../components/LanguageToggle";
+import { useBattleCardCallablePrewarm } from "../hooks/useBattleCardCallablePrewarm";
 import { SentimentDataProvider } from "../context/SentimentDataContext";
 import { triggerHaptic } from "../utils/hapticUtils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -30,6 +31,7 @@ import {
 const DEFAULT_WARZONE_ID = "LAL";
 
 export default function VotePage() {
+  useBattleCardCallablePrewarm();
   const { t, i18n } = useTranslation("common");
   const isEn = i18n.language === "en";
   const {

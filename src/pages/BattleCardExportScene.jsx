@@ -1,87 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { httpsCallable } from "firebase/functions";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getFirebaseFunctions } from "../lib/firebase";
 
-const DIMENSION_KEYS = ["GOAT", "FRAUD", "KING", "MERCENARY", "MACHINE", "STAT_PADDER"];
-const STANCE_TO_LABEL_KEY = {
-  goat: "GOAT",
-  fraud: "FRAUD",
-  king: "KING",
-  mercenary: "MERCENARY",
-  machine: "MACHINE",
-  stat_padder: "STAT_PADDER",
-};
-
-function clampPercent(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function buildLabelPayloadFromWarzoneStats(warzoneStats, status) {
-  const totalVotes = Number(warzoneStats?.totalVotes);
-  const labels = {};
-  if (Number.isFinite(totalVotes) && totalVotes > 0) {
-    for (const key of DIMENSION_KEYS) {
-      const sourceKey = key === "STAT_PADDER" ? "stat_padder" : key.toLowerCase();
-      const count = Number(warzoneStats?.[sourceKey]) || 0;
-      labels[key] = clampPercent((count / totalVotes) * 100);
-    }
-  } else {
-    for (const key of DIMENSION_KEYS) labels[key] = 0;
-    const boostedKey = STANCE_TO_LABEL_KEY[status] || "GOAT";
-    labels[boostedKey] = 100;
-  }
-  return labels;
-}
-
-function buildEvidenceText(reasonLabels) {
-  if (!Array.isArray(reasonLabels) || reasonLabels.length === 0) return "20 火力 All-NBA";
-  return reasonLabels.slice(0, 2).join(" / ");
-}
-
-function buildThemePayload(exportPayload) {
-  const teamColors = exportPayload?.teamColors && typeof exportPayload.teamColors === "object"
-    ? exportPayload.teamColors
-    : {};
-  const primaryColor = /^#[0-9a-fA-F]{6}$/.test(String(teamColors.primary || "").trim())
-    ? String(teamColors.primary).trim()
-    : "#C8102E";
-  const secondaryColor = /^#[0-9a-fA-F]{6}$/.test(String(teamColors.secondary || "").trim())
-    ? String(teamColors.secondary).trim()
-    : "#2E003E";
-  return {
-    primaryColor,
-    secondaryColor,
-    accentColor: "#FFD700",
-    backgroundGradient: {
-      start: primaryColor,
-      end: secondaryColor,
-    },
-  };
-}
-
-function resolveBgKey(exportPayload, theme) {
-  const teamHint = `${exportPayload?.teamLabel || ""} ${exportPayload?.voterTeam || ""}`.toLowerCase();
-  if (teamHint.includes("celtic") || teamHint.includes("bos")) return "celtics";
-  const primary = String(theme?.primaryColor || "").replace("#", "");
-  if (/^[0-9a-fA-F]{6}$/.test(primary)) {
-    const r = Number.parseInt(primary.slice(0, 2), 16);
-    const g = Number.parseInt(primary.slice(2, 4), 16);
-    const b = Number.parseInt(primary.slice(4, 6), 16);
-    if (g > r + 16 && g > b + 16) return "celtics";
-  }
-  return "base";
-}
-
-function downloadBlob(blob) {
+function downloadBlob(blob, filename = "LBJ-GOAT-Meter.jpg") {
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;
-  a.download = "LBJ-GOAT-Meter.png";
+  a.download = filename;
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
@@ -94,7 +22,7 @@ async function triggerDownload(url, downloadBase64) {
     const raw = atob(downloadBase64);
     const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
-    downloadBlob(new Blob([bytes], { type: "image/png" }));
+    downloadBlob(new Blob([bytes], { type: "image/png" }), "LBJ-GOAT-Meter.png");
     return;
   }
 
@@ -102,7 +30,14 @@ async function triggerDownload(url, downloadBase64) {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`download fetch failed: ${res.status}`);
-    downloadBlob(await res.blob());
+    const blob = await res.blob();
+    const name =
+      blob.type === "image/jpeg" || blob.type === "image/jpg"
+        ? "LBJ-GOAT-Meter.jpg"
+        : blob.type === "image/png"
+          ? "LBJ-GOAT-Meter.png"
+          : "LBJ-GOAT-Meter.jpg";
+    downloadBlob(blob, name);
     return;
   } catch (e) {
     console.error("Download Fallback Triggered", e);
@@ -114,6 +49,8 @@ const DIAGNOSTIC_ERROR_MAP = Object.freeze({
   unauthenticated: "登入狀態失效 (401: Auth Required)",
   "permission-denied": "伺服器拒絕訪問 (403: IAM/AppCheck Denied)",
   "deadline-exceeded": "伺服器運算超時 (504: SSR Timeout)",
+  "not-found": "找不到戰區檔案，請先完成戰區登錄後再匯出 (404: Profile missing)",
+  "invalid-argument": "請求參數無效 (400)；請重新整理後再試或更新至最新版",
   internal: "後端渲染引擎崩潰 (500: Internal Error)",
 });
 
@@ -167,26 +104,19 @@ export default function BattleCardExportScene() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isRunning, setIsRunning] = useState(true);
+  const [loadingText, setLoadingText] = useState(() => t("loadingRenderStudio"));
   const [diagnosticError, setDiagnosticError] = useState(null);
-  const runningRef = useRef(false);
 
   const exportPayload = location.state?.exportPayload ?? null;
   const returnTo = typeof location.state?.returnTo === "string" ? location.state.returnTo : "/vote";
 
-  const callablePayload = useMemo(() => {
-    if (!exportPayload) return null;
-    const theme = buildThemePayload(exportPayload);
-    return {
-      displayName: exportPayload.displayName || t("anonymousWarrior"),
-      avatarUrl: exportPayload.photoURL || "",
-      labels: buildLabelPayloadFromWarzoneStats(exportPayload.warzoneStats, exportPayload.status),
-      battleSubtitle: exportPayload.battleSubtitle || t("battleCardTagline"),
-      evidenceText: buildEvidenceText(exportPayload.reasonLabels),
-      regionText: [exportPayload.city, exportPayload.country].filter(Boolean).join("・") || t("global"),
-      theme,
-      bgKey: exportPayload?.bgKey || resolveBgKey(exportPayload, theme),
-    };
-  }, [exportPayload, t]);
+  useEffect(() => {
+    setLoadingText(t("loadingRenderStudio"));
+    const timer = window.setTimeout(() => {
+      setLoadingText(t("loadingVerdictGrace"));
+    }, 7000);
+    return () => window.clearTimeout(timer);
+  }, [t]);
 
   useEffect(() => {
     if (!exportPayload) {
@@ -200,21 +130,18 @@ export default function BattleCardExportScene() {
       });
       return;
     }
-    if (!callablePayload) {
-      setIsRunning(false);
-      setDiagnosticError(makeAuthExpiredDiagnostic());
-      return;
-    }
-    if (!callablePayload || runningRef.current) return;
-    runningRef.current = true;
+
+    let cancelled = false;
 
     const run = async () => {
       try {
         const user = await waitForAuthenticatedUser();
+        if (cancelled) return;
         if (!user) {
           throw makeAuthExpiredDiagnostic();
         }
         await user.getIdToken();
+        if (cancelled) return;
         if (!auth?.currentUser || auth.currentUser.uid !== user.uid) {
           throw makeAuthExpiredDiagnostic();
         }
@@ -223,11 +150,14 @@ export default function BattleCardExportScene() {
         if (!fns) {
           throw new Error("Firebase Functions unavailable");
         }
-        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 60000 });
-        const res = await callable({
-          ...callablePayload,
-          uid: user.uid,
-        });
+        /** 須略長於雲端 generateBattleCard timeoutSeconds（含冷啟 + Puppeteer），否則客戶端先 deadline-exceeded 且閘道 504 不帶 CORS。 */
+        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 55_000 });
+        /**
+         * 必須帶上 uid：舊版 Callable 會驗證 data.uid === auth.uid，空物件會得到 invalid-argument / uid is invalid。
+         * 新版後端僅以 request.auth.uid + profiles 組裝戰報，此欄位僅為相容與除錯。
+         */
+        const res = await callable({ uid: user.uid });
+        if (cancelled) return;
         const data = res?.data?.result ? res.data.result : res?.data;
         const url = data?.downloadUrl || data?.url;
         const downloadBase64 = data?.downloadBase64 || "";
@@ -235,8 +165,10 @@ export default function BattleCardExportScene() {
           throw new Error("Missing battle card URL");
         }
         await triggerDownload(url, downloadBase64);
+        if (cancelled) return;
         navigate(returnTo, { replace: true });
       } catch (err) {
+        if (cancelled) return;
         const parsed = toDiagnosticError(err);
         setDiagnosticError(parsed);
         console.error("[BattleCardExportScene] SSR export failed", {
@@ -247,17 +179,25 @@ export default function BattleCardExportScene() {
           timestamp: parsed.timestamp,
         });
       } finally {
-        setIsRunning(false);
+        if (!cancelled) setIsRunning(false);
       }
     };
 
-    run();
-  }, [callablePayload, exportPayload, navigate, returnTo, t]);
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [exportPayload, navigate, returnTo]);
 
   return (
     <div className="fixed inset-0 z-[12000] bg-black flex items-center justify-center overflow-hidden">
       {isRunning ? (
-        <div className="absolute bottom-6 text-white/70 text-sm">{t("generatingHighResReport")}</div>
+        <div className="absolute bottom-12 flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-king-gold/30 border-t-king-gold rounded-full animate-spin" />
+          <p className="animate-pulse text-king-gold font-medium text-center px-6 leading-relaxed">
+            {loadingText}
+          </p>
+        </div>
       ) : null}
       {!isRunning && diagnosticError ? (
         <div className="absolute bottom-6 px-3 py-3 rounded bg-red-950/80 border border-red-400/50 text-red-200 text-xs max-w-[92vw]">
