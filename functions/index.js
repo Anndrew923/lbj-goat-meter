@@ -113,6 +113,9 @@ function parseThemeFromProfile(userData) {
 const SSR_BATTLE_CARD_MAX_TEXT = 480;
 const SSR_BATTLE_CARD_MAX_REASON_ITEM = 280;
 const SSR_BATTLE_CARD_MAX_REASONS = 14;
+/** 與 Auth／預覽顯示名一致；profiles 未必有 displayName，故允許客戶端覆寫。 */
+const SSR_BATTLE_CARD_MAX_DISPLAY_NAME = 120;
+const SSR_BATTLE_CARD_MAX_PHOTO_URL = 2048;
 
 function clampSsrText(value, max) {
   if (typeof value !== "string") return "";
@@ -153,6 +156,7 @@ function normalizeClientReasonLabels(arr) {
 
 /**
  * 身分／投票事實以 profiles 為準；顯示文案與色票可由客戶端覆寫（須 uid、voterTeam 一致）。
+ * displayName／photoURL：與 BattleCard 預覽一致（來自 Auth）；profiles 常未存 displayName，故優先採客戶端 clamp 後字串。
  * @param {string} authUid
  * @param {Record<string, unknown>} userData
  * @param {Record<string, unknown>} clientData - request.data
@@ -165,14 +169,25 @@ function mergeBattleCardSsrPayload(authUid, userData, clientData) {
     throw new HttpsError("invalid-argument", "uid mismatch");
   }
 
-  const displayName =
+  const clientDisplayName = clampSsrText(
+    typeof d.displayName === "string" ? d.displayName : "",
+    SSR_BATTLE_CARD_MAX_DISPLAY_NAME,
+  );
+  const profileDisplayName =
     typeof userData.displayName === "string" && userData.displayName.trim()
       ? userData.displayName.trim()
-      : "Warrior";
-  const avatarUrl =
+      : "";
+  const displayName = clientDisplayName || profileDisplayName || "Warrior";
+
+  const profileAvatarUrl =
     (typeof userData.avatarUrl === "string" && userData.avatarUrl.trim()) ||
     (typeof userData.photoURL === "string" && userData.photoURL.trim()) ||
     "";
+  const clientPhotoURL = clampSsrText(
+    typeof d.photoURL === "string" ? d.photoURL : "",
+    SSR_BATTLE_CARD_MAX_PHOTO_URL,
+  );
+  const avatarUrl = clientPhotoURL || profileAvatarUrl;
   const stanceRaw = String(userData.currentStance || "GOAT").trim() || "GOAT";
   const stanceKey = stanceRaw.toLowerCase();
 

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Capacitor } from "@capacitor/core";
 import { httpsCallable } from "firebase/functions";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getFirebaseFunctions } from "../lib/firebase";
+import { saveBattleReportToNativeGallery } from "../utils/battleCardGallerySave";
 
 function downloadBlob(blob, filename = "LBJ-GOAT-Meter.jpg") {
   const objectUrl = URL.createObjectURL(blob);
@@ -17,8 +19,24 @@ function downloadBlob(blob, filename = "LBJ-GOAT-Meter.jpg") {
   URL.revokeObjectURL(objectUrl);
 }
 
-async function triggerDownload(url, downloadBase64) {
-  if (typeof downloadBase64 === "string" && downloadBase64.length > 0) {
+/**
+ * Web：anchor + Blob；原生 APK／iOS：Media.savePhoto 寫入相簿（WebView 的 <a download> 通常不會進相簿）。
+ */
+async function triggerDownload(url, downloadBase64, t) {
+  const hasBase64 = typeof downloadBase64 === "string" && downloadBase64.length > 0;
+  const hasUrl = typeof url === "string" && url.length > 0;
+
+  if (Capacitor.isNativePlatform()) {
+    await saveBattleReportToNativeGallery({
+      t,
+      rawBase64: hasBase64 ? downloadBase64 : "",
+      mimeType: "image/jpeg",
+      httpsUrl: !hasBase64 && hasUrl ? url : undefined,
+    });
+    return;
+  }
+
+  if (hasBase64) {
     const raw = atob(downloadBase64);
     const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
@@ -52,6 +70,7 @@ const DIAGNOSTIC_ERROR_MAP = Object.freeze({
   "not-found": "找不到戰區檔案，請先完成戰區登錄後再匯出 (404: Profile missing)",
   "invalid-argument": "請求參數無效 (400)；請重新整理後再試或更新至最新版",
   internal: "後端渲染引擎崩潰 (500: Internal Error)",
+  "gallery-permission-denied": "相簿權限不足，無法儲存戰報卡",
 });
 
 function normalizeFunctionsErrorCode(rawCode) {
@@ -61,7 +80,11 @@ function normalizeFunctionsErrorCode(rawCode) {
 }
 
 function toDiagnosticError(err) {
-  const normalizedCode = normalizeFunctionsErrorCode(err?.code);
+  const raw = err?.code;
+  const normalizedCode =
+    raw === "gallery-permission-denied"
+      ? "gallery-permission-denied"
+      : normalizeFunctionsErrorCode(raw);
   const mappedMessage = DIAGNOSTIC_ERROR_MAP[normalizedCode] || "SSR 匯出失敗，請稍後重試";
   const rawMessage = typeof err?.message === "string" && err.message.trim() ? err.message.trim() : "Unknown error";
   return {
@@ -158,6 +181,8 @@ export default function BattleCardExportScene() {
         const ep = exportPayload;
         const res = await callable({
           uid: user.uid,
+          displayName: ep.displayName,
+          photoURL: ep.photoURL,
           battleTitle: ep.battleTitle,
           battleSubtitle: ep.battleSubtitle,
           rankLabel: ep.rankLabel,
@@ -178,7 +203,7 @@ export default function BattleCardExportScene() {
         if (!hasBase64 && (!url || typeof url !== "string")) {
           throw new Error("Missing battle card payload");
         }
-        await triggerDownload(url, downloadBase64);
+        await triggerDownload(url, downloadBase64, t);
         if (cancelled) return;
         navigate(returnTo, { replace: true });
       } catch (err) {
@@ -201,7 +226,7 @@ export default function BattleCardExportScene() {
     return () => {
       cancelled = true;
     };
-  }, [exportPayload, navigate, returnTo]);
+  }, [exportPayload, navigate, returnTo, t]);
 
   return (
     <div className="fixed inset-0 z-[12000] bg-black flex items-center justify-center overflow-hidden">

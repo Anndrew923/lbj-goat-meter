@@ -23,6 +23,7 @@ import { getStance } from "../i18n/i18n";
 import { triggerHapticPattern } from "../utils/hapticUtils";
 import { buildWallWordSpecs, getPowerStanceModel } from "../utils/battleCardMirrorShared";
 import { auth } from "../lib/firebase";
+import { isMediaPluginSavePermissionOk } from "../utils/battleCardGallerySave";
 
 const CARD_SIZE = 640;
 /** 預留給按鈕組的垂直空間（px），scale 計算時扣除此值避免卡片壓住按鈕 */
@@ -39,15 +40,6 @@ async function showNativeExportFailedAlert(title, message) {
   } else {
     window.alert(`${title}\n\n${message}`);
   }
-}
-
-function isMediaPluginSavePermissionOk(perm) {
-  if (!perm || typeof perm !== "object") return false;
-  const ok = (v) => v === "granted" || v === "limited";
-  if (ok(perm.photos)) return true;
-  if (ok(perm.publicStorage13Plus)) return true;
-  if (ok(perm.publicStorage)) return true;
-  return false;
 }
 
 /** 球卡雜訊紋理用 SVG data URL（feTurbulence），重複平鋪 */
