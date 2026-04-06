@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Shield, ArrowLeft } from 'lucide-react'
@@ -6,11 +6,23 @@ import LanguageToggle from '../components/LanguageToggle'
 import { triggerHaptic } from '../utils/hapticUtils'
 
 /**
- * 戰區隱私守則 (Warzone Privacy Protocol) — 公開頁面，不需登入即可查看。
- * 符合 Google 政策與用戶信任需求。
+ * 戰區隱私守則 — 公開頁面；內容與 public/privacy-policy*.html 對齊（語系由 i18n 提供）。
  */
 export default function PrivacyPage() {
   const { t } = useTranslation('common')
+
+  const { collectionItems, purposeItems, thirdPartyItems, securityRightsItems } = useMemo(() => {
+    const c = t('privacyCollectionItems', { returnObjects: true })
+    const p = t('privacyPurposeItems', { returnObjects: true })
+    const tp = t('privacyThirdPartyItems', { returnObjects: true })
+    const sr = t('privacySecurityRightsItems', { returnObjects: true })
+    return {
+      collectionItems: Array.isArray(c) ? c : [],
+      purposeItems: Array.isArray(p) ? p : [],
+      thirdPartyItems: Array.isArray(tp) ? tp : [],
+      securityRightsItems: Array.isArray(sr) ? sr : [],
+    }
+  }, [t])
 
   useEffect(() => {
     document.title = `${t('privacyPageTitle')} | The GOAT Meter`
@@ -22,7 +34,6 @@ export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-black text-gray-300">
       <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
-        {/* 頂列：返回 + 語言切換（公開頁可切語系閱讀） */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <Link
             to="/"
@@ -38,7 +49,6 @@ export default function PrivacyPage() {
           </div>
         </div>
 
-        {/* 標題：戰區隱私守則 */}
         <header className="mb-10">
           <div className="flex items-center gap-3 mb-2">
             <Shield className="w-8 h-8 text-king-gold" aria-hidden />
@@ -52,61 +62,96 @@ export default function PrivacyPage() {
         </header>
 
         <main className="space-y-8">
-          {/* 1. 資訊收集 */}
+          <p className="text-gray-300 text-sm leading-relaxed">
+            {t('privacyIntro')}
+          </p>
+
           <section className="rounded-xl border border-villain-purple/20 bg-gray-900/50 p-5 sm:p-6">
             <h2 className="text-king-gold font-semibold text-lg mb-3">
-              {t('privacySectionInfoTitle')}
+              {t('privacySectionCollectionTitle')}
             </h2>
-            <p className="text-gray-300 text-sm leading-relaxed">
-              {t('privacySectionInfoContent')}
+            <p className="text-gray-300 text-sm leading-relaxed mb-3">
+              {t('privacyCollectionLead')}
             </p>
+            <ul className="list-disc pl-5 space-y-3 text-gray-300 text-sm leading-relaxed">
+              {collectionItems.map((item) => (
+                <li key={item.title}>
+                  <strong className="text-gray-200">{item.title}</strong>
+                  {item.body}
+                </li>
+              ))}
+            </ul>
           </section>
 
-          {/* 2. 數據用途 */}
           <section className="rounded-xl border border-villain-purple/20 bg-gray-900/50 p-5 sm:p-6">
             <h2 className="text-king-gold font-semibold text-lg mb-3">
-              {t('privacySectionDataTitle')}
+              {t('privacySectionPurposeTitle')}
             </h2>
-            <p className="text-gray-300 text-sm leading-relaxed">
-              {t('privacySectionDataContent')}
+            <p className="text-gray-300 text-sm leading-relaxed mb-3">
+              {t('privacyPurposeLead')}
             </p>
+            <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm leading-relaxed">
+              {purposeItems.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
           </section>
 
-          {/* 3. 第三方服務 */}
           <section className="rounded-xl border border-villain-purple/20 bg-gray-900/50 p-5 sm:p-6">
             <h2 className="text-king-gold font-semibold text-lg mb-3">
               {t('privacySectionThirdPartyTitle')}
             </h2>
-            <p className="text-gray-300 text-sm leading-relaxed">
-              {t('privacySectionStorage')}
+            <p className="text-gray-300 text-sm leading-relaxed mb-3">
+              {t('privacyThirdPartyLead')}
             </p>
-            <p className="text-gray-300 text-sm leading-relaxed mt-3">
-              {t('privacySectionAds')}
-            </p>
+            <ul className="list-disc pl-5 space-y-3 text-gray-300 text-sm leading-relaxed">
+              {thirdPartyItems.map((item) => (
+                <li key={item.title}>
+                  <strong className="text-gray-200">{item.title}</strong>
+                  {item.body}
+                </li>
+              ))}
+            </ul>
           </section>
 
-          {/* 4. 數據安全與公平性（首發過審：透明化 deviceId / App Check，符合 GDPR 與平台隱私規範） */}
           <section className="rounded-xl border border-villain-purple/20 bg-gray-900/50 p-5 sm:p-6">
             <h2 className="text-king-gold font-semibold text-lg mb-3">
-              {t('privacySectionSecurityTitle')}
+              {t('privacySectionSecurityRightsTitle')}
+            </h2>
+            <p className="text-gray-300 text-sm leading-relaxed mb-3">
+              {t('privacySecurityRightsLead')}
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-gray-300 text-sm leading-relaxed">
+              {securityRightsItems.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-villain-purple/20 bg-gray-900/50 p-5 sm:p-6">
+            <h2 className="text-king-gold font-semibold text-lg mb-3">
+              {t('privacySectionRetentionTitle')}
             </h2>
             <p className="text-gray-300 text-sm leading-relaxed">
-              {t('privacySectionSecurityContent')}
+              {t('privacySectionRetentionContent')}
             </p>
           </section>
 
-          {/* 5. 用戶權利 */}
           <section className="rounded-xl border border-king-gold/30 bg-gray-900/50 p-5 sm:p-6">
             <h2 className="text-king-gold font-semibold text-lg mb-3">
-              {t('privacySectionRightsTitle')}
+              {t('privacySectionContactTitle')}
             </h2>
             <p className="text-gray-300 text-sm leading-relaxed">
-              {t('privacySectionRightsContent')}
+              {t('privacySectionContactContent')}
             </p>
           </section>
         </main>
 
-        <footer className="mt-12 pt-6 border-t border-gray-800">
+        <p className="mt-10 text-gray-500 text-xs">
+          {t('privacyLastUpdated')}
+        </p>
+
+        <footer className="mt-8 pt-6 border-t border-gray-800">
           <Link
             to="/"
             onClick={() => triggerHaptic(10)}

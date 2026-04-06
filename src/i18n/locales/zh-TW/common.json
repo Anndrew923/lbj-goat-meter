@@ -51,18 +51,63 @@
   "backToApp": "返回戰場",
   "exitBattlefieldWarning": "再按一次返回將離開戰場",
   "privacyPageTitle": "戰區隱私守則",
-  "privacyPageSubtitle": "我們如何保護你的戰報情報。無須登入即可閱讀。",
-  "privacySectionInfoTitle": "資訊收集",
-  "privacySectionInfoContent": "我們僅收集您的 Google 顯示名稱、電子郵件及系統生成的 UID，用於身份驗證。",
-  "privacySectionDataTitle": "數據用途",
-  "privacySectionDataContent": "數據用於統計全球立場，並生成您的個人化戰報卡。",
-  "privacySectionThirdPartyTitle": "第三方服務",
-  "privacySectionStorage": "您的數據加密儲存於 Google Firebase 伺服器。",
-  "privacySectionAds": "本應用可能包含由 Google 提供的模擬或真實激勵廣告。",
-  "privacySectionSecurityTitle": "數據安全與公平性",
-  "privacySectionSecurityContent": "我們使用設備識別碼（deviceId）僅用於防止重複投票與確保公信力，不進行跨應用追蹤。App Check（如 reCAPTCHA）用於阻擋惡意腳本攻擊，保護系統純淨與公平。",
-  "privacySectionRightsTitle": "用戶權利",
-  "privacySectionRightsContent": "您可隨時於設定中的「Danger Zone」刪除帳號與所有投票紀錄。若有其他數據刪除需求，可使用 App 內「刪除帳號」功能或聯絡團隊。",
+  "privacyPageSubtitle": "商店合規與資料透明度。無須登入即可閱讀。",
+  "privacyIntro": "本隱私權政策說明 The GOAT Meter 如何收集、使用、儲存與保護您的資料。我們致力於確保您的隱私並符合應用程式商店規範。使用本應用即表示您同意本政策。",
+  "privacySectionCollectionTitle": "1. 資料收集與設備權限",
+  "privacyCollectionLead": "我們可能收集以下資料並請求相關權限：",
+  "privacyCollectionItems": [
+    {
+      "title": "帳號與身份資料：",
+      "body": "使用 Google 登入時，我們會取得您的顯示名稱、電子郵件及由 Firebase Authentication 產生的 UID。為了優化分享體驗，我們可能會將您的頭像鏡像儲存至我們受保護的雲端空間。"
+    },
+    {
+      "title": "地理位置資訊（Geolocation）：",
+      "body": "為確保投票的地域公平性及正確分配「戰區」，我們會請求存取您的精確位置（GPS）。若您拒絕授權，系統將改為使用基於 IP 位址的大略位置作為備援。"
+    },
+    {
+      "title": "媒體與存取權限：",
+      "body": "當您欲儲存生成的「戰報卡」至設備，或自定義個人頭像時，我們會請求相簿／儲存空間的寫入與讀取權限。我們僅存取與本應用功能直接相關的文件。"
+    },
+    {
+      "title": "應用內資料：",
+      "body": "包括您設定的戰區、年齡區間、性別、國家／地區，以及您的投票立場與理由。"
+    },
+    {
+      "title": "設備識別碼：",
+      "body": "我們使用唯一的設備識別碼（deviceId）確保「一設備一票」，防止投票操縱。該識別碼不用於跨應用追蹤。"
+    }
+  ],
+  "privacySectionPurposeTitle": "2. 資料用途",
+  "privacyPurposeLead": "我們使用上述資料以：",
+  "privacyPurposeItems": [
+    "驗證用戶身份並管理個人化設定；",
+    "根據地理位置分配戰區，並生成具備地域識別度的個人化戰報卡；",
+    "防止自動化濫用與重複投票，維護 poll 的公平性與公信力；",
+    "在應用內顯示由 Google AdMob 提供的相關廣告。"
+  ],
+  "privacySectionThirdPartyTitle": "3. 第三方服務與資料儲存",
+  "privacyThirdPartyLead": "我們與下列受信任的服務合作處理技術資料：",
+  "privacyThirdPartyItems": [
+    {
+      "title": "Google Firebase & AdMob：",
+      "body": "負責身份驗證、資料庫存儲、安全檢測（App Check）與廣告投放。您的帳號資料加密儲存於 Google 的伺服器。"
+    },
+    {
+      "title": "定位支援服務：",
+      "body": "我們使用 OpenStreetMap (Nominatim) 與專業 IP 定位服務進行區域分配；這些服務僅接收匿名座標或 IP 位址。"
+    }
+  ],
+  "privacySectionSecurityRightsTitle": "4. 資料安全與您的權利",
+  "privacySecurityRightsLead": "我們使用 Firebase App Check 等措施保護資料。您可隨時：",
+  "privacySecurityRightsItems": [
+    "透過應用內設定中的「Danger Zone」刪除帳號，這將移除所有與您帳號相關的投票記錄與個人資料。",
+    "聯絡我們以行使資料存取或更正的權利。"
+  ],
+  "privacySectionRetentionTitle": "5. 資料保留",
+  "privacySectionRetentionContent": "在您刪除帳號後，我們會從伺服器中永久移除或匿名化處理您的個人資料與投票歷史。部分匿名彙總資料可能因法律或營運需要而保留。",
+  "privacySectionContactTitle": "6. 聯絡我們",
+  "privacySectionContactContent": "若對本政策或資料處理有任何疑問，請透過應用內聯絡管道或 Google Play 商店頁面上的開發者資訊與我們聯繫。",
+  "privacyLastUpdated": "最後更新：2026 年 4 月",
   "dangerZone": "Danger Zone",
   "dangerZoneDesc": "刪除帳號後，您的戰區資料與投票紀錄將永久移除且無法復原。",
   "deleteAccount": "刪除帳號",

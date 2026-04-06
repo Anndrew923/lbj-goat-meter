@@ -51,18 +51,63 @@
   "backToApp": "Back to app",
   "exitBattlefieldWarning": "Press back again to leave the battlefield",
   "privacyPageTitle": "Warzone Privacy Protocol",
-  "privacyPageSubtitle": "How we protect your intel. No login required to read.",
-  "privacySectionInfoTitle": "Information We Collect",
-  "privacySectionInfoContent": "We collect your Google display name, email, and system-generated UID for authentication only.",
-  "privacySectionDataTitle": "How We Use Data",
-  "privacySectionDataContent": "Data is used for global stance statistics and to generate your personalized battle report card.",
-  "privacySectionThirdPartyTitle": "Third-Party Services",
-  "privacySectionStorage": "Your data is stored securely on Google Firebase servers.",
-  "privacySectionAds": "This app may contain rewarded ads (simulated or real) provided by Google.",
-  "privacySectionSecurityTitle": "Data Security & Fairness",
-  "privacySectionSecurityContent": "We use a device identifier (deviceId) only to prevent duplicate votes and ensure the integrity of the poll. It is not used for cross-app tracking or advertising. App Check (e.g. reCAPTCHA) is used to block automated abuse and keep the system fair for all users.",
-  "privacySectionRightsTitle": "Your Rights",
-  "privacySectionRightsContent": "You may delete your account and all vote data at any time via the Danger Zone in Settings. For other data requests, use the in-app \"Delete Account\" option or contact our team.",
+  "privacyPageSubtitle": "Store-aligned transparency. No login required to read.",
+  "privacyIntro": "This Privacy Policy describes how The GOAT Meter collects, uses, stores, and protects your data. We are committed to ensuring your privacy and compliance with app store standards. By using the app, you agree to this policy.",
+  "privacySectionCollectionTitle": "1. Data Collection & Device Permissions",
+  "privacyCollectionLead": "We may collect the following data and request these permissions:",
+  "privacyCollectionItems": [
+    {
+      "title": "Account & Identity:",
+      "body": " When signing in with Google, we receive your display name, email, and a UID from Firebase Authentication. To optimize sharing, we may mirror your profile picture to our secure cloud storage."
+    },
+    {
+      "title": "Geolocation:",
+      "body": " To ensure regional poll integrity and assign you to a “Warzone,” we request access to your Precise Location (GPS). If denied, we fallback to Approximate Location (via IP address)."
+    },
+    {
+      "title": "Media & Storage:",
+      "body": " We request Photo Gallery/Storage permissions when you choose to save a “Battle Card” to your device or customize your avatar. We only access files directly related to these functions."
+    },
+    {
+      "title": "In-App Data:",
+      "body": " Includes your chosen warzone, age range, gender, country/region, and your voting stance and reasons."
+    },
+    {
+      "title": "Device Identifiers:",
+      "body": " We use a unique deviceId to enforce a “one-vote-per-device” rule to prevent poll manipulation. This is not used for cross-app tracking."
+    }
+  ],
+  "privacySectionPurposeTitle": "2. How We Use Data",
+  "privacyPurposeLead": "We use the data above to:",
+  "privacyPurposeItems": [
+    "Authenticate users and manage personalized settings;",
+    "Assign Warzones based on geographic location and generate region-specific Battle Cards;",
+    "Prevent automated abuse and duplicate voting to maintain poll integrity;",
+    "Display relevant advertisements provided by Google AdMob within the app."
+  ],
+  "privacySectionThirdPartyTitle": "3. Third-Party Services & Storage",
+  "privacyThirdPartyLead": "We partner with the following trusted services to process technical data:",
+  "privacyThirdPartyItems": [
+    {
+      "title": "Google Firebase & AdMob:",
+      "body": " Handles authentication, database storage, security checks (App Check), and ad delivery. Your account data is stored on Google’s encrypted servers."
+    },
+    {
+      "title": "Geocoding Services:",
+      "body": " We use OpenStreetMap (Nominatim) and professional IP geolocation services for regional assignment; these services only receive anonymous coordinates or IP addresses."
+    }
+  ],
+  "privacySectionSecurityRightsTitle": "4. Data Security & Your Rights",
+  "privacySecurityRightsLead": "We use Firebase App Check and other measures to protect your data. You may at any time:",
+  "privacySecurityRightsItems": [
+    "Delete your account and all associated voting records and profile data via the “Danger Zone” in the app’s Settings;",
+    "Request data access or correction by contacting us."
+  ],
+  "privacySectionRetentionTitle": "5. Data Retention",
+  "privacySectionRetentionContent": "Upon account deletion, all personal data and voting history associated with your account will be permanently removed or anonymized on our servers. Some anonymized aggregate data may be retained where required by law or for legitimate operational needs.",
+  "privacySectionContactTitle": "6. Contact Us",
+  "privacySectionContactContent": "If you have questions about this policy or our data practices, please contact us via the in-app support channels or the developer contact information listed on our Google Play Store page.",
+  "privacyLastUpdated": "Last Updated: April 2026",
   "dangerZone": "Danger Zone",
   "dangerZoneDesc": "Once deleted, your profile and vote history cannot be recovered.",
   "deleteAccount": "Delete Account",
