@@ -113,18 +113,17 @@ function parseThemeFromProfile(userData) {
 }
 
 const GENERATE_BATTLE_CARD_TIMEOUT_SEC = 120;
-/** 在地 HTML 極小；與 waitForSelector 併算須保留 launch／截圖／上傳餘量（≤ GENERATE_BATTLE_CARD_TIMEOUT_SEC）。 */
+/** setContent 逾時須小於函式總逾時，並保留 launch／字型／截圖／上傳餘量。 */
 const BATTLE_CARD_SET_CONTENT_TIMEOUT_MS = 30_000;
-/** 遠端頭像 + 雙 rAF；冷啟時仍須在雲端 120s 內完成。 */
+/** 遠端頭像 + document.fonts + 雙 rAF；過短易截到空白或缺字型。 */
 const BATTLE_CARD_READY_SIGNAL_MS = 45_000;
 
 /**
- * 戰報卡 SSR：profiles 為唯一資料來源；setContent 全量視覺 HTML（buildBattleCardVisualHtml，無 page.goto）。
- * timeoutSeconds 120s：冷啟 + Chromium + 慢速 CDN 頭像時避免 deadline-exceeded；前端 httpsCallable 須略長於此值。
+ * 戰報卡 SSR（清道夫版）：profiles 唯一資料來源；視覺 100% 由 buildBattleCardVisualHtml 注入（與 BattleCard.jsx 對齊），不 page.goto。
+ * 2GiB / 120s / concurrency 1：冷啟 + Chromium + 慢 CDN 頭像仍須在期限內完成。
  */
 export const generateBattleCard = onCall(
   {
-    /** Chromium 無頭在 1GiB 易抖動變慢；2GiB 可顯著降低 OOM 與長尾延遲。 */
     memory: "2GiB",
     timeoutSeconds: GENERATE_BATTLE_CARD_TIMEOUT_SEC,
     cpu: 2,
@@ -134,18 +133,18 @@ export const generateBattleCard = onCall(
   },
   async (request) => {
     requireAuth(request);
-    if (request.data?.prewarm === true) {
+    if (request.data?.prewarm) {
       return { ok: true, status: "warmed" };
     }
 
     const authUid = request.auth.uid;
-
     const userDoc = await db.doc(`profiles/${authUid}`).get();
     if (!userDoc.exists) {
       throw new HttpsError("not-found", "Profile missing");
     }
     const userData = userDoc.data() || {};
 
+    // 【視覺真相校準】與前端戰報卡一致：theme 優先，否則 teamColors；立場／戰區／證詞來自 profile
     const displayName =
       typeof userData.displayName === "string" && userData.displayName.trim()
         ? userData.displayName.trim()
@@ -164,7 +163,7 @@ export const generateBattleCard = onCall(
       ? userData.currentReasons.map((r) => String(r)).filter(Boolean)
       : [];
 
-    const validatedPayload = {
+    const payload = {
       uid: authUid,
       displayName,
       avatarUrl,
@@ -178,7 +177,7 @@ export const generateBattleCard = onCall(
       theme: parseThemeFromProfile(userData),
     };
 
-    const minimalHtml = buildBattleCardVisualHtml(validatedPayload);
+    const fullHtml = buildBattleCardVisualHtml(payload);
 
     let browser = null;
     try {
@@ -194,7 +193,6 @@ export const generateBattleCard = onCall(
         defaultViewport: null,
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
-        /** CDP 長操作上限；與雲函式 timeout 分開配置，避免長截圖／導航時先斷線 */
         protocolTimeout: 90_000,
       });
 
@@ -215,7 +213,7 @@ export const generateBattleCard = onCall(
         void req.continue();
       });
 
-      await page.setContent(minimalHtml, { waitUntil: "load", timeout: BATTLE_CARD_SET_CONTENT_TIMEOUT_MS });
+      await page.setContent(fullHtml, { waitUntil: "load", timeout: BATTLE_CARD_SET_CONTENT_TIMEOUT_MS });
 
       await page.waitForSelector("#render-ready-signal", { timeout: BATTLE_CARD_READY_SIGNAL_MS }).catch(() => {
         console.warn("[generateBattleCard] Signal timeout, force capture.");
@@ -223,7 +221,7 @@ export const generateBattleCard = onCall(
 
       const imageBuffer = await page.screenshot({
         type: "jpeg",
-        quality: 85,
+        quality: 90,
         optimizeForSpeed: true,
       });
 
