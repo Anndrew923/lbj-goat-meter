@@ -1190,11 +1190,12 @@ async function sendBreakingPublishedTopicPush(eventRef, eventId, eventData, logL
       type: "BREAKING_VOTE",
       eventId: String(eventId),
     },
+    // 勿設定 notification.clickAction：若 action 在 AndroidManifest 無對應 intent-filter，
+    // 使用者點通知時系統可能無法啟動 App。省略後由系統以預設方式開啟 launcher Activity。
     android: {
       priority: "high",
       notification: {
         channelId: "breaking_warzone_channel",
-        clickAction: "TOP_LEVEL_SCENE",
       },
     },
     apns: {
