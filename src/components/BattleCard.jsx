@@ -265,6 +265,13 @@ const BattleCard = forwardRef(function BattleCard({
           warzoneStats,
           isTitleUppercase,
           fileBaseWeb,
+          regionText,
+          verdictSectionLabel: t("battleCard.verdict_evidence"),
+          metaFooterLine: t("battleCard.meta_footer", {
+            timestamp: String(stableMetaTimestamp.current),
+            status: t("verified_data_status"),
+          }),
+          disclaimerLine: t("battleCard.disclaimer"),
         };
         navigate("/battlecard-export", {
           state: {
@@ -303,6 +310,7 @@ const BattleCard = forwardRef(function BattleCard({
       onRequestRewardAd,
       photoURL,
       rankLabel,
+      regionText,
       reasonLabels,
       status,
       t,

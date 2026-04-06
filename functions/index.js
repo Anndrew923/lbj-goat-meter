@@ -14,8 +14,6 @@ import { setGlobalOptions } from "firebase-functions/v2/options";
 import admin from "firebase-admin";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
-import { randomUUID } from "node:crypto";
-
 import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
 import { verifyAdRewardToken } from "./utils/verifyAdRewardToken.js";
 import { signAdRewardToken } from "./utils/adRewardSigning.js";
@@ -26,7 +24,6 @@ import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventL
 import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
 import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
 import { SSR_BATTLE_CARD_STANCE_PRIMARY } from "./battleCardConstants.js";
-import { buildBattleCardVisualHtml } from "./battleCardVisualHtml.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -112,15 +109,146 @@ function parseThemeFromProfile(userData) {
   return parseTheme(null);
 }
 
-const GENERATE_BATTLE_CARD_TIMEOUT_SEC = 120;
-/** setContent 逾時須小於函式總逾時，並保留 launch／字型／截圖／上傳餘量。 */
-const BATTLE_CARD_SET_CONTENT_TIMEOUT_MS = 30_000;
-/** 遠端頭像 + document.fonts + 雙 rAF；過短易截到空白或缺字型。 */
-const BATTLE_CARD_READY_SIGNAL_MS = 45_000;
+/** 方案 B：客戶端傳入與 BattleCard 一致的顯示字串／色票；長度上限避免濫用與超大 payload。 */
+const SSR_BATTLE_CARD_MAX_TEXT = 480;
+const SSR_BATTLE_CARD_MAX_REASON_ITEM = 280;
+const SSR_BATTLE_CARD_MAX_REASONS = 14;
+
+function clampSsrText(value, max) {
+  if (typeof value !== "string") return "";
+  const t = value.trim();
+  if (!t) return "";
+  return t.length <= max ? t : t.slice(0, max);
+}
+
+function normalizeSsrHexColor(v) {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s : null;
+}
+
+/** 客戶 teamColors → parseTheme 輸入（與 TEAM_COLORS 結構對齊） */
+function themeFromClientTeamColors(tc) {
+  if (!tc || typeof tc !== "object") return null;
+  const primary = normalizeSsrHexColor(tc.primary);
+  const secondary = normalizeSsrHexColor(tc.secondary);
+  if (!primary || !secondary) return null;
+  return parseTheme({
+    primaryColor: primary,
+    secondaryColor: secondary,
+    accentColor: "#FFD700",
+    backgroundGradient: { start: primary, end: secondary },
+  });
+}
+
+function normalizeClientReasonLabels(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const item of arr.slice(0, SSR_BATTLE_CARD_MAX_REASONS)) {
+    const s = clampSsrText(String(item), SSR_BATTLE_CARD_MAX_REASON_ITEM);
+    if (s) out.push(s);
+  }
+  return out;
+}
 
 /**
- * 戰報卡 SSR（清道夫版）：profiles 唯一資料來源；視覺 100% 由 buildBattleCardVisualHtml 注入（與 BattleCard.jsx 對齊），不 page.goto。
- * 2GiB / 120s / concurrency 1：冷啟 + Chromium + 慢 CDN 頭像仍須在期限內完成。
+ * 身分／投票事實以 profiles 為準；顯示文案與色票可由客戶端覆寫（須 uid、voterTeam 一致）。
+ * @param {string} authUid
+ * @param {Record<string, unknown>} userData
+ * @param {Record<string, unknown>} clientData - request.data
+ */
+function mergeBattleCardSsrPayload(authUid, userData, clientData) {
+  const d = clientData && typeof clientData === "object" ? clientData : {};
+
+  const uidIn = typeof d.uid === "string" ? d.uid.trim() : "";
+  if (uidIn && uidIn !== authUid) {
+    throw new HttpsError("invalid-argument", "uid mismatch");
+  }
+
+  const displayName =
+    typeof userData.displayName === "string" && userData.displayName.trim()
+      ? userData.displayName.trim()
+      : "Warrior";
+  const avatarUrl =
+    (typeof userData.avatarUrl === "string" && userData.avatarUrl.trim()) ||
+    (typeof userData.photoURL === "string" && userData.photoURL.trim()) ||
+    "";
+  const stanceRaw = String(userData.currentStance || "GOAT").trim() || "GOAT";
+  const stanceKey = stanceRaw.toLowerCase();
+
+  const warzoneCode =
+    String(userData.warzoneId || userData.voterTeam || "LAL")
+      .trim()
+      .toUpperCase() || "LAL";
+
+  const clientVoter = typeof d.voterTeam === "string" ? d.voterTeam.trim().toUpperCase() : "";
+  if (clientVoter && clientVoter !== warzoneCode) {
+    throw new HttpsError("invalid-argument", "voterTeam mismatch");
+  }
+
+  const battleTitle =
+    clampSsrText(typeof d.battleTitle === "string" ? d.battleTitle : "", SSR_BATTLE_CARD_MAX_TEXT) ||
+    "戰區權威裁決";
+  const battleSubtitle =
+    clampSsrText(typeof d.battleSubtitle === "string" ? d.battleSubtitle : "", SSR_BATTLE_CARD_MAX_TEXT) ||
+    "VERIFIED HISTORICAL DATA";
+  const rankLabel =
+    clampSsrText(typeof d.rankLabel === "string" ? d.rankLabel : "", SSR_BATTLE_CARD_MAX_TEXT) ||
+    "Verified Global Data";
+
+  const clientTeamLabel = clampSsrText(typeof d.teamLabel === "string" ? d.teamLabel : "", SSR_BATTLE_CARD_MAX_TEXT);
+  const teamLabel = clientTeamLabel || warzoneCode;
+
+  const reasonLabels = Array.isArray(d.reasonLabels)
+    ? normalizeClientReasonLabels(d.reasonLabels)
+    : Array.isArray(userData.currentReasons)
+      ? userData.currentReasons.map((r) => String(r)).filter(Boolean).slice(0, SSR_BATTLE_CARD_MAX_REASONS)
+      : [];
+
+  const theme = themeFromClientTeamColors(d.teamColors) || parseThemeFromProfile(userData);
+
+  const regionText =
+    clampSsrText(typeof d.regionText === "string" ? d.regionText : "", SSR_BATTLE_CARD_MAX_TEXT) || "GLOBAL";
+  const verdictSectionLabel =
+    clampSsrText(typeof d.verdictSectionLabel === "string" ? d.verdictSectionLabel : "", SSR_BATTLE_CARD_MAX_TEXT) ||
+    "VERDICT / 證詞";
+  const metaFooterLine =
+    clampSsrText(typeof d.metaFooterLine === "string" ? d.metaFooterLine : "", SSR_BATTLE_CARD_MAX_TEXT) ||
+    "VERIFIED DATA · GOAT METER";
+  const disclaimerLine =
+    clampSsrText(typeof d.disclaimerLine === "string" ? d.disclaimerLine : "", SSR_BATTLE_CARD_MAX_TEXT) ||
+    "Fan sentiment stats. Not affiliated with any player or league.";
+
+  return {
+    uid: authUid,
+    displayName,
+    avatarUrl,
+    status: stanceKey,
+    stanceDisplayPrimary: SSR_BATTLE_CARD_STANCE_PRIMARY[stanceKey] || stanceRaw.toUpperCase(),
+    teamLabel,
+    voterTeam: warzoneCode,
+    reasonLabels,
+    battleTitle,
+    battleSubtitle,
+    rankLabel,
+    theme,
+    regionText,
+    verdictSectionLabel,
+    metaFooterLine,
+    disclaimerLine,
+  };
+}
+
+/** 策略長「品質第一」：冷啟 + Chromium + 字型／頭像／networkidle0 須充裕余量。 */
+const GENERATE_BATTLE_CARD_TIMEOUT_SEC = 180;
+/** setContent：networkidle0 等網路靜默，上限 60s（須遠小於函式 180s）。 */
+const BATTLE_CARD_SET_CONTENT_TIMEOUT_MS = 60_000;
+/** 字型／頭像／雙 rAF 後 #render-ready-signal；與 networkidle0 互補。 */
+const BATTLE_CARD_READY_SIGNAL_MS = 90_000;
+
+/**
+ * 戰報卡 SSR：身分／立場以 profiles 為準；標題／副標／rankLabel／teamLabel／證詞／teamColors 可由客戶端覆寫（方案 B），與 BattleCard 畫面一致。
+ * 僅回傳 JPEG Base64；逾時 180s 優先求穩。
  */
 export const generateBattleCard = onCall(
   {
@@ -143,60 +271,29 @@ export const generateBattleCard = onCall(
       throw new HttpsError("not-found", "Profile missing");
     }
     const userData = userDoc.data() || {};
-
-    // 【視覺真相校準】與前端戰報卡一致：theme 優先，否則 teamColors；立場／戰區／證詞來自 profile
-    const displayName =
-      typeof userData.displayName === "string" && userData.displayName.trim()
-        ? userData.displayName.trim()
-        : "Warrior";
-    const avatarUrl =
-      (typeof userData.avatarUrl === "string" && userData.avatarUrl.trim()) ||
-      (typeof userData.photoURL === "string" && userData.photoURL.trim()) ||
-      "";
-    const stanceRaw = String(userData.currentStance || "GOAT").trim() || "GOAT";
-    const stanceKey = stanceRaw.toLowerCase();
-    const teamLabel =
-      String(userData.warzoneId || userData.voterTeam || "LAL")
-        .trim()
-        .toUpperCase() || "LAL";
-    const reasonLabels = Array.isArray(userData.currentReasons)
-      ? userData.currentReasons.map((r) => String(r)).filter(Boolean)
-      : [];
-
-    const payload = {
-      uid: authUid,
-      displayName,
-      avatarUrl,
-      status: stanceKey,
-      stanceDisplayPrimary: SSR_BATTLE_CARD_STANCE_PRIMARY[stanceKey] || stanceRaw.toUpperCase(),
-      teamLabel,
-      reasonLabels,
-      battleTitle: "戰區權威裁決",
-      battleSubtitle: "VERIFIED HISTORICAL DATA",
-      rankLabel: "Verified Global Data",
-      theme: parseThemeFromProfile(userData),
-    };
-
-    const fullHtml = buildBattleCardVisualHtml(payload);
+    const payload = mergeBattleCardSsrPayload(authUid, userData, request.data || {});
 
     let browser = null;
     try {
+      /**
+       * @sparticuz/chromium 僅支援 chrome-headless-shell；須 headless: "shell" + defaultArgs 合併。
+       * 先前 `chromium.headless` 實際為 undefined → Puppeteer 套用 --headless=new，與 binary／args 衝突 → Target closed。
+       */
+      chromium.setGraphicsMode = false;
+
       browser = await puppeteer.launch({
-        args: [
-          ...chromium.args,
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-web-security",
-          "--force-color-profile=srgb",
-          "--use-gl=swiftshader",
-        ],
+        args: puppeteer.defaultArgs({
+          args: chromium.args,
+          headless: "shell",
+        }),
         defaultViewport: null,
         executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-        protocolTimeout: 90_000,
+        headless: "shell",
+        protocolTimeout: 180_000,
       });
 
       const page = await browser.newPage();
+      /** DPR=2 易在雲端 OOM；1080 + quality 95 仍足夠精緻 */
       await page.setViewport({ width: 1080, height: 1080, deviceScaleFactor: 1 });
 
       await page.setRequestInterception(true);
@@ -213,40 +310,37 @@ export const generateBattleCard = onCall(
         void req.continue();
       });
 
-      await page.setContent(fullHtml, { waitUntil: "load", timeout: BATTLE_CARD_SET_CONTENT_TIMEOUT_MS });
+      const { buildBattleCardVisualHtml } = await import("./battleCardVisualHtml.js");
+      if (typeof buildBattleCardVisualHtml !== "function") {
+        throw new Error("Visual Engine Missing");
+      }
+      const fullHtml = buildBattleCardVisualHtml(payload);
+
+      await page.setContent(fullHtml, {
+        waitUntil: "networkidle0",
+        timeout: BATTLE_CARD_SET_CONTENT_TIMEOUT_MS,
+      });
 
       await page.waitForSelector("#render-ready-signal", { timeout: BATTLE_CARD_READY_SIGNAL_MS }).catch(() => {
-        console.warn("[generateBattleCard] Signal timeout, force capture.");
+        console.warn("[generateBattleCard] render-ready-signal timeout, forcing capture.");
       });
 
       const imageBuffer = await page.screenshot({
         type: "jpeg",
-        quality: 90,
-        optimizeForSpeed: true,
+        quality: 95,
+        fullPage: false,
       });
+      const base64Image = imageBuffer.toString("base64");
 
-      const bucket = admin.storage().bucket();
-      const objectPath = `exports/battlecards/${randomUUID()}.jpg`;
-      const file = bucket.file(objectPath);
-      await file.save(imageBuffer, {
-        metadata: { contentType: "image/jpeg", cacheControl: "public, max-age=300" },
-      });
-
-      let url = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
-      let downloadUrl = url;
-      try {
-        await file.makePublic();
-      } catch {
-        const [signedUrl] = await file.getSignedUrl({ action: "read", expires: "2100-01-01" });
-        url = signedUrl;
-        downloadUrl = signedUrl;
-      }
-
-      return { ok: true, url, downloadUrl, path: objectPath };
+      return {
+        ok: true,
+        downloadBase64: base64Image,
+      };
     } catch (err) {
       if (err instanceof HttpsError) throw err;
-      console.error("[generateBattleCard] Puppeteer render failed:", err);
-      throw new HttpsError("internal", "Failed to generate battle card");
+      const msg = err && typeof err.message === "string" ? err.message : "unknown";
+      console.error("[generateBattleCard] 渲染失敗:", err);
+      throw new HttpsError("internal", `後端渲染崩潰：${msg}`);
     } finally {
       if (browser) {
         await browser.close().catch(() => {});

@@ -1,6 +1,7 @@
 /**
  * 全量視覺 SSR：與 BattleCard.jsx 匯出場景對齊（640 邏輯座標 × scale 1.6875 → 1080）。
- * 字牆由 renderBattleCardWallHtml 伺服器預渲染（與 App 同 seed / mulberry32）。
+ * 含：115° 斜向能量縫合（card-container 雙層漸層 + 縫線）、Word Wall（mulberry32／renderBattleCardWallHtml）、
+ * GOAT-Display @font-face、身分列玻璃質感（backdrop-filter）。
  */
 
 import { SSR_BATTLE_CARD_STANCE_COLORS } from "./battleCardConstants.js";
@@ -85,7 +86,12 @@ export function buildBattleCardVisualHtml(data) {
   const stanceC = SSR_BATTLE_CARD_STANCE_COLORS[stanceKey] || SSR_BATTLE_CARD_STANCE_COLORS.goat;
   const stanceTitle = String(data.stanceDisplayPrimary || stanceKey || "GOAT").toUpperCase();
   const pm = getPowerStanceModel(stanceTitle);
-  const teamLabel = String(data.teamLabel || "LAL").toUpperCase() || "LAL";
+  /** 字牆：與 App 一致用戰區代碼（如 GSW）；身分列：可為在地化 teamLabel */
+  const wallWord = String(data.voterTeam || data.teamLabel || "LAL").toUpperCase().trim() || "LAL";
+  const identityTeamLabel =
+    data.teamLabel != null && String(data.teamLabel).trim() !== ""
+      ? String(data.teamLabel).toUpperCase()
+      : wallWord;
   const displayName = escapeHtml(String(data.displayName || "Warrior"));
   const battleTitle = escapeHtml(String(data.battleTitle || ""));
   const battleSubtitle = escapeHtml(String(data.battleSubtitle || ""));
@@ -94,7 +100,7 @@ export function buildBattleCardVisualHtml(data) {
   const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
 
   const wallHtml = renderBattleCardWallHtml({
-    wallText: teamLabel,
+    wallText: wallWord,
     battleTitle: data.battleTitle || "",
     teamColors: { primary, secondary },
   });
@@ -125,6 +131,15 @@ export function buildBattleCardVisualHtml(data) {
   const cornerBottomRimAlpha = hexWithAlpha(mixHex(complementSecondary, secondary, 0.35), "F0");
   const textHudEdgeShadow = `0 1px 2px ${hexWithAlpha(mixHex(secondary, "#000000", 0.6), "D0")}`;
 
+  /**
+   * Power Stance 中央字樣：與 BattleCard.jsx 對齊。
+   * - 明確使用 sans 堆疊，避免繼承 html/body 的 GOAT-Display（與 App 的 font-black + 預設 sans 一致）。
+   * - textShadow + 四層 filter 與前端 `textHudEdgeShadow` + LED 霓虹疊法同源。
+   */
+  const powerStanceSans =
+    "ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif";
+  const powerStanceFilter = `drop-shadow(0 0 30px ${stanceC}) drop-shadow(0 0 18px ${hexWithAlpha(primary, "70")}) drop-shadow(0 0 8px ${reflectiveTint60}) drop-shadow(0 2px 3px rgba(0,0,0,1))`;
+
   const pFF = hexWithAlpha(primary, "FF");
   const pE6 = hexWithAlpha(primary, "E6");
   const sE6 = hexWithAlpha(secondary, "E6");
@@ -134,6 +149,19 @@ export function buildBattleCardVisualHtml(data) {
   const hosting = resolveHostingOrigin();
   /** 與 Hosting public/fonts/GOAT-Display.ttf 對齊（預設即 lbj-goat-meter.web.app/fonts/...） */
   const fontUrl = `${hosting}/fonts/GOAT-Display.ttf`;
+  /** 與 App 相同資產：public/goat-crown-icon.png（固定路徑，避免 Vite hash） */
+  const crownImgUrl = `${hosting}/goat-crown-icon.png`;
+
+  const regionLine = escapeHtml(String(data.regionText != null && String(data.regionText).trim() !== "" ? data.regionText : "GLOBAL"));
+  const verdictSectionLabel = escapeHtml(
+    String(data.verdictSectionLabel != null && String(data.verdictSectionLabel).trim() !== "" ? data.verdictSectionLabel : "VERDICT / 證詞")
+  );
+  const metaFooterLine = escapeHtml(
+    String(data.metaFooterLine != null && String(data.metaFooterLine).trim() !== "" ? data.metaFooterLine : "VERIFIED DATA · GOAT METER")
+  );
+  const disclaimerLine = escapeHtml(
+    String(data.disclaimerLine != null && String(data.disclaimerLine).trim() !== "" ? data.disclaimerLine : "Fan sentiment stats. Not affiliated with any player or league.")
+  );
 
   const stanceLineHtml = pm.isMultiLine
     ? `${escapeHtml(pm.line1)}<br/>${escapeHtml(pm.line2 || "")}`
@@ -142,7 +170,7 @@ export function buildBattleCardVisualHtml(data) {
   const reasonsBlock =
     reasons.length > 0
       ? `<div style="margin:10px 20px 0;padding:12px;border-radius:8px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.1);max-height:120px;overflow-y:auto">
-          <p style="margin:0 0 6px;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.5)">VERDICT / 證詞</p>
+          <p style="margin:0 0 6px;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.5)">${verdictSectionLabel}</p>
           <p style="margin:0;line-height:1.35">${reasons.map((r) => `<span style="color:${stanceC};font-size:13px;font-weight:600;text-shadow:${textHudEdgeShadow}">${r}</span>`).join(" / ")}</p>
         </div>`
       : "";
@@ -174,31 +202,31 @@ export function buildBattleCardVisualHtml(data) {
       <h2 style="position:relative;margin:0 0 4px;font-size:12px;letter-spacing:0.2em;font-weight:600;color:${hexWithAlpha(stanceC, "CC")};text-shadow:${textHudEdgeShadow}">${battleSubtitle}</h2>
       <h1 style="position:relative;margin:0;font-size:34px;font-weight:900;font-style:italic;letter-spacing:-0.03em;color:${stanceC};text-transform:uppercase;white-space:nowrap;text-shadow:${textHudEdgeShadow},0 0 16px ${hexWithAlpha(stanceC, "44")}">${battleTitle}</h1>
     </div>
-    <div style="position:relative;display:flex;gap:12px;align-items:center;border-radius:12px;padding:8px;margin-bottom:12px">
-      <div style="position:absolute;inset:0;border-radius:12px;background:rgba(0,0,0,0.45);z-index:0"></div>
+    <div style="position:relative;display:flex;gap:12px;align-items:center;border-radius:12px;padding:8px;margin-bottom:12px;overflow:hidden">
+      <div style="position:absolute;inset:0;border-radius:12px;background:rgba(0,0,0,0.38);z-index:0;backdrop-filter:blur(14px) saturate(1.25);-webkit-backdrop-filter:blur(14px) saturate(1.25);border:1px solid rgba(255,255,255,0.12);box-shadow:inset 0 1px 0 rgba(255,255,255,0.06)"></div>
       <div style="position:relative;z-index:1;width:48px;height:48px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);flex-shrink:0">${avatarBlock}</div>
       <div style="position:relative;z-index:1;min-width:0;flex:1">
         <p style="margin:0;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;text-shadow:${textHudEdgeShadow}">${displayName}</p>
-        <p style="margin:4px 0 0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${primary};text-shadow:${textHudEdgeShadow}">${escapeHtml(teamLabel)}</p>
+        <p style="margin:4px 0 0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${primary};text-shadow:${textHudEdgeShadow}">${escapeHtml(identityTeamLabel)}</p>
       </div>
     </div>
     <div style="position:relative;margin:12px 40px;padding:20px 24px;border-radius:16px;text-align:center">
       <div style="position:absolute;inset:0;margin:0 -16px;border-radius:16px;background:rgba(0,0,0,0.75);z-index:-1;box-shadow:0 0 40px rgba(0,0,0,0.45)"></div>
-      <div style="position:relative;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:-0.04em;color:${stanceC};font-size:${pm.fontSize}px;line-height:${pm.lineHeight};text-shadow:0 0 24px ${hexWithAlpha(stanceC, "AA")},0 2px 3px #000;filter:drop-shadow(0 0 10px ${hexWithAlpha(primary, "70")})">${stanceLineHtml}</div>
+      <div style="position:relative;font-family:${powerStanceSans};font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:-0.05em;color:${stanceC};font-size:${pm.fontSize}px;line-height:${pm.lineHeight};text-shadow:${textHudEdgeShadow};filter:${powerStanceFilter}">${stanceLineHtml}</div>
     </div>
     ${reasonsBlock}
     <div style="margin-top:auto;padding:16px 8px 8px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:8px;border-top:1px solid rgba(255,255,255,0.12)">
       <div style="min-width:0">
-        <span style="display:block;font-size:11px;color:${primary};filter:brightness(1.1);text-shadow:${textHudEdgeShadow}">GLOBAL</span>
+        <span style="display:block;font-size:11px;color:${primary};filter:brightness(1.15) saturate(1.2);text-shadow:${textHudEdgeShadow}">${regionLine}</span>
         <span style="display:block;margin-top:2px;font-size:11px;color:rgba(255,255,255,0.88);text-shadow:${textHudEdgeShadow}">${rankLabel}</span>
       </div>
       <div style="display:flex;align-items:flex-end;gap:8px;flex-shrink:0">
-        <span style="font-size:38px;line-height:1;filter:drop-shadow(0 0 6px rgba(168,85,247,0.5))">♛</span>
-        <span style="font-size:11px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#D4AF37;white-space:nowrap;text-shadow:${textHudEdgeShadow}">The GOAT Meter</span>
+        <img src="${escapeHtml(crownImgUrl)}" alt="" width="56" height="56" style="width:56px;height:56px;object-fit:contain;filter:drop-shadow(0 0 8px rgba(168,85,247,0.6))"/>
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#D4AF37;white-space:nowrap;text-shadow:${textHudEdgeShadow};font-family:'GOAT-Display',ui-sans-serif,system-ui,sans-serif">The GOAT Meter</span>
       </div>
     </div>
-    <p style="margin:6px 4px 4px;font-size:6px;text-align:center;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.38)">VERIFIED DATA · GOAT METER</p>
-    <p style="margin:0 4px 8px;font-size:8px;text-align:center;line-height:1.3;color:rgba(255,255,255,0.4)">Fan sentiment stats. Not affiliated with any player or league.</p>
+    <p style="margin:6px 4px 4px;font-size:6px;text-align:center;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.38)">${metaFooterLine}</p>
+    <p style="margin:0 4px 8px;font-size:8px;text-align:center;line-height:1.3;color:rgba(255,255,255,0.4)">${disclaimerLine}</p>
   </div>
 </div>`;
 

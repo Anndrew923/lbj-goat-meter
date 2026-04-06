@@ -22,7 +22,7 @@ async function triggerDownload(url, downloadBase64) {
     const raw = atob(downloadBase64);
     const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
-    downloadBlob(new Blob([bytes], { type: "image/png" }), "LBJ-GOAT-Meter.png");
+    downloadBlob(new Blob([bytes], { type: "image/jpeg" }), "LBJ-GOAT-Meter.jpg");
     return;
   }
 
@@ -150,19 +150,33 @@ export default function BattleCardExportScene() {
         if (!fns) {
           throw new Error("Firebase Functions unavailable");
         }
-        /** 須略長於雲端 generateBattleCard timeoutSeconds（120s + 冷啟 + Puppeteer），否則客戶端先 deadline-exceeded 且閘道 504 不帶 CORS。 */
-        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 130_000 });
+        /** 須略長於雲端 generateBattleCard timeoutSeconds（180s + 冷啟 + Puppeteer），否則客戶端先 deadline-exceeded 且閘道 504 不帶 CORS。 */
+        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 200_000 });
         /**
-         * 必須帶上 uid：舊版 Callable 會驗證 data.uid === auth.uid，空物件會得到 invalid-argument / uid is invalid。
-         * 新版後端僅以 request.auth.uid + profiles 組裝戰報，此欄位僅為相容與除錯。
+         * 方案 B：與 BattleCard 匯出 state.exportPayload 一致，後端以 profiles 校驗身分／warzone，顯示文案與色票用客戶端值。
          */
-        const res = await callable({ uid: user.uid });
+        const ep = exportPayload;
+        const res = await callable({
+          uid: user.uid,
+          battleTitle: ep.battleTitle,
+          battleSubtitle: ep.battleSubtitle,
+          rankLabel: ep.rankLabel,
+          teamLabel: ep.teamLabel,
+          teamColors: ep.teamColors,
+          reasonLabels: ep.reasonLabels,
+          voterTeam: ep.voterTeam,
+          regionText: ep.regionText,
+          verdictSectionLabel: ep.verdictSectionLabel,
+          metaFooterLine: ep.metaFooterLine,
+          disclaimerLine: ep.disclaimerLine,
+        });
         if (cancelled) return;
         const data = res?.data?.result ? res.data.result : res?.data;
         const url = data?.downloadUrl || data?.url;
         const downloadBase64 = data?.downloadBase64 || "";
-        if (!url || typeof url !== "string") {
-          throw new Error("Missing battle card URL");
+        const hasBase64 = typeof downloadBase64 === "string" && downloadBase64.length > 0;
+        if (!hasBase64 && (!url || typeof url !== "string")) {
+          throw new Error("Missing battle card payload");
         }
         await triggerDownload(url, downloadBase64);
         if (cancelled) return;
