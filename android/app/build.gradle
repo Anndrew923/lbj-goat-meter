@@ -27,8 +27,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         manifestPlaceholders = [debuggable: "false"]
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 9
-        versionName "1.0.9"
+        versionCode 10
+        versionName "1.0.10"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -64,6 +64,16 @@ android {
             firebaseCrashlytics {
                 mappingFileUploadEnabled true
             }
+        }
+    }
+}
+
+// Facebook SDK：統一 com.facebook.android 版本，避免 social-login（facebook-login 18.x）與
+// facebook-analytics（舊版 pin 17.x）混用導致 R8 duplicate class。
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'com.facebook.android') {
+            details.useVersion '18.1.3'
         }
     }
 }

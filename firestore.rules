@@ -7,6 +7,9 @@ rules_version = '2';
 // 2. profiles 僅 isOwner 可寫；votes / warzoneStats 客戶端一律不可寫（僅 Cloud Functions Admin SDK）。
 // 3. 方案 B（刪帳撤票）與投票、重置立場之統計異動：僅後端 Callable + Admin Transaction，繞過本規則。
 // 4. votes 讀取：僅允許讀取 userId 為本人之文件；漏斗篩選統計改走 Callable getFilteredSentimentSummary。
+// 5. global_events 主文件：僅後台管理員（信箱與 src/components/AdminRoute.jsx 之 ADMIN_EMAIL 一致）可建立／刪除；
+//    客戶端 update 僅允許 is_active／updatedAt（見 isBreakingGlobalEventAdminOnlyMetaUpdate）；其餘欄位由 Functions 維護。
+//    子集合 votes 仍僅 Functions 寫入，與 submitBreakingVote 設計一致。
 // =============================================================================
 
 service cloud.firestore {
@@ -18,6 +21,18 @@ service cloud.firestore {
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 突發戰區後台：與 AdminRoute.jsx 的 ADMIN_EMAIL 同步；勿僅依前端隱藏路由，須由規則強制。
+    function isBreakingWarzoneAdmin() {
+      return isAuthenticated()
+        && request.auth.token.email == 'topaj01@gmail.com';
+    }
+
+    // 管理員僅可改 is_active／updatedAt（批次先建後啟、上下架）；票數等仍僅 Functions 寫入。
+    function isBreakingGlobalEventAdminOnlyMetaUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['is_active', 'updatedAt']);
     }
 
     // 1. User Profile：僅本人可讀寫
@@ -71,10 +86,11 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // 6. 突發戰區（global_events）：前端與 App 只讀，所有寫入一律走 Cloud Functions Admin SDK
+    // 6. 突發戰區（global_events）：公開讀；主文件管理員可建立／刪除；update 僅限 is_active+updatedAt。
     match /global_events/{eventId} {
       allow read: if true;
-      allow create, update, delete: if false;
+      allow create, delete: if isBreakingWarzoneAdmin();
+      allow update: if isBreakingWarzoneAdmin() && isBreakingGlobalEventAdminOnlyMetaUpdate();
     }
 
     // 7. 突發戰區子集合 votes：一話題一設備一票，前端不可直接改寫

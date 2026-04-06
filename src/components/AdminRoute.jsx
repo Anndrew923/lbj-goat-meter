@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { isFirebaseReady } from '../lib/firebase'
 
+// 若變更管理員信箱，請同步更新 firestore.rules 的 isBreakingWarzoneAdmin()
 const ADMIN_EMAIL = 'topaj01@gmail.com'
 
 export default function AdminRoute({ children }) {

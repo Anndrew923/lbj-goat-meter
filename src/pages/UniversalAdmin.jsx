@@ -5,6 +5,7 @@
  * - 跨專案通用：撰寫 global_events 文件，target_app 陣列決定哪些 App 顯示。
  * - 動態雙語存儲：標題、描述、選項皆以語系物件 { "zh-TW": "...", "en": "..." } 寫入 Firestore。
  * - 圖片上傳後 URL 與雙語內容一併存入同一 Document。
+ * - 清單可切換 is_active：先批次建立未啟用話題，再啟用上首頁；onBreakingEventUpdate 會在 false→true 時推播。
  */
 import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +21,7 @@ import {
   orderBy,
   deleteDoc,
   doc,
+  updateDoc,
 } from 'firebase/firestore'
 import { db, storage } from '../lib/firebase'
 import { GLOBAL_EVENTS_COLLECTION } from '../lib/constants'
@@ -90,6 +92,7 @@ export default function UniversalAdmin() {
   const [allTopics, setAllTopics] = useState([])
   const [topicsLoading, setTopicsLoading] = useState(true)
   const [deletingId, setDeletingId] = useState(null)
+  const [togglingActiveId, setTogglingActiveId] = useState(null)
 
   const onFile = useCallback((file) => {
     if (!file?.type?.startsWith('image/')) return
@@ -135,9 +138,32 @@ export default function UniversalAdmin() {
     loadAllTopics()
   }, [loadAllTopics])
 
+  const handleToggleActive = async (ev) => {
+    const id = ev?.id
+    if (!id || !db) return
+    const next = ev.is_active !== true
+    setTogglingActiveId(id)
+    setMessage(null)
+    try {
+      await updateDoc(doc(db, GLOBAL_EVENTS_COLLECTION, id), {
+        is_active: next,
+        updatedAt: serverTimestamp(),
+      })
+      setMessage({ type: 'success', text: t('adminTopicStatusUpdated') })
+      setAllTopics((prev) =>
+        prev.map((x) => (x.id === id ? { ...x, is_active: next } : x))
+      )
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('[UniversalAdmin] handleToggleActive', err)
+      setMessage({ type: 'error', text: err?.message || t('adminError') })
+    } finally {
+      setTogglingActiveId(null)
+    }
+  }
+
   const handleDelete = async (ev) => {
     const id = ev?.id
-    if (!id) return
+    if (!id || !db) return
     setDeletingId(id)
     setMessage(null)
     try {
@@ -231,6 +257,7 @@ export default function UniversalAdmin() {
         total_votes: 0,
         is_active: !!isActive,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       })
       setMessage({
         type: 'success',
@@ -253,7 +280,7 @@ export default function UniversalAdmin() {
     }
   }
 
-  const previewTitle = titleEn.trim() || titleZh.trim() || '—'
+  const previewTitle = titleEn.trim() || titleZh.trim() || t('adminDashPlaceholder')
   const previewOptions = zipOptionsToList(optionsZh, optionsEn)
 
   return (
@@ -285,7 +312,7 @@ export default function UniversalAdmin() {
                 value={targetAppText}
                 onChange={(e) => setTargetAppText(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-villain-purple/30 text-white placeholder-gray-500 focus:border-king-gold/50 focus:ring-1 focus:ring-king-gold/30 outline-none"
-                placeholder="goat_meter"
+                placeholder={t('adminPlaceholderTargetApp')}
               />
             </label>
 
@@ -400,6 +427,7 @@ export default function UniversalAdmin() {
               />
               <span className="text-sm text-gray-300">{t('adminIsActive')}</span>
             </label>
+            <p className="text-xs text-gray-500 leading-relaxed">{t('adminBatchHint')}</p>
             {message && (
               <p
                 className={`text-sm ${
@@ -420,7 +448,7 @@ export default function UniversalAdmin() {
             </button>
             {!storage && (
               <p className="text-xs text-amber-500" role="status">
-                VITE_FIREBASE_STORAGE_BUCKET not set; image upload disabled.
+                {t('adminStorageBucketMissing')}
               </p>
             )}
           </motion.section>
@@ -468,7 +496,7 @@ export default function UniversalAdmin() {
                         key={i}
                         className="px-2 py-0.5 rounded text-xs bg-king-gold/20 text-king-gold"
                       >
-                        {opt.en || opt['zh-TW'] || '—'}
+                        {opt.en || opt['zh-TW'] || t('adminDashPlaceholder')}
                       </span>
                     ))}
                   </div>
@@ -497,33 +525,53 @@ export default function UniversalAdmin() {
               {allTopics.map((ev) => {
                 const titleText =
                   (typeof ev.title === 'object' && ev.title != null
-                    ? (ev.title['zh-TW'] || ev.title.en || '—')
-                    : String(ev.title ?? '—')) || '—'
+                    ? (ev.title['zh-TW'] || ev.title.en || t('adminDashPlaceholder'))
+                    : String(ev.title ?? t('adminDashPlaceholder'))) || t('adminDashPlaceholder')
                 const isDeleting = deletingId === ev.id
+                const isToggling = togglingActiveId === ev.id
                 return (
                   <li
                     key={ev.id}
-                    className="flex items-center justify-between gap-4 py-2 px-3 rounded-lg bg-gray-800/80 border border-villain-purple/20"
+                    className="flex flex-wrap items-center justify-between gap-3 py-2 px-3 rounded-lg bg-gray-800/80 border border-villain-purple/20"
                   >
                     <span className="text-sm text-white truncate flex-1 min-w-0">
                       {titleText}
                     </span>
-                    <span
-                      className={`text-xs shrink-0 ${
-                        ev.is_active ? 'text-king-gold' : 'text-gray-500'
-                      }`}
-                    >
-                      {ev.is_active ? t('adminIsActive') : '—'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(ev)}
-                      disabled={isDeleting}
-                      aria-label={t('adminDelete')}
-                      className="shrink-0 py-1.5 px-3 rounded-lg text-xs font-medium text-red-400 border border-red-500/40 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isDeleting ? t('adminDeleting') : t('adminDelete')}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`text-xs ${
+                          ev.is_active ? 'text-king-gold' : 'text-gray-500'
+                        }`}
+                      >
+                        {ev.is_active ? t('adminIsActive') : t('adminInactiveShort')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(ev)}
+                        disabled={isDeleting || isToggling}
+                        aria-label={
+                          ev.is_active
+                            ? t('adminAriaDeactivateTopic', { title: titleText })
+                            : t('adminAriaActivateTopic', { title: titleText })
+                        }
+                        className="py-1.5 px-3 rounded-lg text-xs font-medium text-king-gold border border-king-gold/40 hover:bg-king-gold/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isToggling
+                          ? t('adminUpdatingTopicStatus')
+                          : ev.is_active
+                            ? t('adminHideFromHome')
+                            : t('adminActivateOnHome')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(ev)}
+                        disabled={isDeleting || isToggling}
+                        aria-label={t('adminDelete')}
+                        className="py-1.5 px-3 rounded-lg text-xs font-medium text-red-400 border border-red-500/40 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDeleting ? t('adminDeleting') : t('adminDelete')}
+                      </button>
+                    </div>
                   </li>
                 )
               })}

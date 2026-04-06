@@ -1234,7 +1234,7 @@ async function sendBreakingPublishedTopicPush(eventRef, eventId, eventData, logL
 /**
  * onNewBreakingEvent — 突發戰區發佈通知：新議題建立時推播至 global_warzone topic（與 onWarzoneLeaderChange 主投票通知並存）。
  *
- * 設計意圖：data 帶 eventId（字串）供客戶端點擊後深連；略過草稿 status、未啟用 is_active、或空文件，避免洗版。
+ * 設計意圖：data 帶 eventId（字串）供客戶端點擊後深連；略過草稿 status、is_active 非 true、或空文件，避免洗版。
  * FCM data payload 值須全為字串；notification title/body 必須為字串（後台欄位為本地化物件時需先解析）。
  */
 export const onNewBreakingEvent = functions.firestore
@@ -1243,8 +1243,8 @@ export const onNewBreakingEvent = functions.firestore
     const eventData = snapshot.data();
     if (!eventData) return;
     if (eventData.status === "draft") return;
-    // 與 UniversalAdmin 一致：is_active === false 時不推播（略過未定義以相容舊文件）
-    if (eventData.is_active === false) return;
+    // 與 onBreakingEventUpdate 一致：僅在「已啟用」時推播（false／缺欄／非布林皆不推）
+    if (eventData.is_active !== true) return;
     if (eventData.pushSent === true) return;
 
     const eventId = context.params.eventId;
@@ -1254,7 +1254,7 @@ export const onNewBreakingEvent = functions.firestore
 /**
  * onBreakingEventUpdate — 草稿發佈通知：監聽 global_events/{eventId} onUpdate。
  *
- * 觸發：before.is_active === false && after.is_active === true。
+ * 觸發：before 非啟用（false 或欄位缺失）且 after.is_active === true。
  * 門禁：after.pushSent === true 或 after.status === 'draft' 不送（與 onCreate 共用 sendBreakingPublishedTopicPush + pushSent）。
  * 寫入 pushSent 後會再觸發 onUpdate，但因不符合 false→true，不會迴圈推播。
  */
@@ -1264,7 +1264,7 @@ export const onBreakingEventUpdate = functions.firestore
     const before = change.before.data() || {};
     const after = change.after.data() || {};
 
-    if (!(before.is_active === false && after.is_active === true)) return;
+    if (!(before.is_active !== true && after.is_active === true)) return;
     if (after.pushSent === true || after.status === "draft") return;
 
     const eventId = context.params.eventId;
