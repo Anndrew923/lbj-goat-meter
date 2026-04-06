@@ -31,7 +31,6 @@ import {
 const DEFAULT_WARZONE_ID = "LAL";
 
 export default function VotePage() {
-  useBattleCardCallablePrewarm();
   const { t, i18n } = useTranslation("common");
   const isEn = i18n.language === "en";
   const {
@@ -46,6 +45,7 @@ export default function VotePage() {
     clearAuthError,
     revote,
   } = useAuth();
+  useBattleCardCallablePrewarm(currentUser);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const lastStableUidRef = useRef(currentUser?.uid);

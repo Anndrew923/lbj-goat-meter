@@ -26,7 +26,7 @@ import { resolveBreakingEventLocalizedText } from "./utils/resolveBreakingEventL
 import { hashDeviceFingerprintMaterial } from "./utils/fingerprintHash.js";
 import { computeSentimentSummaryFromRows } from "./utils/computeSentimentSummary.js";
 import { SSR_BATTLE_CARD_STANCE_PRIMARY } from "./battleCardConstants.js";
-import { buildBattleCardMinimalHtmlDocument } from "./battleCardPuppeteerDocument.js";
+import { buildBattleCardVisualHtml } from "./battleCardVisualHtml.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -112,15 +112,15 @@ function parseThemeFromProfile(userData) {
   return parseTheme(null);
 }
 
-/** 戰報卡 SSR 逾時：45s 為絕對死線；須小於前端 httpsCallable timeout（見 BattleCardExportScene）。 */
-const GENERATE_BATTLE_CARD_TIMEOUT_SEC = 45;
-/** 在地 HTML 極小；過長無益且擠壓 launch／截圖／上傳時間。 */
-const BATTLE_CARD_SET_CONTENT_TIMEOUT_MS = 10_000;
-/** 含遠端頭像載入與雙 rAF；須與 SET_CONTENT、launch、截圖、上傳併算 ≤ 雲端 timeout。 */
-const BATTLE_CARD_READY_SIGNAL_MS = 22_000;
+const GENERATE_BATTLE_CARD_TIMEOUT_SEC = 120;
+/** 在地 HTML 極小；與 waitForSelector 併算須保留 launch／截圖／上傳餘量（≤ GENERATE_BATTLE_CARD_TIMEOUT_SEC）。 */
+const BATTLE_CARD_SET_CONTENT_TIMEOUT_MS = 30_000;
+/** 遠端頭像 + 雙 rAF；冷啟時仍須在雲端 120s 內完成。 */
+const BATTLE_CARD_READY_SIGNAL_MS = 45_000;
 
 /**
- * 戰報卡 SSR：payload 僅來自 Admin 讀取 profiles；以最小 HTML + window.__DATA__ 在地繪製，避免 page.goto Hosting 冷載入整站。
+ * 戰報卡 SSR：profiles 為唯一資料來源；setContent 全量視覺 HTML（buildBattleCardVisualHtml，無 page.goto）。
+ * timeoutSeconds 120s：冷啟 + Chromium + 慢速 CDN 頭像時避免 deadline-exceeded；前端 httpsCallable 須略長於此值。
  */
 export const generateBattleCard = onCall(
   {
@@ -178,17 +178,24 @@ export const generateBattleCard = onCall(
       theme: parseThemeFromProfile(userData),
     };
 
-    const minimalHtml = buildBattleCardMinimalHtmlDocument(validatedPayload);
+    const minimalHtml = buildBattleCardVisualHtml(validatedPayload);
 
     let browser = null;
     try {
       browser = await puppeteer.launch({
-        args: [...chromium.args, "--no-sandbox", "--disable-setuid-sandbox", "--disable-web-security"],
+        args: [
+          ...chromium.args,
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-web-security",
+          "--force-color-profile=srgb",
+          "--use-gl=swiftshader",
+        ],
         defaultViewport: null,
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
-        /** 須低於雲函式 timeout；避免 launch / CDP 長尾先失敗 */
-        protocolTimeout: Math.min((GENERATE_BATTLE_CARD_TIMEOUT_SEC - 5) * 1000, 120_000),
+        /** CDP 長操作上限；與雲函式 timeout 分開配置，避免長截圖／導航時先斷線 */
+        protocolTimeout: 90_000,
       });
 
       const page = await browser.newPage();
@@ -255,7 +262,7 @@ export const generateBattleCard = onCall(
  *
  * 設計意圖：Puppeteer 開啟的無頭頁面無法可靠取得 App Check token，導致客戶端 Firestore
  * 讀取在「強制 App Check」下會失敗時，舊版無頭頁曾無法設好 `__RENDER_READY__`。
- * generateBattleCard 已改為 Puppeteer setContent 最小 HTML（window.__DATA__），一般不需此端點；仍保留供手動除錯或舊連結以 OTT 讀取 payload。
+ * generateBattleCard 已改為 Puppeteer setContent 全量視覺 HTML（與 BattleCard 對齊），一般不需此端點；仍保留供手動除錯或舊連結以 OTT 讀取 payload。
  * 此端點走 Admin SDK，不依賴瀏覽器 App Check；以 jobId + token 驗證並檢查過期時間。
  */
 export const getRenderStudioPayload = onRequest(

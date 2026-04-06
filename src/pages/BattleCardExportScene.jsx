@@ -150,8 +150,8 @@ export default function BattleCardExportScene() {
         if (!fns) {
           throw new Error("Firebase Functions unavailable");
         }
-        /** 須略長於雲端 generateBattleCard timeoutSeconds（含冷啟 + Puppeteer），否則客戶端先 deadline-exceeded 且閘道 504 不帶 CORS。 */
-        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 55_000 });
+        /** 須略長於雲端 generateBattleCard timeoutSeconds（120s + 冷啟 + Puppeteer），否則客戶端先 deadline-exceeded 且閘道 504 不帶 CORS。 */
+        const callable = httpsCallable(fns, "generateBattleCard", { timeout: 130_000 });
         /**
          * 必須帶上 uid：舊版 Callable 會驗證 data.uid === auth.uid，空物件會得到 invalid-argument / uid is invalid。
          * 新版後端僅以 request.auth.uid + profiles 組裝戰報，此欄位僅為相容與除錯。

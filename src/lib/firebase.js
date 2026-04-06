@@ -258,5 +258,5 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export { auth, db, storage, googleProvider }
+export { auth, db, storage, googleProvider, firebaseFunctions as functions }
 export default app
