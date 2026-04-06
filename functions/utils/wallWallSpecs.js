@@ -7,28 +7,44 @@ import { hashStringToSeed, mulberry32 } from "./battleCardVisualMath.js";
 const WALL_SIZE_CLASSES = ["text-4xl", "text-5xl", "text-6xl", "text-7xl", "text-8xl", "text-9xl"];
 const WALL_SIZE_PX = [36, 48, 60, 72, 96, 128];
 
+/** 與 src/utils/battleCardMirrorShared.js 同源（毛玻璃寬固定、依字數縮字級） */
+const POWER_STANCE_INNER_WIDTH_PX = 520;
+const POWER_STANCE_GLOW_RESERVE_PX = 16;
+const POWER_STANCE_CHAR_WIDTH_RATIO = 0.66;
+const POWER_STANCE_FONT_MIN_PX = 48;
+const POWER_STANCE_FONT_MAX_PX = 120;
+
+function computePowerStanceFontPx(charCount) {
+  const n = Math.max(1, charCount);
+  const usable = POWER_STANCE_INNER_WIDTH_PX - POWER_STANCE_GLOW_RESERVE_PX;
+  const raw = Math.floor(usable / (n * POWER_STANCE_CHAR_WIDTH_RATIO));
+  return Math.min(POWER_STANCE_FONT_MAX_PX, Math.max(POWER_STANCE_FONT_MIN_PX, raw));
+}
+
 export function getPowerStanceModel(stanceDisplayName) {
   const normalized = String(stanceDisplayName || "GOAT").toUpperCase().trim() || "GOAT";
   const len = normalized.length;
   const isLong = len >= 11;
-  const isMedium = len >= 8 && len <= 10;
   if (isLong) {
     const idx = normalized.indexOf(" ");
     const line1 = idx > 0 ? normalized.slice(0, idx) : normalized;
-    const line2 = idx > 0 ? normalized.slice(idx + 1) : "";
+    const line2 = idx > 0 ? normalized.slice(idx + 1).trim() : "";
+    const maxLineChars = line2 ? Math.max(line1.length, line2.length) : line1.length;
+    const fontSizePx = computePowerStanceFontPx(maxLineChars);
     return {
       line1,
       line2,
       isMultiLine: true,
-      fontSize: 90,
+      fontSize: fontSizePx,
       lineHeight: 0.85,
     };
   }
+  const fontSizePx = computePowerStanceFontPx(len);
   return {
     line1: normalized,
     line2: "",
     isMultiLine: false,
-    fontSize: isMedium ? 95 : 120,
+    fontSize: fontSizePx,
     lineHeight: 1,
   };
 }

@@ -7,31 +7,54 @@ export const BATTLE_CARD_EXPORT_SCALE = BATTLE_CARD_EXPORT_SIZE / BATTLE_CARD_BA
 const WALL_SIZE_CLASSES = ["text-4xl", "text-5xl", "text-6xl", "text-7xl", "text-8xl", "text-9xl"];
 const WALL_SIZE_PX = [36, 48, 60, 72, 96, 128];
 
+/**
+ * 毛玻璃尺寸固定時，依字數反推字級，避免粗斜體全大寫溢出（與 functions/utils/wallWallSpecs.js 同源）。
+ * 可用寬：640 卡寬 − 內層 p-5(40) − Power Stance px-10(80) ≈ 520px。
+ */
+const POWER_STANCE_INNER_WIDTH_PX = 520;
+/** 霓虹／斜體視覺延伸預留 */
+const POWER_STANCE_GLOW_RESERVE_PX = 16;
+/** 粗斜體、tracking-tighter 下每字的平均寬度係數（偏保守，減少裁切） */
+const POWER_STANCE_CHAR_WIDTH_RATIO = 0.66;
+const POWER_STANCE_FONT_MIN_PX = 48;
+const POWER_STANCE_FONT_MAX_PX = 120;
+
+function computePowerStanceFontPx(charCount) {
+  const n = Math.max(1, charCount);
+  const usable = POWER_STANCE_INNER_WIDTH_PX - POWER_STANCE_GLOW_RESERVE_PX;
+  const raw = Math.floor(usable / (n * POWER_STANCE_CHAR_WIDTH_RATIO));
+  return Math.min(POWER_STANCE_FONT_MAX_PX, Math.max(POWER_STANCE_FONT_MIN_PX, raw));
+}
+
 export function getPowerStanceModel(stanceDisplayName) {
   const normalized = String(stanceDisplayName || "GOAT").toUpperCase().trim() || "GOAT";
   const len = normalized.length;
   const isLong = len >= 11;
-  const isMedium = len >= 8 && len <= 10;
   if (isLong) {
     const idx = normalized.indexOf(" ");
     const line1 = idx > 0 ? normalized.slice(0, idx) : normalized;
-    const line2 = idx > 0 ? normalized.slice(idx + 1) : "";
+    const line2 = idx > 0 ? normalized.slice(idx + 1).trim() : "";
+    const maxLineChars = line2 ? Math.max(line1.length, line2.length) : line1.length;
+    const fontSizePx = computePowerStanceFontPx(maxLineChars);
     return {
       line1,
       line2,
       isMultiLine: true,
-      domClassName: "text-[90px] leading-[0.85]",
-      svgFontPx: 90,
-      svgLineHeightPx: 76,
+      fontSizePx,
+      lineHeight: 0.85,
+      svgFontPx: fontSizePx,
+      svgLineHeightPx: Math.round(fontSizePx * 0.85 * 2),
     };
   }
+  const fontSizePx = computePowerStanceFontPx(len);
   return {
     line1: normalized,
     line2: "",
     isMultiLine: false,
-    domClassName: isMedium ? "text-[95px] leading-none" : "text-[120px] leading-none",
-    svgFontPx: isMedium ? 95 : 120,
-    svgLineHeightPx: isMedium ? 95 : 120,
+    fontSizePx,
+    lineHeight: 1,
+    svgFontPx: fontSizePx,
+    svgLineHeightPx: fontSizePx,
   };
 }
 

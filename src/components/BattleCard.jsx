@@ -848,8 +848,8 @@ const BattleCard = forwardRef(function BattleCard({
                     </div>
                   </div>
 
-                  {/* Power Stance：折行與縮放 (1–7→120px, 8–10→95px, 11+→90px 折行) + 霓虹 + px-10 安全區；外層 rounded-2xl 與毛玻璃一致 */}
-                  <div className="flex-shrink-0 relative flex items-center justify-center mt-2 mb-2 py-6 px-10 overflow-visible rounded-2xl">
+                  {/* Power Stance：字級依毛玻璃內寬反推（battleCardMirrorShared）+ 霓虹 + px-10；外層 rounded-2xl 與毛玻璃一致 */}
+                  <div className="flex-shrink-0 relative flex items-center justify-center mt-2 mb-2 py-6 px-10 overflow-visible rounded-2xl min-w-0">
                     {/* 毛玻璃襯底：-mx-4 擴張以容納 30px 霓虹光暈，rounded-2xl 柔化邊角 */}
                     <div
                       className="absolute inset-0 -z-10 -mx-4 rounded-2xl bg-black/75"
@@ -859,7 +859,7 @@ const BattleCard = forwardRef(function BattleCard({
                       }}
                     />
                     <div
-                      className="relative overflow-visible font-black italic uppercase tracking-tighter select-none text-center"
+                      className="relative overflow-visible font-black italic uppercase tracking-tighter select-none text-center max-w-full min-w-0"
                       style={{
                         color: stanceColor,
                         textShadow: textHudEdgeShadow,
@@ -868,7 +868,13 @@ const BattleCard = forwardRef(function BattleCard({
                       }}
                     >
                       {powerStanceModel.isMultiLine ? (
-                        <span className={`block ${powerStanceModel.domClassName}`}>
+                        <span
+                          className="block"
+                          style={{
+                            fontSize: `${powerStanceModel.fontSizePx}px`,
+                            lineHeight: powerStanceModel.lineHeight,
+                          }}
+                        >
                           {powerStanceModel.line1}
                           {powerStanceModel.line2 ? (
                             <>
@@ -878,7 +884,14 @@ const BattleCard = forwardRef(function BattleCard({
                           ) : null}
                         </span>
                       ) : (
-                        <span className={powerStanceModel.domClassName}>{powerStanceModel.line1}</span>
+                        <span
+                          style={{
+                            fontSize: `${powerStanceModel.fontSizePx}px`,
+                            lineHeight: powerStanceModel.lineHeight,
+                          }}
+                        >
+                          {powerStanceModel.line1}
+                        </span>
                       )}
                     </div>
                   </div>

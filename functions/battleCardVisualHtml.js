@@ -212,7 +212,7 @@ export function buildBattleCardVisualHtml(data) {
     </div>
     <div style="position:relative;margin:12px 40px;padding:20px 24px;border-radius:16px;text-align:center">
       <div style="position:absolute;inset:0;margin:0 -16px;border-radius:16px;background:rgba(0,0,0,0.75);z-index:-1;box-shadow:0 0 40px rgba(0,0,0,0.45)"></div>
-      <div style="position:relative;font-family:${powerStanceSans};font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:-0.05em;color:${stanceC};font-size:${pm.fontSize}px;line-height:${pm.lineHeight};text-shadow:${textHudEdgeShadow};filter:${powerStanceFilter}">${stanceLineHtml}</div>
+      <div style="position:relative;box-sizing:border-box;max-width:100%;font-family:${powerStanceSans};font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:-0.05em;color:${stanceC};font-size:${pm.fontSize}px;line-height:${pm.lineHeight};text-shadow:${textHudEdgeShadow};filter:${powerStanceFilter}">${stanceLineHtml}</div>
     </div>
     ${reasonsBlock}
     <div style="margin-top:auto;padding:16px 8px 8px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:8px;border-top:1px solid rgba(255,255,255,0.12)">
