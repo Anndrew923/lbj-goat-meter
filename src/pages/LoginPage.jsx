@@ -21,10 +21,11 @@ function resolveDisplayLanguage(lng) {
 
 export default function LoginPage() {
   const { t, i18n } = useTranslation('common')
-  const { currentUser, loading, profileLoading, hasProfile, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
+  const { currentUser, isGuest, loading, profileLoading, hasProfile, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
     useAuth()
   const navigate = useNavigate()
   const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [isGuestSigningIn, setIsGuestSigningIn] = useState(false)
   const hasNavigatedRef = useRef(false)
 
   // 導向條件必須含 !profileLoading。分流：有 profile → /vote，無 profile → /setup。
@@ -37,9 +38,10 @@ export default function LoginPage() {
     }
     if (hasNavigatedRef.current) return
     hasNavigatedRef.current = true
-    const to = hasProfile ? '/vote' : '/setup'
+    // 匿名觀察者不需要戰友檔案，直接進入 /vote。
+    const to = isGuest ? '/vote' : (hasProfile ? '/vote' : '/setup')
     navigate(to, { replace: true })
-  }, [currentUser, loading, profileLoading, hasProfile, navigate])
+  }, [currentUser, isGuest, loading, profileLoading, hasProfile, navigate])
 
   const handleLogin = async () => {
     clearAuthError?.()
@@ -53,10 +55,17 @@ export default function LoginPage() {
     }
   }
 
-  const handleGuest = () => {
+  const handleGuest = async () => {
     clearAuthError?.()
-    continueAsGuest()
-    navigate('/vote', { replace: true })
+    setIsGuestSigningIn(true)
+    try {
+      await continueAsGuest()
+      navigate('/vote', { replace: true })
+    } catch {
+      // 錯誤已由 AuthContext 寫入 authError
+    } finally {
+      setIsGuestSigningIn(false)
+    }
   }
 
   /** 語言切換器 UI（與 config 持久化連動），loading 與主內容皆顯示 */
@@ -149,9 +158,9 @@ export default function LoginPage() {
           whileTap={{ scale: isLoggingIn ? 1 : 0.98 }}
           className="w-full px-6 py-3.5 rounded-xl border-2 border-king-gold bg-king-gold/10 text-king-gold font-bold hover:bg-king-gold/20 disabled:opacity-60 disabled:cursor-not-allowed transition-colors mb-4"
           onClick={handleLogin}
-          disabled={isLoggingIn}
+          disabled={isLoggingIn || isGuestSigningIn}
           aria-busy={isLoggingIn}
-          aria-disabled={isLoggingIn}
+          aria-disabled={isLoggingIn || isGuestSigningIn}
         >
           {isLoggingIn ? t('loggingIn') : t('signInWithGoogle')}
         </motion.button>
@@ -159,13 +168,16 @@ export default function LoginPage() {
         {/* 按鈕 B：匿名觀察者，較小樣式 */}
         <motion.button
           type="button"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className="w-full py-2.5 text-sm text-gray-400 hover:text-gray-300 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors"
+          whileHover={{ scale: isGuestSigningIn ? 1 : 1.02 }}
+          whileTap={{ scale: isGuestSigningIn ? 1 : 0.98 }}
+          className="w-full py-2.5 text-sm text-gray-400 hover:text-gray-300 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           onClick={handleGuest}
+          disabled={isLoggingIn || isGuestSigningIn}
+          aria-busy={isGuestSigningIn}
+          aria-disabled={isLoggingIn || isGuestSigningIn}
           aria-label={t('browseAsGuestAria')}
         >
-          {t('browseAsGuest')}
+          {isGuestSigningIn ? t('verifying') : t('browseAsGuest')}
         </motion.button>
 
         {/* 首發過審：強制性免責聲明，明確告知非官方身分 */}

@@ -135,9 +135,10 @@ export default function BattleCardExportScene() {
 
   useEffect(() => {
     setLoadingText(t("loadingRenderStudio"));
+    // minInstances=0 時冷啟動較長：較早切換長等待文案，與 200s callable timeout 對齊
     const timer = window.setTimeout(() => {
       setLoadingText(t("loadingVerdictGrace"));
-    }, 7000);
+    }, 4500);
     return () => window.clearTimeout(timer);
   }, [t]);
 

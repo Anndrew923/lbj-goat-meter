@@ -63,6 +63,12 @@ function getVoteFunctionErrorMessage(err, getMessage) {
   if (backendCode === "vote-internal") {
     return getMessage("common:voteError_voteInternal");
   }
+  if (backendCode === "rate-limit-exceeded") {
+    return getMessage("common:voteError_rateLimitExceeded");
+  }
+  if (backendCode === "recaptcha-greyzone-requires-challenge") {
+    return getMessage("common:voteError_recaptchaGreyZone");
+  }
 
   const fallback =
     (err?.message && typeof err.message === "string" && err.message) ||
@@ -141,6 +147,12 @@ export async function submitBreakingVote(
     }
     if (code === "breaking-transaction-failed" || code === "recaptcha-config-error") {
       throw new Error(getMessage("common:breakingVoteError"));
+    }
+    if (code === "rate-limit-exceeded") {
+      throw new Error(getMessage("common:voteError_rateLimitExceeded"));
+    }
+    if (code === "recaptcha-greyzone-requires-challenge") {
+      throw new Error(getMessage("common:voteError_recaptchaGreyZone"));
     }
     const msg = (err?.message && typeof err.message === "string" && err.message) || getMessage("common:breakingVoteError");
     throw new Error(msg);

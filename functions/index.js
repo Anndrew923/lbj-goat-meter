@@ -12,6 +12,7 @@ import { defineSecret } from "firebase-functions/params";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import admin from "firebase-admin";
+import crypto from "crypto";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import { verifyRecaptcha } from "./utils/verifyRecaptcha.js";
@@ -33,11 +34,15 @@ setGlobalOptions({
   region: process.env.FUNCTIONS_REGION || "us-central1",
   memory: "512MiB",
   timeoutSeconds: 60,
-  minInstances: 1,
+  // 成本優先：縮至 0 接受冷啟動；戰報匯出頁已用長 timeout + 文案覆蓋等待時間
+  minInstances: 0,
 });
 
-/** Gen2 Callable 並發：單一實例可同時處理多個請求，降低尖峰排隊（上限依配額與記憶體調整） */
-const CALLABLE_HTTP_OPTS = { concurrency: 80 };
+/**
+ * Gen2 Callable 並發：單一實例可同時處理多個請求，降低尖峰排隊（上限依配額與記憶體調整）。
+ * minInstances 明確為 0：與 setGlobalOptions 一致，避免日後合併選項時遺漏而產生「保溫」費用。
+ */
+const CALLABLE_HTTP_OPTS = { concurrency: 80, minInstances: 0 };
 
 /** 與 Secret Manager 鍵名一致；submitVote 綁定後執行期由 Firebase 掛載至 secret.value() */
 const goatFingerprintPepperSecret = defineSecret("GOAT_FINGERPRINT_PEPPER");
@@ -46,12 +51,157 @@ const goatGoldenKeySecret = defineSecret("GOAT_GOLDEN_KEY_SECRET");
 /** 與 Secret Manager 鍵名一致；issueAdRewardToken / resetPosition 自簽廣告獎勵 Token 用 */
 const adRewardSigningSecret = defineSecret("AD_REWARD_SIGNING_SECRET");
 
+/**
+ * 同一執行程序內快取 defineSecret 解析結果。
+ * 設計意圖：Firebase 於實例啟動時掛載 Secret，value() 通常為本地讀取；快取可避免同一冷啟內
+ * 多次呼叫（如 submitVote 綁兩支 Secret）重複走 try/catch 分支。Secret 版本更新後新部署會新程序。
+ */
+const boundSecretStringCache = new Map();
+const boundSecretMissingLogged = new Set();
+
+/** @param {{ name: string, value: () => string }} secretParam - defineSecret 回傳的 SecretParam */
+function resolveBoundSecretString(secretParam, opts = {}) {
+  const { envKeys = [], kServiceWarn } = opts;
+  const name = secretParam.name;
+  if (boundSecretStringCache.has(name)) {
+    return boundSecretStringCache.get(name);
+  }
+
+  let resolved = "";
+  try {
+    const v = secretParam.value();
+    if (typeof v === "string" && v.trim() !== "") resolved = v.trim();
+  } catch {
+    // Emulator 或未掛載 secret 時改走環境變數
+  }
+  if (!resolved) {
+    for (const k of envKeys) {
+      const fromEnv = typeof process.env[k] === "string" ? process.env[k].trim() : "";
+      if (fromEnv) {
+        resolved = fromEnv;
+        break;
+      }
+    }
+  }
+
+  boundSecretStringCache.set(name, resolved);
+
+  if (!resolved && process.env.K_SERVICE && kServiceWarn && !boundSecretMissingLogged.has(name)) {
+    boundSecretMissingLogged.add(name);
+    functions.logger.warn(kServiceWarn);
+  }
+
+  return resolved;
+}
+
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
 
 const STAR_ID = (process.env.STAR_ID || process.env.GOAT_STAR_ID || "lbj").trim() || "lbj";
 const GLOBAL_SUMMARY_DOC_ID = "global_summary";
+const HARD_SECURITY_BYPASS_FLAG = String(process.env.ALLOW_SECURITY_BYPASS_LOCALHOST || "").trim().toLowerCase();
+const RECAPTCHA_MIN_SCORE = 0.7;
+const RECAPTCHA_GREY_ZONE_MIN = 0.5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_TTL_MS = 5 * 60 * 1000;
+const RATE_LIMIT_COLLECTION = "rate_limits";
+const RATE_LIMIT_CONFIG = Object.freeze({
+  submit_vote: { uid: 6, ip: 20, fingerprint: 12 },
+  submit_breaking_vote: { uid: 10, ip: 30, fingerprint: 20 },
+});
+
+function extractClientIp(context) {
+  const xff = context.rawRequest?.headers?.["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim()) {
+    return xff.split(",")[0].trim();
+  }
+  const ip = context.rawRequest?.ip;
+  return typeof ip === "string" ? ip.trim() : "";
+}
+
+function digestRateLimitDocId(scope, dimension, key) {
+  const digest = crypto.createHash("sha256").update(`${scope}|${dimension}|${key}`).digest("hex");
+  return `${scope}_${dimension}_${digest}`;
+}
+
+function logVoteSecurityEvent(level, action, phase, payload = {}) {
+  const logger = functions.logger[level] || functions.logger.info;
+  const normalized = {
+    uid: payload.uid ?? null,
+    ip: payload.ip ?? null,
+    fingerprintHash: payload.fingerprintHash ?? null,
+    recaptchaScore: payload.recaptchaScore ?? null,
+    eventId: payload.eventId ?? null,
+    origin: payload.origin ?? null,
+    dimension: payload.dimension ?? null,
+    current: payload.current ?? null,
+    limit: payload.limit ?? null,
+    code: payload.code ?? null,
+    minScore: payload.minScore ?? null,
+    recaptchaAction: payload.recaptchaAction ?? null,
+  };
+  logger("[vote-security]", {
+    action,
+    phase,
+    ...normalized,
+    ...payload,
+  });
+}
+
+async function enforceVoteRateLimit({ action, uid, ip, fingerprintHash }) {
+  const cfg = RATE_LIMIT_CONFIG[action];
+  if (!cfg) return;
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const dimensions = [
+    { name: "uid", key: uid, limit: cfg.uid },
+    { name: "ip", key: ip, limit: cfg.ip },
+    { name: "fingerprint", key: fingerprintHash, limit: cfg.fingerprint },
+  ].filter((item) => item.key && item.limit > 0);
+
+  if (!dimensions.length) return;
+
+  await db.runTransaction(async (tx) => {
+    for (const dim of dimensions) {
+      const ref = db.doc(`${RATE_LIMIT_COLLECTION}/${digestRateLimitDocId(action, dim.name, dim.key)}`);
+      const snap = await tx.get(ref);
+      const prev = snap.exists ? snap.data() || {} : {};
+      const attempts = Array.isArray(prev.attempts)
+        ? prev.attempts.filter((ts) => Number.isFinite(ts) && ts >= windowStart)
+        : [];
+      if (attempts.length >= dim.limit) {
+        logVoteSecurityEvent("warn", action, "rate-limit-deny", {
+          uid: uid || null,
+          ip: ip || null,
+          fingerprintHash: fingerprintHash || null,
+          dimension: dim.name,
+          current: attempts.length,
+          limit: dim.limit,
+        });
+        throw new HttpsError("resource-exhausted", "Rate limit exceeded", {
+          code: "rate-limit-exceeded",
+          action,
+          dimension: dim.name,
+          limit: dim.limit,
+          retryAfterSec: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000),
+        });
+      }
+      attempts.push(now);
+      tx.set(
+        ref,
+        {
+          attempts,
+          updatedAt: FieldValue.serverTimestamp(),
+          expiresAt: Timestamp.fromMillis(now + RATE_LIMIT_TTL_MS),
+          action,
+          dimension: dim.name,
+        },
+        { merge: true }
+      );
+    }
+  });
+}
 
 /**
  * 是否允許略過嚴格安全驗證（僅限本地開發）。
@@ -59,8 +209,8 @@ const GLOBAL_SUMMARY_DOC_ID = "global_summary";
  */
 function shouldBypassHardSecurity(context) {
   const origin = (context.rawRequest?.headers?.origin || "").trim();
-  const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) || origin === "";
-  return isLocalOrigin;
+  const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+  return HARD_SECURITY_BYPASS_FLAG === "true" && isLocalOrigin;
 }
 
 function requireAuth(context) {
@@ -378,6 +528,7 @@ export const getRenderStudioPayload = onRequest(
     cors: true,
     memory: "256MiB",
     timeoutSeconds: 15,
+    minInstances: 0,
   },
   async (req, res) => {
     if (req.method === "OPTIONS") {
@@ -419,64 +570,30 @@ export const getRenderStudioPayload = onRequest(
   }
 );
 
-/**
- * 解析指紋用 pepper：優先 Gen2 secret.value()，失敗則 GOAT_FINGERPRINT_PEPPER（Emulator／本機）。
- * Cloud Run 上若兩者皆空會略過 24h 查重，故在 K_SERVICE 存在時寫 warn 便於營運發現未掛 Secret。
- */
+/** 解析指紋用 pepper（見 resolveBoundSecretString）。 */
 function resolveFingerprintPepper(secret) {
-  try {
-    const v = secret.value();
-    if (typeof v === "string" && v.trim() !== "") return v.trim();
-  } catch {
-    // Emulator 或未解析 secret 時改走環境變數
-  }
-  const fromEnv = process.env.GOAT_FINGERPRINT_PEPPER?.trim();
-  if (fromEnv) return fromEnv;
-  if (process.env.K_SERVICE) {
-    functions.logger.warn(
-      "[submitVote] GOAT_FINGERPRINT_PEPPER 未解析：24h 裝置查重已停用，請確認 Secret 已綁定並部署"
-    );
-  }
-  return "";
+  return resolveBoundSecretString(secret, {
+    envKeys: ["GOAT_FINGERPRINT_PEPPER"],
+    kServiceWarn:
+      "[submitVote] GOAT_FINGERPRINT_PEPPER 未解析：24h 裝置查重已停用，請確認 Secret 已綁定並部署",
+  });
 }
 
-/**
- * 解析 Golden Key：優先讀取 Gen2 Secret Manager，失敗時回退環境變數（Emulator / 本機）。
- * 設計意圖：移除對 functions.config() 的依賴，避免 v2 服務在 Runtime Config 停用時失效。
- */
+/** 解析 Golden Key（見 resolveBoundSecretString）。 */
 function resolveGoldenKeySecret(secret) {
-  try {
-    const v = secret.value();
-    if (typeof v === "string" && v.trim() !== "") return v.trim();
-  } catch {
-    // Emulator 或未解析 secret 時改走環境變數
-  }
-  const fromEnv = (process.env.GOLDEN_KEY_SECRET || process.env.GOAT_GOLDEN_KEY_SECRET || "").trim();
-  if (fromEnv) return fromEnv;
-  if (process.env.K_SERVICE) {
-    functions.logger.warn("[GoldenKey] GOAT_GOLDEN_KEY_SECRET 未解析，簽章驗證將失敗。請確認 Secret 已綁定並部署。");
-  }
-  return "";
+  return resolveBoundSecretString(secret, {
+    envKeys: ["GOLDEN_KEY_SECRET", "GOAT_GOLDEN_KEY_SECRET"],
+    kServiceWarn: "[GoldenKey] GOAT_GOLDEN_KEY_SECRET 未解析，簽章驗證將失敗。請確認 Secret 已綁定並部署。",
+  });
 }
 
-/**
- * 解析廣告獎勵簽章金鑰：優先 Gen2 secret.value()，失敗則 AD_REWARD_SIGNING_SECRET（Emulator／舊版純環境變數部署）。
- */
+/** 解析廣告獎勵簽章金鑰（見 resolveBoundSecretString）。 */
 function resolveAdRewardSigningSecret(secret) {
-  try {
-    const v = secret.value();
-    if (typeof v === "string" && v.trim() !== "") return v.trim();
-  } catch {
-    // Emulator 或未解析 secret 時改走環境變數
-  }
-  const fromEnv = process.env.AD_REWARD_SIGNING_SECRET?.trim();
-  if (fromEnv) return fromEnv;
-  if (process.env.K_SERVICE) {
-    functions.logger.warn(
-      "[adReward] AD_REWARD_SIGNING_SECRET 未解析：原生 App 看完廣告後無法簽發 Token，請在 Secret Manager 建立並綁定至 issueAdRewardToken、resetPosition"
-    );
-  }
-  return "";
+  return resolveBoundSecretString(secret, {
+    envKeys: ["AD_REWARD_SIGNING_SECRET"],
+    kServiceWarn:
+      "[adReward] AD_REWARD_SIGNING_SECRET 未解析：原生 App 看完廣告後無法簽發 Token，請在 Secret Manager 建立並綁定至 issueAdRewardToken、resetPosition",
+  });
 }
 
 /**
@@ -524,6 +641,7 @@ async function runSubmitVote(data, context) {
   }
   const { selectedStance, selectedReasons, deviceId } = voteData;
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
+  const ip = extractClientIp(context);
 
   if (!deviceIdStr) {
     throw new HttpsError("invalid-argument", "deviceId is required");
@@ -548,12 +666,30 @@ async function runSubmitVote(data, context) {
     context.goldenKeySecret || ""
   );
 
-  // 投票才看分數：大量假投票會破壞數據可信度，故正式環境要求 reCAPTCHA 分數 ≥ 0.5
+  const fingerprintHashForRateLimit = hashDeviceFingerprintMaterial(deviceIdStr, context.fingerprintPepper);
+  await enforceVoteRateLimit({
+    action: "submit_vote",
+    uid,
+    ip,
+    fingerprintHash: fingerprintHashForRateLimit,
+  });
+
+  // 投票看分數：正式環境要求 reCAPTCHA 分數 >= 0.7；灰區(0.5~0.7)預留二次驗證空間。
   if (shouldBypassHardSecurity(context)) {
-    console.warn("[submitVote] Bypassing reCAPTCHA verification (localhost only).");
+    logVoteSecurityEvent("warn", "submit_vote", "security-bypass", {
+      uid,
+      ip: ip || null,
+      origin: context.rawRequest?.headers?.origin || null,
+    });
   } else {
-    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
     if (!recaptchaResult.success) {
+      logVoteSecurityEvent("warn", "submit_vote", "recaptcha-fail", {
+        uid,
+        ip: ip || null,
+        recaptchaScore: recaptchaResult.score,
+        recaptchaAction: recaptchaResult.action ?? null,
+      });
       throw new HttpsError("failed-precondition", "reCAPTCHA verification failed", {
         code: "recaptcha-verify-failed",
         recaptchaScore: recaptchaResult.score,
@@ -561,15 +697,20 @@ async function runSubmitVote(data, context) {
         recaptchaAction: recaptchaResult.action ?? null,
       });
     }
+    if (typeof recaptchaResult.score === "number" && recaptchaResult.score < RECAPTCHA_GREY_ZONE_MIN) {
+      throw new HttpsError("failed-precondition", "reCAPTCHA score too low", {
+        code: "low-score-robot",
+        recaptchaScore: recaptchaResult.score,
+      });
+    }
+    if (typeof recaptchaResult.score === "number" && recaptchaResult.score < RECAPTCHA_MIN_SCORE) {
+      throw new HttpsError("failed-precondition", "reCAPTCHA grey zone requires challenge", {
+        code: "recaptcha-greyzone-requires-challenge",
+        recaptchaScore: recaptchaResult.score,
+        minScore: RECAPTCHA_MIN_SCORE,
+      });
+    }
   }
-
-  // Observability：社會風向計後續人工審核用 metadata（userAgent / ip）
-  const ip =
-    context.rawRequest?.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    context.rawRequest?.ip ||
-    "";
-  const userAgent = context.rawRequest?.headers?.["user-agent"] || "";
-  console.log("[submitVote] metadata", { ip, userAgent, uid });
 
   const profileRef = db.doc(`profiles/${uid}`);
   const votesRef = db.collection("votes");
@@ -816,8 +957,7 @@ async function runResetPosition(data, context) {
   if (bypassSecurity) {
     console.warn("[resetPosition] Bypassing reCAPTCHA and ad reward verification (localhost only).");
   } else if (isWebNoAdSdkAllowed) {
-    // 網頁版無廣告 SDK 過渡：origin 已驗證即放行
-    console.log("[resetPosition] Web 無廣告 SDK 過渡：允許重置（origin 已驗證）");
+    // 網頁版無廣告 SDK 過渡：origin 已驗證即放行（正式環境不記 info 日誌，避免 Logging 寫入費用）
   } else {
     // 重置立場不看 reCAPTCHA 分數：僅以廣告／origin 為門檻；即便被繞過也只是撤一票，不影響整體數據可信度
     const adResult = await verifyAdRewardToken(adRewardToken, context.adRewardSigningSecret);
@@ -1276,17 +1416,19 @@ export const onBreakingEventUpdate = functions.firestore
  * submitBreakingVote — 突發戰區投票：一話題一設備一票，寫入 global_events/{eventId}/votes/{deviceId}。
  */
 export const submitBreakingVote = onCall(
-  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret] },
+  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret, goatFingerprintPepperSecret] },
   async (request) => {
   requireAuth(request);
 
   const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
+  const fingerprintPepper = resolveFingerprintPepper(goatFingerprintPepperSecret);
 
   try {
     return await runSubmitBreakingVote(request.data, {
       auth: request.auth,
       rawRequest: request.rawRequest,
       goldenKeySecret,
+      fingerprintPepper,
     });
   } catch (err) {
     if (err instanceof HttpsError) throw err;
@@ -1307,6 +1449,8 @@ async function runSubmitBreakingVote(data, context) {
   const { eventId, optionIndex, deviceId, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
   const eventIdStr = typeof eventId === "string" ? eventId.trim() : "";
   const deviceIdStr = typeof deviceId === "string" ? deviceId.trim() : "";
+  const ip = extractClientIp(context);
+  const fingerprintHashForRateLimit = hashDeviceFingerprintMaterial(deviceIdStr, context.fingerprintPepper);
   if (!eventIdStr || !deviceIdStr) {
     throw new HttpsError("invalid-argument", "eventId and deviceId required");
   }
@@ -1326,10 +1470,17 @@ async function runSubmitBreakingVote(data, context) {
     context.goldenKeySecret || ""
   );
 
+  await enforceVoteRateLimit({
+    action: "submit_breaking_vote",
+    uid,
+    ip,
+    fingerprintHash: fingerprintHashForRateLimit,
+  });
+
   if (!shouldBypassHardSecurity(context)) {
     let recaptchaResult;
     try {
-      recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0.5 });
+      recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
     } catch (recaptchaErr) {
       functions.logger.error("[submitBreakingVote][recaptcha-config]", {
         message: recaptchaErr?.message,
@@ -1342,6 +1493,13 @@ async function runSubmitBreakingVote(data, context) {
       );
     }
     if (!recaptchaResult.success) {
+      logVoteSecurityEvent("warn", "submit_breaking_vote", "recaptcha-fail", {
+        uid,
+        ip: ip || null,
+        eventId: eventIdStr,
+        recaptchaScore: recaptchaResult.score,
+        recaptchaAction: recaptchaResult.action ?? null,
+      });
       // recaptchaResult.score 可能為 null（例如 invalid-input-secret / invalid-input-response）。
       // 用 structure 化資訊把根因丟給前端/Log，避免一律被誤判為 low-score-robot。
       throw new HttpsError("failed-precondition", "reCAPTCHA verification failed", {
@@ -1355,6 +1513,26 @@ async function runSubmitBreakingVote(data, context) {
         recaptchaAction: recaptchaResult.action ?? null,
       });
     }
+    if (typeof recaptchaResult.score === "number" && recaptchaResult.score < RECAPTCHA_GREY_ZONE_MIN) {
+      throw new HttpsError("failed-precondition", "reCAPTCHA score too low", {
+        code: "low-score-robot",
+        recaptchaScore: recaptchaResult.score,
+      });
+    }
+    if (typeof recaptchaResult.score === "number" && recaptchaResult.score < RECAPTCHA_MIN_SCORE) {
+      throw new HttpsError("failed-precondition", "reCAPTCHA grey zone requires challenge", {
+        code: "recaptcha-greyzone-requires-challenge",
+        recaptchaScore: recaptchaResult.score,
+        minScore: RECAPTCHA_MIN_SCORE,
+      });
+    }
+  } else {
+    logVoteSecurityEvent("warn", "submit_breaking_vote", "security-bypass", {
+      uid,
+      ip: ip || null,
+      eventId: eventIdStr,
+      origin: context.rawRequest?.headers?.origin || null,
+    });
   }
 
   const eventRef = db.doc(`${GLOBAL_EVENTS_COLLECTION}/${eventIdStr}`);

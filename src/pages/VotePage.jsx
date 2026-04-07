@@ -171,6 +171,7 @@ export default function VotePage() {
     // C. 自動觸發：登入且載入穩定、無 profile、且未手動關閉
     const autoTrigger =
       Boolean(currentUser?.uid) &&
+      !isGuest &&
       profileLoadingSettled &&
       !hasProfile &&
       !profileSetupDismissed;
@@ -180,6 +181,7 @@ export default function VotePage() {
     isGuestBootstrapLoading,
     showWarzoneClaimModal,
     currentUser?.uid,
+    isGuest,
     profileLoading,
     profileLoadingSettled,
     hasProfile,
@@ -206,6 +208,14 @@ export default function VotePage() {
 
   const handleCloseModal = dismissProfileSetup;
   const handleProfileSetupSaved = dismissProfileSetup;
+  const handleGuestToLogin = useCallback(async () => {
+    // 匿名帳號會被 Firebase 持久化；先 signOut 才能避免回登入頁後立刻被 currentUser 導回 /vote。
+    try {
+      await signOut();
+    } finally {
+      navigate("/", { replace: true });
+    }
+  }, [signOut, navigate]);
 
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
@@ -233,7 +243,7 @@ export default function VotePage() {
           {isGuest ? (
             <button
               type="button"
-              onClick={() => navigate("/")}
+              onClick={handleGuestToLogin}
               className="text-sm text-king-gold hover:underline"
             >
               {t("signIn")}
@@ -292,7 +302,9 @@ export default function VotePage() {
             activeWarzoneId={activeWarzone}
             sessionOverride={sessionOverride}
             arenaAnimationsPaused={isSetupMounted}
-            onOpenWarzoneSelect={() => setShowWarzoneClaimModal(true)}
+            onOpenWarzoneSelect={() => {
+              if (!isGuest) setShowWarzoneClaimModal(true)
+            }}
             onExportStart={() => setTickerPausedForExport(true)}
             onExportEnd={() => setTickerPausedForExport(false)}
           />

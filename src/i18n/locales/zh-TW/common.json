@@ -33,6 +33,8 @@
   "voteError_adNotWatched": "重置立場需要消耗廣告獎勵，請完整觀看廣告。",
   "voteError_resetInternal": "系統忙碌，請稍後再試。",
   "voteError_voteInternal": "投票服務忙碌，請稍後再試。",
+  "voteError_rateLimitExceeded": "您投票的速度太快囉，請稍等一分鐘再試。",
+  "voteError_recaptchaGreyZone": "安全偵測異常，請確認網路環境後重試，或稍後再進行投票。",
   "revoteError": "重置時發生錯誤，請重新整理頁面後再試",
   "revoteSignatureError": "安全驗證未通過。請確認前端已設定與後端相同的黃金鑰匙（VITE_GOAT_GOLDEN_KEY_SECRET）並重新 build 後再試。",
   "reloadPage": "重新整理頁面",

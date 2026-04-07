@@ -7,17 +7,22 @@ import fetch from "node-fetch";
 
 const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 
+/** 同一冷啟內快取，避免每次 siteverify 重複讀環境變數（輪替後新部署新程序）。 */
+let cachedRecaptchaSecret = null;
+
 /**
  * 從環境變數讀取 reCAPTCHA secret。
  * 推薦做法：在 GCP / Firebase 中將 Secret Manager 綁定到 RECAPTCHA_SECRET 環境變數。
  */
 function getRecaptchaSecret() {
+  if (cachedRecaptchaSecret) return cachedRecaptchaSecret;
   const secret = typeof process.env.RECAPTCHA_SECRET === "string" ? process.env.RECAPTCHA_SECRET.trim() : "";
   if (!secret) {
     throw new Error(
       "[verifyRecaptcha] Missing RECAPTCHA_SECRET. Please bind Secret Manager secret to RECAPTCHA_SECRET env."
     );
   }
+  cachedRecaptchaSecret = secret;
   return secret;
 }
 

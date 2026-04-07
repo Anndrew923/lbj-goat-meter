@@ -13,6 +13,20 @@ import { GLOBAL_SUMMARY_DOC_ID } from "../lib/constants";
 import { isObject } from "../utils/typeUtils";
 
 const WarzoneDataContext = createContext(null);
+const WARZONE_SUMMARY_PATH = `warzoneStats/${GLOBAL_SUMMARY_DOC_ID}`;
+
+/**
+ * 生產環境仍需可觀測性：Firestore 讀取失敗時輸出結構化錯誤（含 code/path），
+ * 讓監控平台可依欄位聚合，不再只剩通用 UI 文案。
+ */
+function logFirestoreReadError(err, path) {
+  console.error("[WarzoneDataContext] Firestore read failed", {
+    code: err?.code ?? "unknown",
+    message: err?.message ?? String(err),
+    name: err?.name ?? "Error",
+    path,
+  });
+}
 
 /** 預設聚合結構，與 global_summary 欄位對齊 */
 const DEFAULT_SUMMARY = {
@@ -80,9 +94,7 @@ export function WarzoneDataProvider({ children }) {
         setError(err);
         setSummary(DEFAULT_SUMMARY);
         setLoading(false);
-        if (import.meta.env.DEV) {
-          console.warn("[WarzoneDataContext] onSnapshot error:", err?.message ?? err);
-        }
+        logFirestoreReadError(err, WARZONE_SUMMARY_PATH);
       }
     );
     return () => {

@@ -8,7 +8,7 @@
  */
 import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap, ArrowLeft } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
@@ -28,7 +28,8 @@ const ASPECT_RATIO = 16 / 9
 
 export default function BreakingHistoryPage() {
   const { t, i18n } = useTranslation('common')
-  const { currentUser } = useAuth()
+  const { currentUser, isGuest } = useAuth()
+  const navigate = useNavigate()
   const isLoggedIn = !!currentUser
   const { votedEventIds, lastVoted, markEventVoted } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(PROJECT_APP_ID, {
@@ -43,6 +44,12 @@ export default function BreakingHistoryPage() {
   // 返回首頁時首頁訂閱若仍拿到 total_votes:0 的快取就無法補正，導致票數被清空。僅由首頁 Banner 在確認 total_votes > 0 時清除。
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
+    if (isGuest) {
+      triggerHaptic([30, 50, 30])
+      setToast(t('voteError_authRequired'))
+      window.setTimeout(() => navigate('/', { replace: true }), 800)
+      return
+    }
     if (votedEventIds.includes(ev.id)) {
       triggerHaptic(10)
       setToast(t('breakingAlreadyVoted'))
@@ -52,7 +59,7 @@ export default function BreakingHistoryPage() {
     triggerHaptic(10)
     setToast(null)
     setPending({ ev, optionIndex, optionLabel })
-  }, [t, votedEventIds, submitting])
+  }, [isGuest, t, votedEventIds, submitting, navigate])
 
   const closeCommitmentModal = useCallback(() => {
     if (!submitting) setPending(null)

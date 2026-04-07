@@ -9,6 +9,7 @@
  */
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
@@ -28,7 +29,8 @@ const ASPECT_RATIO = 16 / 9
 
 export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
-  const { currentUser } = useAuth()
+  const { currentUser, isGuest } = useAuth()
+  const navigate = useNavigate()
   const isLoggedIn = !!currentUser
   const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
@@ -38,6 +40,12 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [pending, setPending] = useState(null)
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
+    if (isGuest) {
+      triggerHaptic([30, 50, 30])
+      setToast(t('voteError_authRequired'))
+      window.setTimeout(() => navigate('/', { replace: true }), 800)
+      return
+    }
     if (votedEventIds.includes(ev.id)) {
       triggerHaptic(10)
       setToast(t('breakingAlreadyVoted'))
@@ -47,7 +55,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
     triggerHaptic(10)
     setToast(null)
     setPending({ ev, optionIndex, optionLabel })
-  }, [t, votedEventIds, submitting])
+  }, [isGuest, t, votedEventIds, submitting, navigate])
 
   const closeCommitmentModal = useCallback(() => {
     if (!submitting) setPending(null)

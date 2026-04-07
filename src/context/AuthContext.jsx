@@ -25,6 +25,7 @@ import {
 } from "react";
 import {
   onAuthStateChanged,
+  signInAnonymously,
   signOut as firebaseSignOut,
   deleteUser,
   reauthenticateWithPopup,
@@ -171,6 +172,7 @@ export function AuthProvider({ children }) {
         setProfile(null);
         setProfileLoading(false);
         setCurrentUser(null);
+        setIsGuest(false);
         setLoading(false);
         return;
       }
@@ -232,14 +234,15 @@ export function AuthProvider({ children }) {
                 }
               : nextUser,
           );
-          setIsGuest(false);
+          setIsGuest(user.isAnonymous === true);
           setLoading(false);
           return;
         }
 
         lastAuthUidRef.current = user.uid;
         setCurrentUser(nextUser);
-        setIsGuest(false);
+        // Firestore 階梯讀取需 request.auth；訪客改走匿名登入，isGuest 仍表示「僅觀察、不可投票」
+        setIsGuest(user.isAnonymous === true);
         setLoading(false);
         setProfile(null);
         setProfileLoading(true);
@@ -247,7 +250,7 @@ export function AuthProvider({ children }) {
           user?.metadata?.creationTime &&
           user?.metadata?.lastSignInTime &&
           user.metadata.creationTime === user.metadata.lastSignInTime;
-        if (isFirstRegistration) {
+        if (!user.isAnonymous && isFirstRegistration) {
           const trackedKey = `meta_complete_registration_${user.uid}`;
           const trackedBefore =
             typeof window !== "undefined" &&
@@ -366,10 +369,29 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  /** 以匿名觀察者身份進入：僅設 isGuest 為 true，導向由呼叫端（如 LoginPage）負責 */
-  const continueAsGuest = useCallback(() => {
+  /**
+   * 以匿名觀察者身份進入：使用 Firebase Anonymous Auth，使 Firestore 規則之 isAuthenticated() 成立；
+   * isGuest 仍由 onAuthStateChanged 依 user.isAnonymous 同步，供 UI 禁止投票。
+   */
+  const continueAsGuest = useCallback(async () => {
     setAuthError(null);
-    setIsGuest(true);
+    if (!isFirebaseReady || !auth) {
+      setAuthError(i18n.t("common:authError_firebaseNotReady"));
+      if (import.meta.env.DEV) {
+        console.warn("[AuthContext] Firebase 未就緒，無法匿名登入");
+      }
+      throw new Error("firebase-not-ready");
+    }
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      const message = getAuthErrorMessage(err);
+      setAuthError(message);
+      if (import.meta.env.DEV) {
+        console.warn("[AuthContext] 匿名登入失敗:", err?.code ?? err?.message);
+      }
+      throw err;
+    }
   }, []);
 
   const signOut = useCallback(async () => {

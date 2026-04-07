@@ -48,7 +48,9 @@ const initAppCheck = (app) => {
   //   以避免 WebView + localhost 的 reCAPTCHA 400 噪音與潛在錯誤。
   // - Web（瀏覽器）：維持嚴謹模式，透過 reCAPTCHA Enterprise 抵禦腳本攻擊。
   if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
-    console.log('[Firebase] Skip Web reCAPTCHA App Check on native platform (Capacitor).')
+    if (import.meta.env.DEV) {
+      console.log('[Firebase] Skip Web reCAPTCHA App Check on native platform (Capacitor).')
+    }
     return null
   }
 
@@ -63,19 +65,14 @@ const initAppCheck = (app) => {
       return null
   }
 
-  // 診斷：生產環境 400 時可對照 Firebase Console 的網站金鑰前綴，確認 Netlify 建置帶入的 key 是否一致（不輸出完整 key）
-  if (typeof window !== 'undefined' && !import.meta.env.DEV) {
-    const prefix = siteKey.slice(0, 12);
-    const len = siteKey.length;
-    console.log('[Firebase] App Check Site Key 前綴:', prefix, '… 長度:', len);
-  }
-
   try {
     const appCheck = initializeAppCheck(app, {
       provider: new ReCaptchaEnterpriseProvider(siteKey),
       isTokenAutoRefreshEnabled: true,
     })
-    console.log('[Firebase] App Check 已啟用 (reCAPTCHA Enterprise)')
+    if (import.meta.env.DEV) {
+      console.log('[Firebase] App Check 已啟用 (reCAPTCHA Enterprise)')
+    }
     return appCheck
   } catch (error) {
     console.error('[Firebase] App Check 初始化失敗:', error)
@@ -122,6 +119,8 @@ let firebaseFunctions = null
 let appCheckEnabled = false
 /** App Check 實例：用於 Transaction 前強制刷新 Token，確保 100% 嚴謹模式通過規則。 */
 let appCheckInstance = null
+/** 正式環境避免每次請求刷「未啟用」警告，僅記錄一次以降低 Cloud Logging／主控台噪音 */
+let appCheckDisabledWarned = false
 
 const config = buildConfig()
 if (import.meta.env.DEV) {
@@ -134,8 +133,7 @@ if (import.meta.env.DEV) {
 if (config) {
   try {
     app = initializeApp(config)
-    // 診斷：確認實際連線的專案與 App，避免改錯 App Check 的應用程式
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && import.meta.env.DEV) {
       console.log('[Firebase] 目前連線：projectId =', config.projectId, '| appId =', config.appId)
     }
 
@@ -205,9 +203,9 @@ export function hasValidAppCheck() {
  */
 export async function ensureFreshAppCheckToken() {
   if (!appCheckInstance || !appCheckEnabled) {
-    // Production 診斷：若從未啟用，投票會 403；原因見上方初始化時的 console 訊息
-    if (typeof window !== 'undefined' && !import.meta.env.DEV) {
-      console.warn('[Firebase] App Check 未啟用，此請求將不會帶 App Check token，嚴謹規則下會 403')
+    if (typeof window !== 'undefined' && !import.meta.env.DEV && !appCheckDisabledWarned) {
+      appCheckDisabledWarned = true
+      console.warn('[Firebase] App Check 未啟用，後續請求將不帶 App Check token（嚴謹規則下會 403）；此訊息僅顯示一次')
     }
     return
   }

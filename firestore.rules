@@ -1,6 +1,6 @@
 rules_version = '2';
 // =============================================================================
-// GOAT Meter — 穩定版（Transaction 安全，App Check 不強制）
+// GOAT Meter — 穩定版（Transaction 安全；App Check 稽核於 Console，規則不強制 token）
 // =============================================================================
 // 設計要點：
 // 1. 不在規則內使用 resource（尤其 delete），避免 Transaction 403。
@@ -59,7 +59,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // 4. 戰區統計：後端 Transaction 維護；客戶端僅可讀、不可寫
+    // 4. 戰區統計：路線 A（公開只讀）— 大盤資料對所有訪客開放讀取，寫入仍僅後端 Transaction。
     match /warzoneStats/{statsId} {
       allow read: if true;
       allow create, update, delete: if false;
@@ -80,22 +80,22 @@ service cloud.firestore {
       }
     }
 
-    // 5. 專業分析數據
+    // 5. 專業分析數據：維持已登入可讀，避免公開掃描 analytics cache。
     match /analytics_pro/{cacheKey} {
       allow read: if isAuthenticated();
       allow create, update, delete: if false;
     }
 
-    // 6. 突發戰區（global_events）：公開讀；主文件管理員可建立／刪除；update 僅限 is_active+updatedAt。
+    // 6. 突發戰區（global_events）：路線 A（公開只讀）— 內容可公開瀏覽；主文件仍僅管理員可建/刪，update 僅限 is_active+updatedAt。
     match /global_events/{eventId} {
       allow read: if true;
       allow create, delete: if isBreakingWarzoneAdmin();
       allow update: if isBreakingWarzoneAdmin() && isBreakingGlobalEventAdminOnlyMetaUpdate();
     }
 
-    // 7. 突發戰區子集合 votes：一話題一設備一票，前端不可直接改寫
+    // 7. 突發戰區子集合 votes：隱私收網—避免 deviceId 被枚舉；前端不可直接改寫
     match /global_events/{eventId}/votes/{deviceId} {
-      allow read: if isAuthenticated();
+      allow read: if false;
       allow create, update, delete: if false;
     }
   }
