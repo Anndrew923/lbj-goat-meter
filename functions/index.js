@@ -50,6 +50,8 @@ const goatFingerprintPepperSecret = defineSecret("GOAT_FINGERPRINT_PEPPER");
 const goatGoldenKeySecret = defineSecret("GOAT_GOLDEN_KEY_SECRET");
 /** 與 Secret Manager 鍵名一致；issueAdRewardToken / resetPosition 自簽廣告獎勵 Token 用 */
 const adRewardSigningSecret = defineSecret("AD_REWARD_SIGNING_SECRET");
+/** reCAPTCHA v3 後端 Secret Key；與 GOAT_* 相同由 defineSecret 綁定，deploy 時自動掛載至 Cloud Run */
+const recaptchaSecretParam = defineSecret("RECAPTCHA_SECRET");
 
 /**
  * 同一執行程序內快取 defineSecret 解析結果。
@@ -163,9 +165,18 @@ async function enforceVoteRateLimit({ action, uid, ip, fingerprintHash }) {
   if (!dimensions.length) return;
 
   await db.runTransaction(async (tx) => {
-    for (const dim of dimensions) {
+    // Firestore transaction 限制：所有讀取必須先完成，再進行任何寫入。
+    // 先批次讀取各維度，再統一檢查與寫入，避免「讀/寫交錯」導致 internal 500。
+    const snapshots = await Promise.all(
+      dimensions.map((dim) => {
+        const ref = db.doc(`${RATE_LIMIT_COLLECTION}/${digestRateLimitDocId(action, dim.name, dim.key)}`);
+        return tx.get(ref);
+      })
+    );
+
+    for (const [idx, dim] of dimensions.entries()) {
       const ref = db.doc(`${RATE_LIMIT_COLLECTION}/${digestRateLimitDocId(action, dim.name, dim.key)}`);
-      const snap = await tx.get(ref);
+      const snap = snapshots[idx];
       const prev = snap.exists ? snap.data() || {} : {};
       const attempts = Array.isArray(prev.attempts)
         ? prev.attempts.filter((ts) => Number.isFinite(ts) && ts >= windowStart)
@@ -596,6 +607,15 @@ function resolveAdRewardSigningSecret(secret) {
   });
 }
 
+/** 解析 reCAPTCHA 後端 Secret；正式環境以 Secret Manager + defineSecret 為主，本機可設環境變數 RECAPTCHA_SECRET。 */
+function resolveRecaptchaSecret(secret) {
+  return resolveBoundSecretString(secret, {
+    envKeys: ["RECAPTCHA_SECRET"],
+    kServiceWarn:
+      "[verifyRecaptcha] RECAPTCHA_SECRET 未解析：請在 Secret Manager 建立名為 RECAPTCHA_SECRET 的 secret（reCAPTCHA 後台 Secret Key），並執行 firebase deploy --only functions 以綁定至 submitVote、submitBreakingVote。",
+  });
+}
+
 /**
  * submitVote — 後端唯一入口：提交一票。
  *
@@ -606,12 +626,16 @@ function resolveAdRewardSigningSecret(secret) {
  * - warzoneStats 與 global_summary 的加總全部落在同一個 Transaction 內完成，保證「統計 + 鎖定狀態」要嘛一起成功、要嘛一起回滾。
  */
 export const submitVote = onCall(
-  { ...CALLABLE_HTTP_OPTS, secrets: [goatFingerprintPepperSecret, goatGoldenKeySecret] },
+  {
+    ...CALLABLE_HTTP_OPTS,
+    secrets: [goatFingerprintPepperSecret, goatGoldenKeySecret, recaptchaSecretParam],
+  },
   async (request) => {
     requireAuth(request);
 
     const fingerprintPepper = resolveFingerprintPepper(goatFingerprintPepperSecret);
     const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
+    const recaptchaSecret = resolveRecaptchaSecret(recaptchaSecretParam);
 
     try {
       return await runSubmitVote(request.data, {
@@ -619,6 +643,7 @@ export const submitVote = onCall(
         rawRequest: request.rawRequest,
         fingerprintPepper,
         goldenKeySecret,
+        recaptchaSecret,
       });
     } catch (err) {
       if (err instanceof HttpsError) throw err;
@@ -630,7 +655,7 @@ export const submitVote = onCall(
 
 /**
  * @param {unknown} data - Callable payload
- * @param {{ auth: { uid: string }; rawRequest?: unknown; fingerprintPepper?: string; goldenKeySecret?: string }} context
+ * @param {{ auth: { uid: string }; rawRequest?: unknown; fingerprintPepper?: string; goldenKeySecret?: string; recaptchaSecret?: string }} context
  */
 async function runSubmitVote(data, context) {
   const { voteData, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
@@ -682,7 +707,23 @@ async function runSubmitVote(data, context) {
       origin: context.rawRequest?.headers?.origin || null,
     });
   } else {
-    const recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
+    // 與 submitBreakingVote 一致：getRecaptchaSecret() 缺 RECAPTCHA_SECRET 時會 throw 一般 Error，
+    // 若不轉成 HttpsError，外層會誤判為 internal 500。
+    let recaptchaResult;
+    try {
+      recaptchaResult = await verifyRecaptcha(recaptchaToken, {
+        minScore: 0,
+        secretOverride: context.recaptchaSecret || "",
+      });
+    } catch (recaptchaErr) {
+      functions.logger.error("[submitVote][recaptcha-config]", {
+        message: recaptchaErr?.message,
+        uid,
+      });
+      throw new HttpsError("failed-precondition", "reCAPTCHA verification unavailable", {
+        code: "recaptcha-config-error",
+      });
+    }
     if (!recaptchaResult.success) {
       logVoteSecurityEvent("warn", "submit_vote", "recaptcha-fail", {
         uid,
@@ -945,7 +986,10 @@ async function runResetPosition(data, context) {
   );
 
   const bypassSecurity = shouldBypassHardSecurity(context);
-  const allowedWebOrigins = (process.env.ALLOWED_WEB_ORIGIN || "https://lbj-goat-meter.netlify.app")
+  // 預設含 Netlify / Firebase Hosting；可再用 ALLOWED_WEB_ORIGIN 覆寫整串（逗號分隔）。
+  const defaultAllowedOrigins =
+    "https://lbj-goat-meter.netlify.app,https://lbj-goat-meter.web.app,https://lbj-goat-meter.firebaseapp.com";
+  const allowedWebOrigins = (process.env.ALLOWED_WEB_ORIGIN || defaultAllowedOrigins)
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -953,11 +997,19 @@ async function runResetPosition(data, context) {
   const isWebNoAdSdk = adRewardToken === "web-no-ad-sdk";
   const isAllowedWebOrigin = allowedWebOrigins.includes(origin);
   const isWebNoAdSdkAllowed = isWebNoAdSdk && isAllowedWebOrigin;
+  // 與 RewardedAdsService 對齊：Vite localhost 無廣告 SDK 時傳 dev-bypass-localhost，需 localhost origin 才略過廣告驗證（不依賴 ALLOW_SECURITY_BYPASS_LOCALHOST）。
+  const isLocalWebOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+  const isLocalDevPlaceholder = adRewardToken === "dev-bypass-localhost";
+  const isLocalDevResetAllowed = isLocalWebOrigin && isLocalDevPlaceholder;
 
   if (bypassSecurity) {
     console.warn("[resetPosition] Bypassing reCAPTCHA and ad reward verification (localhost only).");
   } else if (isWebNoAdSdkAllowed) {
     // 網頁版無廣告 SDK 過渡：origin 已驗證即放行（正式環境不記 info 日誌，避免 Logging 寫入費用）
+  } else if (isLocalDevResetAllowed) {
+    functions.logger.warn(
+      "[resetPosition] Local web dev: dev-bypass-localhost + localhost origin — skipping ad reward verification."
+    );
   } else {
     // 重置立場不看 reCAPTCHA 分數：僅以廣告／origin 為門檻；即便被繞過也只是撤一票，不影響整體數據可信度
     const adResult = await verifyAdRewardToken(adRewardToken, context.adRewardSigningSecret);
@@ -1416,12 +1468,16 @@ export const onBreakingEventUpdate = functions.firestore
  * submitBreakingVote — 突發戰區投票：一話題一設備一票，寫入 global_events/{eventId}/votes/{deviceId}。
  */
 export const submitBreakingVote = onCall(
-  { ...CALLABLE_HTTP_OPTS, secrets: [goatGoldenKeySecret, goatFingerprintPepperSecret] },
+  {
+    ...CALLABLE_HTTP_OPTS,
+    secrets: [goatGoldenKeySecret, goatFingerprintPepperSecret, recaptchaSecretParam],
+  },
   async (request) => {
   requireAuth(request);
 
   const goldenKeySecret = resolveGoldenKeySecret(goatGoldenKeySecret);
   const fingerprintPepper = resolveFingerprintPepper(goatFingerprintPepperSecret);
+  const recaptchaSecret = resolveRecaptchaSecret(recaptchaSecretParam);
 
   try {
     return await runSubmitBreakingVote(request.data, {
@@ -1429,6 +1485,7 @@ export const submitBreakingVote = onCall(
       rawRequest: request.rawRequest,
       goldenKeySecret,
       fingerprintPepper,
+      recaptchaSecret,
     });
   } catch (err) {
     if (err instanceof HttpsError) throw err;
@@ -1480,7 +1537,10 @@ async function runSubmitBreakingVote(data, context) {
   if (!shouldBypassHardSecurity(context)) {
     let recaptchaResult;
     try {
-      recaptchaResult = await verifyRecaptcha(recaptchaToken, { minScore: 0 });
+      recaptchaResult = await verifyRecaptcha(recaptchaToken, {
+        minScore: 0,
+        secretOverride: context.recaptchaSecret || "",
+      });
     } catch (recaptchaErr) {
       functions.logger.error("[submitBreakingVote][recaptcha-config]", {
         message: recaptchaErr?.message,

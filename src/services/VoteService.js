@@ -37,6 +37,8 @@ const STAR_ID = "lbj";
 
 function getVoteFunctionErrorMessage(err, getMessage) {
   const backendCode = err?.details?.code ?? err?.customData?.code;
+  const recaptchaErrFromDetails =
+    err?.details?.recaptchaError ?? err?.customData?.recaptchaError;
 
   if (backendCode === "auth-required") {
     return getMessage("common:voteError_authRequired");
@@ -68,6 +70,15 @@ function getVoteFunctionErrorMessage(err, getMessage) {
   }
   if (backendCode === "recaptcha-greyzone-requires-challenge") {
     return getMessage("common:voteError_recaptchaGreyZone");
+  }
+  if (backendCode === "recaptcha-config-error") {
+    return getMessage("common:voteError_recaptchaConfig");
+  }
+  if (backendCode === "recaptcha-verify-failed") {
+    if (recaptchaErrFromDetails === "empty-token" || recaptchaErrFromDetails == null) {
+      return getMessage("common:voteError_recaptchaEmptyToken");
+    }
+    return getMessage("common:voteError_recaptchaVerifyFailed");
   }
 
   const fallback =
@@ -101,11 +112,16 @@ export async function submitBreakingVote(
   if (!deviceIdStr) throw new Error(getMessage("common:error_deviceIdRequired"));
 
   const optionNorm = normalizeBreakingOptionIndex(optionIndex);
+  const tokenStr = typeof recaptchaToken === "string" ? recaptchaToken.trim() : "";
+  if (!tokenStr) {
+    throw new Error(getMessage("common:voteError_recaptchaEmptyToken"));
+  }
+
   const payload = {
     eventId: eventIdStr,
     optionIndex: optionNorm,
     deviceId: deviceIdStr,
-    recaptchaToken: recaptchaToken ?? null,
+    recaptchaToken: tokenStr,
     adRewardToken: adRewardToken ?? null,
   };
 
@@ -154,6 +170,13 @@ export async function submitBreakingVote(
     if (code === "recaptcha-greyzone-requires-challenge") {
       throw new Error(getMessage("common:voteError_recaptchaGreyZone"));
     }
+    if (code === "recaptcha-verify-failed") {
+      const recaptchaErr = err?.details?.recaptchaError ?? err?.customData?.recaptchaError;
+      if (recaptchaErr === "empty-token" || recaptchaErr == null) {
+        throw new Error(getMessage("common:voteError_recaptchaEmptyToken"));
+      }
+      throw new Error(getMessage("common:voteError_recaptchaVerifyFailed"));
+    }
     const msg = (err?.message && typeof err.message === "string" && err.message) || getMessage("common:breakingVoteError");
     throw new Error(msg);
   }
@@ -175,10 +198,14 @@ export async function submitVote(userId, { selectedStance, selectedReasons, devi
 
   // 僅在「即將送出」時取得最新 reCAPTCHA token，確保有效期限內。
   const recaptchaToken = await getRecaptchaToken("submit_vote");
+  const tokenStr = typeof recaptchaToken === "string" ? recaptchaToken.trim() : "";
+  if (!tokenStr) {
+    throw new Error(getMessage("common:voteError_recaptchaEmptyToken"));
+  }
 
   const payload = {
     voteData: { selectedStance, selectedReasons, deviceId: deviceIdStr },
-    recaptchaToken,
+    recaptchaToken: tokenStr,
   };
 
   const { xGoatTimestamp, xGoatSignature } = await createGoldenKeySignature(

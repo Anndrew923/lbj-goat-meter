@@ -1,5 +1,9 @@
 import crypto from "crypto";
 import * as functions from "firebase-functions";
+import { HttpsError } from "firebase-functions/v2/https";
+
+// 必須使用 v2 的 HttpsError：Gen2 onCall 外層以 `err instanceof HttpsError` 判斷是否原樣拋出；
+// 若沿用 v1 functions.https.HttpsError，instanceof 為 false，簽章錯誤會被誤轉成 HTTP 500。
 
 const DEFAULT_MAX_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -65,7 +69,7 @@ export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {},
       ...baseLog,
       code: "invalid-timestamp",
     });
-    throw new functions.https.HttpsError("permission-denied", "Invalid signature timestamp", {
+    throw new HttpsError("permission-denied", "Invalid signature timestamp", {
       code: "signature-invalid-timestamp",
     });
   }
@@ -76,7 +80,7 @@ export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {},
       code: "timestamp-skew",
       maxSkewMs: DEFAULT_MAX_SKEW_MS,
     });
-    throw new functions.https.HttpsError("permission-denied", "Signature expired or from future", {
+    throw new HttpsError("permission-denied", "Signature expired or from future", {
       code: "signature-timestamp-skew",
     });
   }
@@ -86,7 +90,7 @@ export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {},
       ...baseLog,
       code: "missing-signature-or-secret",
     });
-    throw new functions.https.HttpsError("permission-denied", "Signature missing", {
+    throw new HttpsError("permission-denied", "Signature missing", {
       code: "signature-missing",
     });
   }
@@ -102,7 +106,7 @@ export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {},
       code: "signature-mismatch",
       reason: "invalid-hex-or-length",
     });
-    throw new functions.https.HttpsError("permission-denied", "Signature mismatch", {
+    throw new HttpsError("permission-denied", "Signature mismatch", {
       code: "signature-mismatch",
     });
   }
@@ -116,7 +120,7 @@ export function verifyGoldenKey(action, payloadForHash, goldenFields, meta = {},
       ...baseLog,
       code: "signature-mismatch",
     });
-    throw new functions.https.HttpsError("permission-denied", "Signature mismatch", {
+    throw new HttpsError("permission-denied", "Signature mismatch", {
       code: "signature-mismatch",
     });
   }

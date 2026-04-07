@@ -45,7 +45,21 @@
 
 ## 3. 將 Secret 提供給 Cloud Functions
 
-目前專案使用 **Firebase Cloud Functions (1st gen)**，可採以下任一方式將 Secret 注入為環境變數。
+專案已使用 **Cloud Functions 2nd gen（Cloud Run）**，`RECAPTCHA_SECRET` 建議與 `GOAT_GOLDEN_KEY_SECRET` 相同，以 **`defineSecret` + Secret Manager** 綁定，這樣每次 `firebase deploy --only functions` 都會自動掛載，無需在 Cloud Run 手動加環境變數。
+
+### 方式 0（建議）：`defineSecret` + Firebase CLI（與現有 GOAT_* 一致）
+
+1. 在 [reCAPTCHA Admin](https://www.google.com/recaptcha/admin) 複製該網站的 **Secret key**（與前端的 `VITE_RECAPTCHA_SITE_KEY` 為同一組金鑰）。
+2. 在專案根目錄執行（將值貼上後結束輸入，或從檔案讀入）：
+   ```bash
+   firebase functions:secrets:set RECAPTCHA_SECRET
+   ```
+   - 若 Secret 已存在則為**新增版本**；名稱必須為 **`RECAPTCHA_SECRET`**（與 `functions/index.js` 內 `defineSecret("RECAPTCHA_SECRET")` 一致）。
+3. 部署函式（會把該 secret 綁到 `submitVote`、`submitBreakingVote`）：
+   ```bash
+   firebase deploy --only functions
+   ```
+4. 驗證：到 **Cloud Run** → 服務 **`submitvote`**（或 **`submitbreakingvote`**）→ **修訂版本** → **變數與密碼**，應可看到 **`RECAPTCHA_SECRET`** 以 **密鑰** 形式掛載（與 `GOAT_GOLDEN_KEY_SECRET` 並列）。
 
 ### 方式 A：本地 .env 部署（建議用於 Staging / 小團隊）
 
@@ -83,9 +97,9 @@
    - （選用）`AD_REWARD_VERIFY_ENDPOINT` = 驗證 API URL
 5. 儲存並重新部署該 function（或整批重新 deploy）。
 
-### 方式 C：Secret Manager 綁定（2nd gen / 進階）
+### 方式 C：僅在 Cloud Run 手動加環境變數（不建議）
 
-若未來升級為 **Cloud Functions 2nd gen**，可改為使用 `defineSecret` 將 Secret Manager 的 secret 綁定到 function，由 Runtime 自動注入，無需手動複製到 .env。屆時可再調整程式碼與部署設定。
+手動在 Cloud Run 加 `RECAPTCHA_SECRET` 容易在下次部署時遺漏；請優先改用上方 **方式 0**。
 
 ---
 

@@ -47,6 +47,41 @@ function ensureRecaptchaScript(siteKey) {
 }
 
 /**
+ * 官方建議：在 api.js?render= 載入後，先經 grecaptcha.ready() 再 execute，避免「腳本已載入但 API 尚未就緒」導致空 token。
+ *
+ * @param {string} siteKey
+ * @param {string} action
+ * @returns {Promise<string | null>}
+ */
+async function executeRecaptchaV3(siteKey, action) {
+  const g = window.grecaptcha;
+  if (!g?.execute) return null;
+
+  const run = async () => {
+    const token = await g.execute(siteKey, { action });
+    return typeof token === "string" && token.trim() ? token.trim() : null;
+  };
+
+  if (typeof g.ready === "function") {
+    return new Promise((resolve) => {
+      g.ready(async () => {
+        try {
+          resolve(await run());
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  try {
+    return await run();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 取得 reCAPTCHA token（若 SDK 未載入則回傳 null，由呼叫端決定是否繼續或提示）。
  *
  * @param {string} action - 例如 'submit_vote' / 'reset_position'
@@ -76,11 +111,15 @@ export async function getRecaptchaToken(action = "submit_vote") {
       return null;
     }
 
-    const token = await g.execute(siteKey, { action });
-    if (typeof token !== "string" || !token.trim()) {
-      return null;
+    // 短暫重試：偶發首幀 execute 回空，或與 ready 競態。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const token = await executeRecaptchaV3(siteKey, action);
+      if (token) return token;
     }
-    return token.trim();
+    return null;
   } catch (err) {
     if (import.meta.env.DEV) {
       // 註：recaptcha/api2/pat 的 401 為 PAT 協定預期行為，不影響 token 取得，見 docs/DEPLOY-DIAGNOSIS-401.md

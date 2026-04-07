@@ -11,15 +11,17 @@ const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 let cachedRecaptchaSecret = null;
 
 /**
- * 從環境變數讀取 reCAPTCHA secret。
- * 推薦做法：在 GCP / Firebase 中將 Secret Manager 綁定到 RECAPTCHA_SECRET 環境變數。
+ * 讀取 reCAPTCHA 後端 Secret：優先使用 Callable 傳入的 secretOverride（defineSecret 解析值），
+ * 否則使用 process.env.RECAPTCHA_SECRET（本機 Emulator / 舊式手動環境變數）。
  */
-function getRecaptchaSecret() {
+function getRecaptchaSecret(secretOverride = "") {
   if (cachedRecaptchaSecret) return cachedRecaptchaSecret;
-  const secret = typeof process.env.RECAPTCHA_SECRET === "string" ? process.env.RECAPTCHA_SECRET.trim() : "";
+  const fromOverride = typeof secretOverride === "string" ? secretOverride.trim() : "";
+  const fromEnv = typeof process.env.RECAPTCHA_SECRET === "string" ? process.env.RECAPTCHA_SECRET.trim() : "";
+  const secret = fromOverride || fromEnv;
   if (!secret) {
     throw new Error(
-      "[verifyRecaptcha] Missing RECAPTCHA_SECRET. Please bind Secret Manager secret to RECAPTCHA_SECRET env."
+      "[verifyRecaptcha] Missing RECAPTCHA_SECRET. Create secret RECAPTCHA_SECRET in Secret Manager and bind via defineSecret on submitVote/submitBreakingVote, or set RECAPTCHA_SECRET for local runs."
     );
   }
   cachedRecaptchaSecret = secret;
@@ -33,14 +35,15 @@ function getRecaptchaSecret() {
  * @param {object} [options]
  * @param {number} [options.minScore=0] - 最低通過分數（v3 專用；僅 submitVote 使用 0.5 保護投票數據；resetPosition 不看分數）
  * @param {string | null} [options.remoteIp=null] - 可選：用戶 IP，用於更嚴格的驗證
+ * @param {string} [options.secretOverride=""] - 由 index.js 自 defineSecret 解析後注入；正式環境以此為主
  * @returns {Promise<{ success: boolean, score: number | null, action?: string, raw: any }>}
  */
-export async function verifyRecaptcha(token, { minScore = 0, remoteIp = null } = {}) {
+export async function verifyRecaptcha(token, { minScore = 0, remoteIp = null, secretOverride = "" } = {}) {
   if (typeof token !== "string" || !token.trim()) {
     return { success: false, score: null, raw: { error: "empty-token" } };
   }
 
-  const secret = getRecaptchaSecret();
+  const secret = getRecaptchaSecret(secretOverride);
 
   const params = new URLSearchParams();
   params.append("secret", secret);
