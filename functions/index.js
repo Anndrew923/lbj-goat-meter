@@ -973,7 +973,8 @@ export const resetPosition = onCall(
 );
 
 async function runResetPosition(data, context) {
-  const { adRewardToken, recaptchaToken, xGoatTimestamp, xGoatSignature } = data || {};
+  // 前端可傳 recaptchaToken；目前 reset 流程未呼叫 verifyRecaptcha，僅保留欄位相容。
+  const { adRewardToken, xGoatTimestamp, xGoatSignature } = data || {};
   const uid = context.auth.uid;
 
   // 簽章 payload 必須與前端 createGoldenKeySignature(RESET_POSITION, …) 一致：僅 { adRewardToken }。

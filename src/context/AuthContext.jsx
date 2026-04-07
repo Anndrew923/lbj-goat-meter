@@ -48,6 +48,7 @@ import { deleteAccountData } from "../services/AccountService";
 import { requestResetAdRewardToken } from "../services/RewardedAdsService";
 import { callResetPosition } from "../services/ResetPositionService";
 import { getRecaptchaToken } from "../services/RecaptchaService";
+import { getCallableDetailsCode } from "../utils/firebaseCallableError";
 import { trackCompleteRegistration } from "../services/MetaAnalyticsService";
 import { triggerHaptic } from "../utils/hapticUtils";
 import i18n from "../i18n/config";
@@ -493,10 +494,10 @@ export function AuthProvider({ children }) {
         // 1. 先透過 Rewarded Ads 取得廣告獎勵 Token；使用者若中途關閉，丟出 ad-not-watched。
         const adRewardToken = await requestResetAdRewardToken();
 
-        // 2. 在呼叫 Cloud Function 前取得最新 reCAPTCHA token，以提升安全評分。
+        // 2. 與後端 payload 一致可帶 reCAPTCHA token（目前 reset 後端未強制驗證分數）。
         const recaptchaToken = await getRecaptchaToken("reset_position");
 
-        // 3. 呼叫 Cloud Function resetPosition，後端會驗證 reCAPTCHA 分數與廣告獎勵 Token。
+        // 3. 呼叫 Cloud Function resetPosition（Golden Key、廣告獎勵／允許 origin 等）。
         const { deletedVoteId } = await callResetPosition({
           adRewardToken,
           recaptchaToken,
@@ -511,7 +512,7 @@ export function AuthProvider({ children }) {
 
         // resetProfile 目前僅作為 UI 勾選項目，後端尚未擴充欄位重置；未來可在此追加 profiles 重設流程。
       } catch (err) {
-        const backendCode = err?.details?.code || err?.code;
+        const backendCode = getCallableDetailsCode(err);
 
         let msg;
         if (backendCode === "auth-required") {
@@ -532,7 +533,7 @@ export function AuthProvider({ children }) {
         ) {
           msg = i18n.t("common:revoteSignatureError");
         } else {
-          msg = err?.message ?? i18n.t("common:revoteError");
+          msg = i18n.t("common:voteError_genericRetry");
         }
 
         setAuthError(msg);
@@ -542,7 +543,7 @@ export function AuthProvider({ children }) {
             message: err?.message,
           });
         }
-        throw err;
+        throw new Error(msg);
       }
     },
     [currentUser?.uid],

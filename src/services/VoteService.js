@@ -11,8 +11,8 @@
 import { Timestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import app, { getFirebaseFunctions } from "../lib/firebase";
-import i18n from "../i18n/config";
 import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
+import { getCallableDetailsCode } from "../utils/firebaseCallableError";
 import { isObject } from "../utils/typeUtils";
 import { getRecaptchaToken } from "./RecaptchaService";
 import { createGoldenKeySignature, GOLDEN_KEY_ACTIONS } from "./GoldenKeyService";
@@ -36,7 +36,7 @@ function getFunctionsInstance() {
 const STAR_ID = "lbj";
 
 function getVoteFunctionErrorMessage(err, getMessage) {
-  const backendCode = err?.details?.code ?? err?.customData?.code;
+  const backendCode = getCallableDetailsCode(err);
   const recaptchaErrFromDetails =
     err?.details?.recaptchaError ?? err?.customData?.recaptchaError;
 
@@ -81,10 +81,8 @@ function getVoteFunctionErrorMessage(err, getMessage) {
     return getMessage("common:voteError_recaptchaVerifyFailed");
   }
 
-  const fallback =
-    (err?.message && typeof err.message === "string" && err.message) ||
-    getMessage("common:submitError");
-  return fallback;
+  // 不向使用者顯示後端英文 message，改為統一溫和提示（細節見 DEV console）
+  return getMessage("common:voteError_genericRetry");
 }
 
 /**
@@ -143,7 +141,7 @@ export async function submitBreakingVote(
       xGoatSignature,
     });
   } catch (err) {
-    const code = err?.details?.code || err?.code;
+    const code = getCallableDetailsCode(err);
     if (code === "breaking-already-voted") {
       throw new Error(getMessage("common:breakingAlreadyVoted"));
     }
@@ -161,7 +159,10 @@ export async function submitBreakingVote(
     ) {
       throw new Error(getMessage("common:breakingVoteSignatureError"));
     }
-    if (code === "breaking-transaction-failed" || code === "recaptcha-config-error") {
+    if (code === "recaptcha-config-error") {
+      throw new Error(getMessage("common:voteError_recaptchaConfig"));
+    }
+    if (code === "breaking-transaction-failed") {
       throw new Error(getMessage("common:breakingVoteError"));
     }
     if (code === "rate-limit-exceeded") {
@@ -177,8 +178,7 @@ export async function submitBreakingVote(
       }
       throw new Error(getMessage("common:voteError_recaptchaVerifyFailed"));
     }
-    const msg = (err?.message && typeof err.message === "string" && err.message) || getMessage("common:breakingVoteError");
-    throw new Error(msg);
+    throw new Error(getMessage("common:breakingVoteError"));
   }
 }
 

@@ -1,6 +1,6 @@
 // utils/verifyRecaptcha.js
 // 設計意圖：
-// - 將 reCAPTCHA 驗證集中於單一模組；目前僅 submitVote 使用（minScore 0.5），resetPosition 不看分數、不呼叫本模組。
+// - 將 reCAPTCHA 驗證集中於單一模組；submitVote / submitBreakingVote 使用分數門檻；resetPosition 不呼叫本模組。
 // - 透過 Secret Manager（或等價的環境變數注入）管理後端密鑰，前端永不暴露 secret。
 
 import fetch from "node-fetch";

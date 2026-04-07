@@ -81,7 +81,12 @@ export default function BreakingHistoryPage() {
         setToast(t('breakingVoteSuccess'))
         setPending(null)
       } catch (err) {
-        const msg = err?.code === 'ad-not-watched' ? t('voteError_adNotWatched') : (err?.message || t('breakingVoteError'))
+        const msg =
+          err?.code === "ad-not-watched"
+            ? t("voteError_adNotWatched")
+            : typeof err?.message === "string" && err.message.trim()
+              ? err.message
+              : t("breakingVoteError")
         setToast(msg)
       } finally {
         setSubmitting(null)
