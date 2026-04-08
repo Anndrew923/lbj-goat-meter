@@ -29,7 +29,7 @@ const LBJ_WARZONE_ID = 'LAL'
 
 const toastStyle = {
   position: 'fixed',
-  bottom: 'max(env(safe-area-inset-bottom), 24px)',
+  bottom: 'max(var(--safe-bottom), 24px)',
   left: '50%',
   transform: 'translateX(-50%)',
   padding: '10px 20px',

@@ -44,6 +44,7 @@ import {
   isNativePlatform,
   reauthenticateWithGoogleCredential,
 } from "../services/GoogleAuthService";
+import { loginWithAppleForFirebase } from "../services/AppleAuthService";
 import { deleteAccountData } from "../services/AccountService";
 import { requestResetAdRewardToken } from "../services/RewardedAdsService";
 import { callResetPosition } from "../services/ResetPositionService";
@@ -61,6 +62,12 @@ const FIREBASE_COOLING_MS = 500;
 /** 離線時重試取得 isPremium 的延遲（ms） */
 const IS_PREMIUM_RETRY_DELAY_MS = 1000;
 const IS_PREMIUM_RETRY_MAX = 2;
+/** Callable 前先強制刷新 Auth token，避免 UI 已登入但 request.auth 為空的漂移狀態。 */
+async function ensureFreshAuthTokenForCallable() {
+  if (!auth?.currentUser) return false;
+  await auth.currentUser.getIdToken(true);
+  return true;
+}
 
 async function fetchIsPremium(uid) {
   if (!db) return false;
@@ -371,6 +378,39 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
+   * Apple Sign-in（iOS 戰線預留）
+   * 目前僅提供受控錯誤與統一錯誤回寫路徑，確保未接 provider 前不影響既有 Google/Guest 流程。
+   */
+  const loginWithApple = useCallback(async () => {
+    setAuthError(null);
+    if (!isFirebaseReady || !auth) {
+      triggerHaptic([30, 50, 30]);
+      setAuthError(i18n.t("common:authError_firebaseNotReady"));
+      if (import.meta.env.DEV) {
+        console.warn("[AuthContext] Firebase 未就緒，無法執行 Apple 登入");
+      }
+      return;
+    }
+    try {
+      await loginWithAppleForFirebase();
+    } catch (err) {
+      triggerHaptic([30, 50, 30]);
+      // iOS 初始階段：Apple provider 尚未接線時，先走受控錯誤，避免污染既有 Google 錯誤語意。
+      const isNotImplemented =
+        err?.code === "auth/apple-signin-not-implemented" ||
+        err?.message === "apple-signin-not-implemented";
+      const message = isNotImplemented
+        ? i18n.t("common:authError_loginFailed")
+        : getAuthErrorMessage(err);
+      setAuthError(message);
+      if (import.meta.env.DEV) {
+        console.warn("[AuthContext] Apple 登入失敗:", err?.code ?? err?.message);
+      }
+      throw err;
+    }
+  }, []);
+
+  /**
    * 以匿名觀察者身份進入：使用 Firebase Anonymous Auth，使 Firestore 規則之 isAuthenticated() 成立；
    * isGuest 仍由 onAuthStateChanged 依 user.isAnonymous 同步，供 UI 禁止投票。
    */
@@ -491,6 +531,9 @@ export function AuthProvider({ children }) {
       }
       setAuthError(null);
       try {
+        // 先刷新一次 token，降低「看起來已登入但 callable 無 auth」的誤判。
+        await ensureFreshAuthTokenForCallable();
+
         // 1. 先透過 Rewarded Ads 取得廣告獎勵 Token；使用者若中途關閉，丟出 ad-not-watched。
         const adRewardToken = await requestResetAdRewardToken();
 
@@ -498,10 +541,26 @@ export function AuthProvider({ children }) {
         const recaptchaToken = await getRecaptchaToken("reset_position");
 
         // 3. 呼叫 Cloud Function resetPosition（Golden Key、廣告獎勵／允許 origin 等）。
-        const { deletedVoteId } = await callResetPosition({
-          adRewardToken,
-          recaptchaToken,
-        });
+        let resetResult;
+        try {
+          resetResult = await callResetPosition({
+            adRewardToken,
+            recaptchaToken,
+          });
+        } catch (firstErr) {
+          const firstBackendCode = getCallableDetailsCode(firstErr);
+          if (firstBackendCode !== "auth-required") {
+            throw firstErr;
+          }
+          // 若 token 於廣告流程中失效，先強制刷新後以同一組廣告 token 重試一次，避免要求使用者重整頁面。
+          await ensureFreshAuthTokenForCallable();
+          resetResult = await callResetPosition({
+            adRewardToken,
+            recaptchaToken,
+          });
+        }
+
+        const { deletedVoteId } = resetResult;
 
         if (import.meta.env.DEV) {
           console.log(
@@ -562,6 +621,7 @@ export function AuthProvider({ children }) {
       profileLoading,
       hasProfile,
       loginWithGoogle,
+      loginWithApple,
       continueAsGuest,
       signOut,
       deleteAccount,
@@ -578,6 +638,7 @@ export function AuthProvider({ children }) {
       profileLoading,
       hasProfile,
       loginWithGoogle,
+      loginWithApple,
       continueAsGuest,
       signOut,
       deleteAccount,

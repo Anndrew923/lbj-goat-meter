@@ -18,9 +18,14 @@
   --color-tactical-emerald: #00E676;
   --color-machine-silver: #E0E0E0;
   --color-rust-copper: #B87333;
-  /* Safe area：單一來源，避免 Tailwind 任意值中 env() 逗號解析問題 */
-  --safe-area-inset-top: env(safe-area-inset-top, 1rem);
-  --safe-area-inset-bottom: env(safe-area-inset-bottom, 2rem);
+  /* Safe area：iOS 安全區單一來源；以語義化變數管理，避免各頁散落 env() 難以治理 */
+  --safe-top: env(safe-area-inset-top, 1rem);
+  --safe-bottom: env(safe-area-inset-bottom, 2rem);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  /* 相容舊命名，避免既有組件一次性重構風險 */
+  --safe-area-inset-top: var(--safe-top);
+  --safe-area-inset-bottom: var(--safe-bottom);
 }
 
 /* 全域：禁止 overscroll 彈性；touch-action 配合 viewport 禁用雙指縮放，僅允許平移
@@ -35,17 +40,39 @@ body {
   margin: 0;
   min-height: 100vh;
   /* 為固定於底部的 reCAPTCHA 聲明預留空間（聲明列本體 + 底部 safe area），避免內容被遮擋 */
-  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(4.5rem + var(--safe-bottom));
 }
 
 /* 頂部安全區（固定 Header 用） */
 .safe-area-inset-top {
-  padding-top: var(--safe-area-inset-top);
+  padding-top: var(--safe-top);
 }
 
 /* 底部安全區（主容器、底部抽屜用） */
 .safe-area-inset-bottom {
-  padding-bottom: var(--safe-area-inset-bottom);
+  padding-bottom: var(--safe-bottom);
+}
+
+/* 全頁左右安全區（含 iPhone 橫向瀏海避讓） */
+.safe-px-screen {
+  /* 保留原本 px-6 視覺密度（1.5rem），再疊加左右 safe inset，避免 iPhone 橫向被瀏海切邊 */
+  padding-left: calc(1.5rem + var(--safe-left));
+  padding-right: calc(1.5rem + var(--safe-right));
+}
+
+/* 固定頂欄安全區 */
+.safe-pt-header {
+  padding-top: var(--safe-top);
+}
+
+/* 固定底部操作區安全區 */
+.safe-pb-nav {
+  padding-bottom: calc(1.5rem + var(--safe-bottom));
+}
+
+/* 舊頁面相容：pb-safe 對齊 bottom safe area */
+.pb-safe {
+  padding-bottom: calc(1rem + var(--safe-bottom));
 }
 
 /* 與固定 Header 等高的佔位，避免首屏內容被遮擋 */
@@ -56,12 +83,12 @@ body {
 
 /* Settings 彈窗：最內層滾動容器底部安全區 + 留白，避免 Delete Account 被導覽列遮擋 */
 .settings-modal-content-inset {
-  padding-bottom: calc(env(safe-area-inset-bottom, 1rem) + 1.5rem);
+  padding-bottom: calc(var(--safe-bottom) + 1.5rem);
 }
 
 /* FilterFunnel 底部固定區：安全區 + 觸控防錯 24px，避免與 Android 導覽列／手勢重疊 */
 .filter-funnel-bottom-safe {
-  padding-bottom: calc(1.5rem + var(--safe-area-inset-bottom));
+  padding-bottom: calc(1.5rem + var(--safe-bottom));
 }
 
 /* SmartWarzoneSelector：4px 主題金捲軸、隱藏系統預設 */
@@ -104,7 +131,7 @@ body {
 
 /* reCAPTCHA 聲明列：底部留白至少等於 safe area，且無 safe area 時至少 2.5rem，避免被手機原生導覽列／Home Indicator 遮蔽 */
 .recaptcha-disclosure-bar {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 2.5rem);
+  padding-bottom: max(var(--safe-bottom), 2.5rem);
 }
 
 /* reCAPTCHA v3 徽章隱藏：依 Google 政策隱藏時須在頁面顯眼處提供聲明（見 RecaptchaDisclosure.jsx） */

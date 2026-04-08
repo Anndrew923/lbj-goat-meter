@@ -218,11 +218,11 @@ export default function VotePage() {
   }, [signOut, navigate]);
 
   return (
-    <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom">
+    <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom safe-px-screen">
       <motion.header
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/90 border-b border-b-[0.5px] border-white/5 pb-4 safe-area-inset-top px-6"
+        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/90 border-b border-b-[0.5px] border-white/5 pb-4 safe-pt-header px-6 safe-px-screen"
       >
         <h1 className="flex flex-row items-baseline">
           <span className="text-sm tracking-widest text-king-gold/80">
@@ -309,7 +309,7 @@ export default function VotePage() {
             onExportEnd={() => setTickerPausedForExport(false)}
           />
           {deepLinkNotice && (
-            <div className="fixed top-[calc(env(safe-area-inset-top,0px)+64px)] left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-full text-xs bg-black/80 border border-king-gold/40 text-king-gold shadow-lg">
+            <div className="fixed top-[calc(var(--safe-top)+64px)] left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-full text-xs bg-black/80 border border-king-gold/40 text-king-gold shadow-lg">
               {deepLinkNotice}
             </div>
           )}
@@ -459,7 +459,7 @@ export default function VotePage() {
                   {t("close")}
                 </button>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar settings-modal-content-inset pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar settings-modal-content-inset">
                 {authError && (
                   <p className="mb-4 text-sm text-red-400" role="alert">
                     {authError}

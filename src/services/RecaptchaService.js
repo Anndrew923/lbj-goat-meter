@@ -9,6 +9,13 @@
  */
 
 let recaptchaScriptPromise = null;
+const LOCAL_RECAPTCHA_DEV_PLACEHOLDER = "dev-bypass-localhost-recaptcha";
+
+function isLocalhostOrigin() {
+  if (typeof window === "undefined") return false;
+  const origin = window.location?.origin || "";
+  return /localhost|127\.0\.0\.1/.test(origin);
+}
 
 function ensureRecaptchaScript(siteKey) {
   if (typeof window === "undefined") return Promise.resolve();
@@ -91,6 +98,12 @@ export async function getRecaptchaToken(action = "submit_vote") {
   try {
     const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
     if (!siteKey) {
+      if (import.meta.env.DEV && isLocalhostOrigin()) {
+        console.warn(
+          "[RecaptchaService] localhost 開發環境缺少 site key，改用 dev-bypass-localhost-recaptcha。"
+        );
+        return LOCAL_RECAPTCHA_DEV_PLACEHOLDER;
+      }
       if (import.meta.env.DEV) {
         console.warn(
           "[RecaptchaService] 缺少 VITE_RECAPTCHA_SITE_KEY，將以無 token 呼叫後端。"
@@ -103,6 +116,12 @@ export async function getRecaptchaToken(action = "submit_vote") {
 
     const g = window.grecaptcha;
     if (!g?.execute) {
+      if (import.meta.env.DEV && isLocalhostOrigin()) {
+        console.warn(
+          "[RecaptchaService] localhost 開發環境 grecaptcha 未就緒，改用 dev-bypass-localhost-recaptcha。"
+        );
+        return LOCAL_RECAPTCHA_DEV_PLACEHOLDER;
+      }
       if (import.meta.env.DEV) {
         console.warn(
           "[RecaptchaService] grecaptcha 未就緒（可能被外掛或網路攔截）。投票仍可送出，後端將依設定決定是否要求 token。"
@@ -119,8 +138,20 @@ export async function getRecaptchaToken(action = "submit_vote") {
       const token = await executeRecaptchaV3(siteKey, action);
       if (token) return token;
     }
+    if (import.meta.env.DEV && isLocalhostOrigin()) {
+      console.warn(
+        "[RecaptchaService] localhost 開發環境 execute 回空，改用 dev-bypass-localhost-recaptcha。"
+      );
+      return LOCAL_RECAPTCHA_DEV_PLACEHOLDER;
+    }
     return null;
   } catch (err) {
+    if (import.meta.env.DEV && isLocalhostOrigin()) {
+      console.warn(
+        "[RecaptchaService] localhost 開發環境 reCAPTCHA 例外，改用 dev-bypass-localhost-recaptcha。"
+      );
+      return LOCAL_RECAPTCHA_DEV_PLACEHOLDER;
+    }
     if (import.meta.env.DEV) {
       // 註：recaptcha/api2/pat 的 401 為 PAT 協定預期行為，不影響 token 取得，見 docs/DEPLOY-DIAGNOSIS-401.md
       console.warn(

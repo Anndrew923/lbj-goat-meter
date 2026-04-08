@@ -103,6 +103,7 @@ const Timestamp = admin.firestore.Timestamp;
 const STAR_ID = (process.env.STAR_ID || process.env.GOAT_STAR_ID || "lbj").trim() || "lbj";
 const GLOBAL_SUMMARY_DOC_ID = "global_summary";
 const HARD_SECURITY_BYPASS_FLAG = String(process.env.ALLOW_SECURITY_BYPASS_LOCALHOST || "").trim().toLowerCase();
+const LOCAL_RECAPTCHA_DEV_PLACEHOLDER = "dev-bypass-localhost-recaptcha";
 const RECAPTCHA_MIN_SCORE = 0.7;
 const RECAPTCHA_GREY_ZONE_MIN = 0.5;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -707,6 +708,17 @@ async function runSubmitVote(data, context) {
       origin: context.rawRequest?.headers?.origin || null,
     });
   } else {
+    const origin = (context.rawRequest?.headers?.origin || "").trim();
+    const isLocalWebOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+    const isLocalRecaptchaDevBypassAllowed =
+      isLocalWebOrigin &&
+      typeof recaptchaToken === "string" &&
+      recaptchaToken.trim() === LOCAL_RECAPTCHA_DEV_PLACEHOLDER;
+    if (isLocalRecaptchaDevBypassAllowed) {
+      functions.logger.warn(
+        "[submitVote] Local web dev: dev-bypass-localhost-recaptcha + localhost origin — skipping reCAPTCHA verification."
+      );
+    } else {
     // 與 submitBreakingVote 一致：getRecaptchaSecret() 缺 RECAPTCHA_SECRET 時會 throw 一般 Error，
     // 若不轉成 HttpsError，外層會誤判為 internal 500。
     let recaptchaResult;
@@ -750,6 +762,7 @@ async function runSubmitVote(data, context) {
         recaptchaScore: recaptchaResult.score,
         minScore: RECAPTCHA_MIN_SCORE,
       });
+    }
     }
   }
 
@@ -1536,6 +1549,17 @@ async function runSubmitBreakingVote(data, context) {
   });
 
   if (!shouldBypassHardSecurity(context)) {
+    const origin = (context.rawRequest?.headers?.origin || "").trim();
+    const isLocalWebOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+    const isLocalRecaptchaDevBypassAllowed =
+      isLocalWebOrigin &&
+      typeof recaptchaToken === "string" &&
+      recaptchaToken.trim() === LOCAL_RECAPTCHA_DEV_PLACEHOLDER;
+    if (isLocalRecaptchaDevBypassAllowed) {
+      functions.logger.warn(
+        "[submitBreakingVote] Local web dev: dev-bypass-localhost-recaptcha + localhost origin — skipping reCAPTCHA verification."
+      );
+    } else {
     let recaptchaResult;
     try {
       recaptchaResult = await verifyRecaptcha(recaptchaToken, {
@@ -1586,6 +1610,7 @@ async function runSubmitBreakingVote(data, context) {
         recaptchaScore: recaptchaResult.score,
         minScore: RECAPTCHA_MIN_SCORE,
       });
+    }
     }
   } else {
     logVoteSecurityEvent("warn", "submit_breaking_vote", "security-bypass", {
