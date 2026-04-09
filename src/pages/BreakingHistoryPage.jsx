@@ -6,10 +6,10 @@
  * - 每個歷史卡片進入投票前先呼叫 RewardedAdsService 播放獎勵廣告以增加營收，再執行 submitBreakingVote。
  * - 已投狀態由 BreakingVoteContext 提供，與首頁共用，路由切換不丟失。
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { Link } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Zap, ArrowLeft } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
 import { useBreakingVote } from '../context/BreakingVoteContext'
@@ -23,13 +23,13 @@ import { requestResetAdRewardToken } from '../services/RewardedAdsService'
 import { triggerHaptic, triggerHapticImpact } from '../utils/hapticUtils'
 import CommitmentModal from '../components/CommitmentModal'
 import BreakingOptionResultBars from '../components/BreakingOptionResultBars'
+import LoginPromptModal from '../components/LoginPromptModal'
 
 const ASPECT_RATIO = 16 / 9
 
 export default function BreakingHistoryPage() {
   const { t, i18n } = useTranslation('common')
   const { currentUser, isGuest } = useAuth()
-  const navigate = useNavigate()
   const isLoggedIn = !!currentUser
   const { votedEventIds, lastVoted, markEventVoted } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(PROJECT_APP_ID, {
@@ -39,6 +39,7 @@ export default function BreakingHistoryPage() {
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   // 不在戰區頁清除 lastVoted：首筆 snapshot 可能來自不同 query 的快取，若在此清除，
   // 返回首頁時首頁訂閱若仍拿到 total_votes:0 的快取就無法補正，導致票數被清空。僅由首頁 Banner 在確認 total_votes > 0 時清除。
@@ -46,8 +47,7 @@ export default function BreakingHistoryPage() {
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (isGuest) {
       triggerHaptic([30, 50, 30])
-      setToast(t('voteError_authRequired'))
-      window.setTimeout(() => navigate('/', { replace: true }), 800)
+      setShowLoginPrompt(true)
       return
     }
     if (votedEventIds.includes(ev.id)) {
@@ -59,7 +59,7 @@ export default function BreakingHistoryPage() {
     triggerHaptic(10)
     setToast(null)
     setPending({ ev, optionIndex, optionLabel })
-  }, [isGuest, t, votedEventIds, submitting, navigate])
+  }, [isGuest, t, votedEventIds, submitting])
 
   const closeCommitmentModal = useCallback(() => {
     if (!submitting) setPending(null)
@@ -267,6 +267,14 @@ export default function BreakingHistoryPage() {
           optionLabel={pending?.optionLabel ?? ''}
           loading={Boolean(submitting)}
         />
+        <AnimatePresence initial={false}>
+          {showLoginPrompt && (
+            <LoginPromptModal
+              key="breaking-history-login-prompt"
+              onClose={() => setShowLoginPrompt(false)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

@@ -9,8 +9,7 @@
  */
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Zap } from 'lucide-react'
 import { useGlobalBreakingEvents } from '../hooks/useGlobalBreakingEvents'
 import { useBreakingVote } from '../context/BreakingVoteContext'
@@ -24,13 +23,13 @@ import { requestBreakingVoteAdRewardToken } from '../services/RewardedAdsService
 import { triggerHaptic } from '../utils/hapticUtils'
 import CommitmentModal from './CommitmentModal'
 import BreakingOptionResultBars from './BreakingOptionResultBars'
+import LoginPromptModal from './LoginPromptModal'
 
 const ASPECT_RATIO = 16 / 9
 
 export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
   const { currentUser, isGuest } = useAuth()
-  const navigate = useNavigate()
   const isLoggedIn = !!currentUser
   const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
@@ -38,12 +37,12 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (isGuest) {
       triggerHaptic([30, 50, 30])
-      setToast(t('voteError_authRequired'))
-      window.setTimeout(() => navigate('/', { replace: true }), 800)
+      setShowLoginPrompt(true)
       return
     }
     if (votedEventIds.includes(ev.id)) {
@@ -55,7 +54,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
     triggerHaptic(10)
     setToast(null)
     setPending({ ev, optionIndex, optionLabel })
-  }, [isGuest, t, votedEventIds, submitting, navigate])
+  }, [isGuest, t, votedEventIds, submitting])
 
   const closeCommitmentModal = useCallback(() => {
     if (!submitting) setPending(null)
@@ -247,6 +246,14 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         loading={Boolean(submitting)}
         needsAd={!isFirstVoteOfDay}
       />
+      <AnimatePresence initial={false}>
+        {showLoginPrompt && (
+          <LoginPromptModal
+            key="breaking-banner-login-prompt"
+            onClose={() => setShowLoginPrompt(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

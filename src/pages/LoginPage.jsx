@@ -28,6 +28,14 @@ export default function LoginPage() {
   const [isGuestSigningIn, setIsGuestSigningIn] = useState(false)
   const hasNavigatedRef = useRef(false)
 
+  /**
+   * Google 按鈕忙碌狀態：signInWithPopup 在選完帳號即 resolve，但此頁仍要等 profile 載入才 navigate。
+   * 若僅依 isLoggingIn，按鈕會短暫回到「使用 Google 登入」而誤導重複點擊；故在「已登入且非匿名、仍載入 profile」時延續忙碌。
+   * 匿名觀察者（isGuest）不包含在此條件內。
+   */
+  const isGoogleSignInBusy =
+    isLoggingIn || (Boolean(currentUser) && !isGuest && profileLoading)
+
   // 導向條件必須含 !profileLoading。分流：有 profile → /vote，無 profile → /setup。
   useEffect(() => {
     if (loading) return
@@ -154,15 +162,15 @@ export default function LoginPage() {
         {/* 按鈕 A：醒目的 Google 登入（金色邊框） */}
         <motion.button
           type="button"
-          whileHover={{ scale: isLoggingIn ? 1 : 1.02 }}
-          whileTap={{ scale: isLoggingIn ? 1 : 0.98 }}
+          whileHover={{ scale: isGoogleSignInBusy ? 1 : 1.02 }}
+          whileTap={{ scale: isGoogleSignInBusy ? 1 : 0.98 }}
           className="w-full px-6 py-3.5 rounded-xl border-2 border-king-gold bg-king-gold/10 text-king-gold font-bold hover:bg-king-gold/20 disabled:opacity-60 disabled:cursor-not-allowed transition-colors mb-4"
           onClick={handleLogin}
-          disabled={isLoggingIn || isGuestSigningIn}
-          aria-busy={isLoggingIn}
-          aria-disabled={isLoggingIn || isGuestSigningIn}
+          disabled={isGoogleSignInBusy || isGuestSigningIn}
+          aria-busy={isGoogleSignInBusy}
+          aria-disabled={isGoogleSignInBusy || isGuestSigningIn}
         >
-          {isLoggingIn ? t('loggingIn') : t('signInWithGoogle')}
+          {isGoogleSignInBusy ? t('loggingIn') : t('signInWithGoogle')}
         </motion.button>
 
         {/* 按鈕 B：匿名觀察者，較小樣式 */}
@@ -172,9 +180,9 @@ export default function LoginPage() {
           whileTap={{ scale: isGuestSigningIn ? 1 : 0.98 }}
           className="w-full py-2.5 text-sm text-gray-400 hover:text-gray-300 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           onClick={handleGuest}
-          disabled={isLoggingIn || isGuestSigningIn}
+          disabled={isGoogleSignInBusy || isGuestSigningIn}
           aria-busy={isGuestSigningIn}
-          aria-disabled={isLoggingIn || isGuestSigningIn}
+          aria-disabled={isGoogleSignInBusy || isGuestSigningIn}
           aria-label={t('browseAsGuestAria')}
         >
           {isGuestSigningIn ? t('verifying') : t('browseAsGuest')}
