@@ -24,17 +24,19 @@ export default function LoginPage() {
   const { currentUser, isGuest, loading, profileLoading, hasProfile, authError, loginWithGoogle, clearAuthError, continueAsGuest } =
     useAuth()
   const navigate = useNavigate()
+  const [isGoogleFlowPending, setIsGoogleFlowPending] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [isGuestSigningIn, setIsGuestSigningIn] = useState(false)
   const hasNavigatedRef = useRef(false)
 
   /**
-   * Google 按鈕忙碌狀態：signInWithPopup 在選完帳號即 resolve，但此頁仍要等 profile 載入才 navigate。
-   * 若僅依 isLoggingIn，按鈕會短暫回到「使用 Google 登入」而誤導重複點擊；故在「已登入且非匿名、仍載入 profile」時延續忙碌。
-   * 匿名觀察者（isGuest）不包含在此條件內。
+   * Google 忙碌狀態改為「流程旗標」：
+   * - 點擊後先鎖住流程（isGoogleFlowPending=true），避免 popup resolve 與 onAuthStateChanged 之間的空窗閃回。
+   * - 成功時維持到路由導離登入頁；失敗時才解除，確保不閃回也不卡死。
+   * - 匿名觀察者（isGuest）不納入延展條件，匿名流程保持獨立。
    */
   const isGoogleSignInBusy =
-    isLoggingIn || (Boolean(currentUser) && !isGuest && profileLoading)
+    isGoogleFlowPending || isLoggingIn || (Boolean(currentUser) && !isGuest && profileLoading)
 
   // 導向條件必須含 !profileLoading。分流：有 profile → /vote，無 profile → /setup。
   useEffect(() => {
@@ -52,12 +54,15 @@ export default function LoginPage() {
   }, [currentUser, isGuest, loading, profileLoading, hasProfile, navigate])
 
   const handleLogin = async () => {
+    if (isGoogleSignInBusy || isGuestSigningIn) return
     clearAuthError?.()
+    setIsGoogleFlowPending(true)
     setIsLoggingIn(true)
     try {
       await loginWithGoogle()
     } catch {
       // 錯誤已由 AuthContext 寫入 authError，此處僅防止 unhandled rejection
+      setIsGoogleFlowPending(false)
     } finally {
       setIsLoggingIn(false)
     }

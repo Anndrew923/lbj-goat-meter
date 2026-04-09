@@ -45,7 +45,7 @@ export default function BreakingHistoryPage() {
   // 返回首頁時首頁訂閱若仍拿到 total_votes:0 的快取就無法補正，導致票數被清空。僅由首頁 Banner 在確認 total_votes > 0 時清除。
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
-    if (isGuest) {
+    if (isGuest || !currentUser) {
       triggerHaptic([30, 50, 30])
       setShowLoginPrompt(true)
       return
@@ -59,7 +59,7 @@ export default function BreakingHistoryPage() {
     triggerHaptic(10)
     setToast(null)
     setPending({ ev, optionIndex, optionLabel })
-  }, [isGuest, t, votedEventIds, submitting])
+  }, [isGuest, currentUser, t, votedEventIds, submitting])
 
   const closeCommitmentModal = useCallback(() => {
     if (!submitting) setPending(null)

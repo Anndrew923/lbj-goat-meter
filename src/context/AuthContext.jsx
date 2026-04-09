@@ -361,7 +361,7 @@ export function AuthProvider({ children }) {
       setAuthError(i18n.t("common:authError_firebaseNotReady"));
       if (import.meta.env.DEV)
         console.warn("[AuthContext] Firebase 未就緒，無法執行登入");
-      return;
+      throw new Error("auth/firebase-not-ready");
     }
     try {
       await loginWithGoogleForFirebase();
@@ -437,20 +437,24 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     setAuthError(null);
-    setIsGuest(false);
-    setProfile(null);
-    setProfileLoading(false);
     if (!auth) {
       setCurrentUser(null);
+      setIsGuest(false);
+      setProfile(null);
+      setProfileLoading(false);
       return;
     }
     try {
       await firebaseSignOut(auth);
       setCurrentUser(null);
+      setIsGuest(false);
+      setProfile(null);
+      setProfileLoading(false);
     } catch (err) {
       setAuthError(err?.message ?? i18n.t("common:signOutFailed"));
       if (import.meta.env.DEV)
         console.warn("[AuthContext] signOut 失敗:", err?.message);
+      throw err;
     }
   }, []);
 

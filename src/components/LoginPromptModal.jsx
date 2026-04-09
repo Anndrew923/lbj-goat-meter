@@ -3,15 +3,18 @@
  * 當匿名觀察者點擊立場時彈出，引導登入後才能投票與領取戰報卡。
  * variant="limbo"：已登入但未完成 Profile，引導完成戰區登錄（用戶名、國家、立場）。
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }) {
   const { t } = useTranslation('common')
   const navigate = useNavigate()
+  const { isGuest, signOut } = useAuth()
   const isLimbo = variant === 'limbo'
+  const [isNavigatingToLogin, setIsNavigatingToLogin] = useState(false)
 
   useEffect(() => {
     const handleEscape = (e) => {
@@ -21,10 +24,24 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose])
 
-  const handleGoLogin = (e) => {
+  const handleGoLogin = async (e) => {
     e?.stopPropagation?.()
+    if (isNavigatingToLogin) return
+    setIsNavigatingToLogin(true)
     onClose?.(e)
-    navigate('/')
+    try {
+      // 匿名觀察者先嘗試登出；即使登出失敗也要導往登入頁，避免按鈕看似無反應。
+      if (isGuest) {
+        try {
+          await signOut?.()
+        } catch {
+          // signOut 失敗時仍導到登入頁，由登入頁承接後續重試。
+        }
+      }
+    } finally {
+      navigate('/', { replace: true })
+      setIsNavigatingToLogin(false)
+    }
   }
 
   const handleCompleteWarzone = (e) => {
@@ -67,10 +84,12 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
           <button
             type="button"
             onClick={(e) => {
+              if (isNavigatingToLogin) return
               e.stopPropagation()
               onClose?.(e)
             }}
-            className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors"
+            disabled={isNavigatingToLogin}
+            className="flex-1 py-2 rounded-lg border border-gray-600 text-gray-400 hover:text-gray-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {t('later')}
           </button>
@@ -86,9 +105,10 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
             <button
               type="button"
               onClick={handleGoLogin}
-              className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors"
+              disabled={isNavigatingToLogin}
+              className="flex-1 py-2 rounded-lg bg-king-gold text-black font-semibold hover:bg-king-gold/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {t('goToLogin')}
+              {isNavigatingToLogin ? t('loading') : t('goToLogin')}
             </button>
           )}
         </div>

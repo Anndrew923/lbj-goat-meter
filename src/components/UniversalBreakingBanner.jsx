@@ -40,7 +40,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
-    if (isGuest) {
+    if (isGuest || !currentUser) {
       triggerHaptic([30, 50, 30])
       setShowLoginPrompt(true)
       return
@@ -54,7 +54,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
     triggerHaptic(10)
     setToast(null)
     setPending({ ev, optionIndex, optionLabel })
-  }, [isGuest, t, votedEventIds, submitting])
+  }, [isGuest, currentUser, t, votedEventIds, submitting])
 
   const closeCommitmentModal = useCallback(() => {
     if (!submitting) setPending(null)
