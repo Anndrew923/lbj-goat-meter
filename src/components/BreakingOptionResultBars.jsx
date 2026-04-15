@@ -41,9 +41,11 @@ function BreakingVoteResultBarsInner({
   const effectiveTotal = hasServerData ? totalVotes : optimisticOptionIndex !== undefined ? 1 : 0
 
   const [tooltipIndex, setTooltipIndex] = useState(null)
+  const [supportsHover, setSupportsHover] = useState(false)
   const longPressTimerRef = useRef(null)
   const autoHideTimerRef = useRef(null)
   const didLongPressRef = useRef(false)
+  const pointerTypeRef = useRef(null)
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -65,6 +67,19 @@ function BreakingVoteResultBarsInner({
       setTooltipIndex(null)
     }, 5000)
   }, [clearAutoHideTimer])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const hoverMedia = window.matchMedia('(hover: hover) and (pointer: fine)')
+    const syncSupportsHover = () => setSupportsHover(hoverMedia.matches)
+    syncSupportsHover()
+    if (typeof hoverMedia.addEventListener === 'function') {
+      hoverMedia.addEventListener('change', syncSupportsHover)
+      return () => hoverMedia.removeEventListener('change', syncSupportsHover)
+    }
+    hoverMedia.addListener(syncSupportsHover)
+    return () => hoverMedia.removeListener(syncSupportsHover)
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -96,45 +111,67 @@ function BreakingVoteResultBarsInner({
           <motion.div
             key={i}
             layout
-            className="rounded-md bg-gray-800/80 relative pointer-events-auto cursor-pointer"
+            className="rounded-md bg-gray-800/80 relative pointer-events-auto cursor-pointer touch-manipulation"
             transition={{ layout: { duration: 0.25 } }}
             role="listitem"
             tabIndex={0}
             aria-label={t('breakingVoteCountTooltip', { count: count.toLocaleString() })}
             title={t('breakingVoteCountTooltip', { count: count.toLocaleString() })}
-            onMouseEnter={() => {
+            onPointerEnter={(e) => {
+              if (e.pointerType !== 'mouse') return
+              pointerTypeRef.current = 'mouse'
               clearAutoHideTimer()
               setTooltipIndex(i)
             }}
-            onMouseLeave={() => {
-              setTooltipIndex((prev) => (prev === i ? null : prev))
-            }}
-            onTouchStart={() => {
+            onPointerDown={(e) => {
+              pointerTypeRef.current = e.pointerType || null
               didLongPressRef.current = false
               clearAutoHideTimer()
               clearLongPressTimer()
-              longPressTimerRef.current = setTimeout(() => {
-                didLongPressRef.current = true
-                setTooltipIndex(i)
-                scheduleAutoHide()
-              }, 450)
+              if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                longPressTimerRef.current = setTimeout(() => {
+                  didLongPressRef.current = true
+                  setTooltipIndex(i)
+                  scheduleAutoHide()
+                }, 450)
+              }
             }}
-            onTouchMove={() => {
+            onPointerLeave={(e) => {
+              if (e.pointerType !== 'mouse') return
+              setTooltipIndex((prev) => (prev === i ? null : prev))
+            }}
+            onPointerMove={(e) => {
+              if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return
               didLongPressRef.current = false
               clearLongPressTimer()
             }}
-            onTouchEnd={() => {
+            onPointerUp={(e) => {
+              pointerTypeRef.current = e.pointerType || pointerTypeRef.current
               clearLongPressTimer()
-            }}
-            onTouchCancel={() => {
-              clearLongPressTimer()
-            }}
-            onClick={() => {
               if (didLongPressRef.current) {
                 didLongPressRef.current = false
                 return
               }
+              clearAutoHideTimer()
+              if (pointerTypeRef.current === 'mouse' || supportsHover) {
+                setTooltipIndex((prev) => {
+                  const next = prev === i ? null : i
+                  return next
+                })
+                return
+              }
+              setTooltipIndex(i)
+              scheduleAutoHide()
+            }}
+            onPointerCancel={() => {
+              didLongPressRef.current = false
               clearLongPressTimer()
+            }}
+            onClick={(e) => {
+              // Pointer 已處理滑鼠/觸控；僅保留鍵盤合成 click 的 fallback
+              if (e.detail !== 0) return
+              clearLongPressTimer()
+              clearAutoHideTimer()
               setTooltipIndex((prev) => {
                 const next = prev === i ? null : i
                 return next

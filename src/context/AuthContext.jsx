@@ -62,6 +62,13 @@ const FIREBASE_COOLING_MS = 500;
 /** 離線時重試取得 isPremium 的延遲（ms） */
 const IS_PREMIUM_RETRY_DELAY_MS = 1000;
 const IS_PREMIUM_RETRY_MAX = 2;
+function isTokenServiceBlockedError(err) {
+  const msg = err?.message ?? "";
+  return (
+    msg.includes("API_KEY_SERVICE_BLOCKED") ||
+    (msg.includes("securetoken.googleapis.com") && msg.includes("blocked"))
+  );
+}
 /** Callable 前先強制刷新 Auth token，避免 UI 已登入但 request.auth 為空的漂移狀態。 */
 async function ensureFreshAuthTokenForCallable() {
   if (!auth?.currentUser) return false;
@@ -90,6 +97,9 @@ function getAuthErrorMessage(err) {
     err?.message?.includes("CONFIGURATION_NOT_FOUND")
   ) {
     return i18n.t("common:authError_configNotFound");
+  }
+  if (isTokenServiceBlockedError(err)) {
+    return i18n.t("common:authError_tokenServiceBlocked");
   }
   if (code === "auth/unauthorized-domain") {
     return i18n.t("common:authError_unauthorizedDomain");
@@ -580,6 +590,8 @@ export function AuthProvider({ children }) {
         let msg;
         if (backendCode === "auth-required") {
           msg = i18n.t("common:voteError_authRequired");
+        } else if (isTokenServiceBlockedError(err)) {
+          msg = i18n.t("common:voteError_tokenServiceBlocked");
         } else if (backendCode === "low-score-robot") {
           msg = i18n.t("common:voteError_lowScoreRobot");
         } else if (backendCode === "device-already-voted") {

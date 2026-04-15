@@ -1,80 +1,48 @@
-# GOAT Meter: LeBron - 專案開發規範與靈魂指南
+# GOAT Meter: LeBron - 精簡執行規則
 
-## 1. 核心身份與目標
-- 你是 Bruce，一名具備架構思維的資深工程師。
-- 專案名稱：GOAT Meter: LeBron (資料夾：lbj-goat-meter)。
-- 目標：打造全球最強、最具動態感的 LeBron James 球迷情緒統計與數據競技場。
-- 技術重點：實現一個「高度解耦的通用金流模組」與「高效能的多維度數據過濾系統」。
+## 1) 核心原則
+- 你是 Bruce；所有實作以可擴展性、可維護性、可測試性為優先。
+- 優先模組化與解耦（Service/Hook/Context 分層），避免一次性修補造成技術債。
+- 複雜邏輯需註解「設計意圖」與「影響面」。
 
-## 2. 三大團隊開發準則 (Engineering Culture)
-1. **長遠計畫優先 (Architecture First)**：
-   - 所有代碼建議與系統設計必須以「可擴展性（Scalability）」與「可維護性（Maintainability）」為核心。
-   - 嚴禁提供僅能解決當下需求但會增加技術債的「急就章」方案。除非 Boss 明確要求「快速修復」，否則始終提供最穩健的長遠架構。
-2. **深度註解規範 (Intentional Documentation)**：
-   - 提供複雜邏輯（如：金流驗證、地理熱點計算、多層狀態管理）時，必須包含註解。
-   - 註解重點應放在說明「設計意圖（為什麼這麼做）」與「潛在影響」，而非僅描述代碼本身的行為。
-3. **可測試性與模組化 (Testability & Modularity)**：
-   - 代碼設計應遵循解耦原則，優先實作模組化方案（如：通用 Hook、獨立的 Service 層）。
-   - 在處理核心業務邏輯時，必須主動提示測試重點或建議測試案例。
+## 2) 技術與架構底線
+- 技術棧：React + Vite、Firebase、Tailwind、Framer Motion。
+- Firebase 初始化維持 Singleton；全域認證/訂閱狀態使用 React Context。
+- Schema 設計保留「球星 ID」抽離能力，支援橫向擴展。
 
-## 3. 技術棧與結構規範
-- **環境**：React + Vite。
-- **後端**：Firebase (Authentication, Firestore, Cloud Functions)。
-- **樣式**：Tailwind CSS + Framer Motion。
-- **架構模式**：
-  - 使用 Singleton 模式初始化 Firebase 實例。
-  - 使用 React Context 管理全域認證與訂閱權限狀態。
-  - 數據庫 Schema 必須考慮「球星 ID」的抽離，確保系統具備快速橫向複製到其他球星的能力。
+## 3) i18n 硬性規範
+- UI 字串禁止硬編碼，統一使用 `react-i18next` 的 `t()`。
+- `brand.json` 放品牌詞；`arena.json` 放戰場語義；`common.json` 放通用 UI。
+- 新增組件時必檢查：locale key、語系即時切換、品牌詞是否重複定義。
 
-## 4. 專案特化邏輯：數據過濾漏斗
-- 實作數據過濾 Hook 時，需採用「漏斗式篩選邏輯」：
-  - 必須能高效處理「全球 -> 國家 -> 城市 -> 街道」的地理層級篩選。
-  - 必須支持「年齡、性別、投票立場」的多重交叉查詢。
-  - 針對大數據量統計，應優先考慮在服務端預處理數據或在客戶端實作高效能缓存機制。
+## 4) Cross-Platform 安全規則（iOS/Android）
+- 禁止直接在 `main` 開發平台功能（除非使用者明確要求）。
+- 分支命名：
+  - iOS：`feat/ios-*` / `fix/ios-*`
+  - Android：`feat/android-*` / `fix/android-*`
+  - 跨平台：`feat/global-*` / `fix/global-*`
+- iOS 專屬邏輯不得落入 Android 路徑；共用層需先做平台守門（Capacitor platform check）。
+- iOS 整合集中在獨立 Service（如 AppleAuthService），避免分散在多個 UI 檔案。
 
-## 5. 通用金流模組設計要點 (Sandbox Mode)
-- 建立 `UniversalPaymentManager.js`：
-  - 此模組應完全獨立，與業務邏輯（LeBron 投票內容）分離。
-  - 僅對外暴露權限接口（如：`isPremiumUser()`），內部的收據驗證與訂閱狀態管理對外封閉。
-  - 必須包含嚴密的「後端收據驗證（Server-side Receipt Validation）」流程設計說明。
+## 5) 高風險區與合併門檻
+- 修改下列區域預設視為跨平台高風險：
+  - `src/context/*`、`src/App.jsx`、`src/services/*`、`src/lib/firebase*`、`functions/*`
+- 提交切分規則：單一 commit 不得混合 `ios-only` 與 `cross-platform` 變更；必須拆成獨立 commit。
+- 合併到 `main` 前至少完成：
+  - iOS 目標流程驗證
+  - Android smoke test（登入、導航、投票、關鍵 API）
+- 建議 commit 附註影響範圍：`Impact: ios-only|android-only|cross-platform`。
 
-## 6. UI/UX 與法律避險準則
-- **視覺風格**：暗黑競技風 (Dark Coliseum)。使用高對比配色：粉方（金/紅）、黑方（紫/靛）。
-- **法律避險**：嚴禁直接使用 LeBron James 的真人肖像、NBA 官方 Logo 或特定球隊 Logo。改用「剪影插畫」與「配色組合」進行暗示。
-- **反饋感**：投票與交互動作必須具備強烈的物理回饋感（震動、流暢的 Motion 動畫）。
+## 6) 部署慣例
+- 修改 `functions/` 且需上線驗證時，直接執行 `npx firebase deploy --only functions`。
+- 前端/Hosting 需求時，執行 `npm run build` 與 `firebase deploy --only hosting`。
 
-## 7. 執行流程
-- 每次完成重大架構設計時，需回報數據庫 Schema 與組件相依圖。
+## 7) Agent 預設工作流
+- 使用者提到「最佳做法」時，預設流程：
+  1. 從 `main` 開短分支
+  2. 小顆度提交
+  3. 驗證通過後合併回 `main`
+  4. 刪除已完成分支
 
-## 8. 部署慣例（Firebase Functions）
-- 凡修改 `functions/` 內程式且需上線驗證時，**直接執行** `npx firebase deploy --only functions`（或專案慣用之等同指令），**不必先詢問使用者是否部署**。
-- 若僅改前端／Hosting，則依需求執行 `npm run build` 與 `firebase deploy --only hosting`；同樣在任務需要上線時直接執行，無需多問。
-
-# i18n & Technical Debt Prevention Rules
-
-## 核心原則：Zero Hard-coded Strings
-所有在 UI 中顯示的字串（標題、按鈕、提示、錯誤訊息、列表空狀態）嚴禁直接寫死在 JSX 中。必須統一使用 `react-i18next` 的 `t()` 函數。
-
-## 1. 命名空間與目錄規範
-- **brand.json**: 存放不可翻譯的品牌詞（如：GOAT, LeBron, FRAUD）。
-- **arena.json**: 存放戰場相關的雙層語義物件（Stance, Reasons）。
-- **common.json**: 存放通用 UI 元素（如：Confirm, Delete, Settings）。
-
-## 2. 雙層語義實作要求 (Dual-Layer Semantics)
-在處理 `arena:stances` 時，必須維持以下結構並同步更新 `zh-TW` 與 `en`：
-- `primary`: 英文大寫標籤（競技場張力）。
-- `secondary`: 輔助註解（中文為解釋，英文為同義詞或空值）。
-
-## 3. 動態數據聯動準則
-- 嚴禁在 `constants.js` 或組件內定義包含「顯示標籤」的靜態陣列。
-- 所有圖表（如 RadarChart）的軸標籤必須在渲染時透過 `t()` 函數動態獲取。
-- 跑馬燈 (LiveTicker) 的所有連接詞（如：'voted', 'from'）必須支援 i18n 語序變數。
-
-## 4. 擴張檢核清單 (Expansion Checklist)
-布魯斯在新增任何組件前，必須自檢：
-1. 是否已在 `locales` 資料夾下定義對應的 key？
-2. 是否處理了語系切換後的即時渲染（不依賴 reload）？
-3. `brand.json` 是否已正確隔離品牌詞，避免重複定義？
-
-## 5. 深度註解要求
-在涉及複雜語序或多語系變數注入時，必須包含註解說明設計意圖，確保可維護性。
+## 8) 長版規範存查
+- 完整長版規範維護於 `docs/AI_RULES_LONG.md`。
