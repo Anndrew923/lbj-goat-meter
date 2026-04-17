@@ -31,7 +31,7 @@ function escapeRegex(text) {
 }
 
 export default function ProtocolOverlay({ open, onComplete }) {
-  const { t } = useTranslation(["brand", "common"]);
+  const { t, i18n } = useTranslation(["brand", "common"]);
   const prefersReducedMotion = useReducedMotion();
   const [step, setStep] = useState(0);
   const [isStep4BurstActive, setIsStep4BurstActive] = useState(false);
@@ -164,6 +164,10 @@ export default function ProtocolOverlay({ open, onComplete }) {
   const isPrologueStep = step === 0;
   const isScanStep = step === STEP_INDEX_SCAN;
   const isWarzoneStep = step === STEP_INDEX_WARZONE;
+  const isEnglish = i18n.language === "en";
+  const ctaButtonClassName = `absolute bottom-[calc(var(--safe-bottom)+1.5rem)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-blue-500/50 bg-blue-500/10 py-4 text-sm font-bold text-blue-300 transition-all hover:bg-blue-500/20 active:scale-95 whitespace-nowrap ${
+    isEnglish ? "px-12 tracking-[0.24em]" : "px-10 tracking-[0.08em]"
+  }`;
   const contentAnimate = prefersReducedMotion
     ? { opacity: 1 }
     : {
@@ -186,7 +190,7 @@ export default function ProtocolOverlay({ open, onComplete }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: prefersReducedMotion ? 0.15 : 0.28 }}
-          className="framer-motion-stabilizer fixed inset-0 z-[70] flex flex-col items-center justify-center p-8 overflow-hidden bg-black/95"
+          className="framer-motion-stabilizer fixed inset-0 z-[10000] flex flex-col items-center justify-center p-8 overflow-hidden bg-black/95"
           style={{ backdropFilter: "blur(20px) saturate(0.95)" }}
           role="dialog"
           aria-modal="true"
@@ -210,7 +214,7 @@ export default function ProtocolOverlay({ open, onComplete }) {
               animate={contentAnimate}
               exit={prefersReducedMotion ? { opacity: 0 } : { y: -20, opacity: 0 }}
               transition={contentTransition}
-              className="relative z-10 flex max-w-md flex-col items-center text-center"
+              className="relative z-10 flex max-h-[65vh] max-w-md flex-col items-center overflow-y-auto pb-28 text-center"
             >
               <p className="mb-4 text-xs tracking-[0.26em] uppercase text-blue-200/80">
                 {t("brand:protocol.title")}
@@ -328,11 +332,11 @@ export default function ProtocolOverlay({ open, onComplete }) {
           <button
             type="button"
             onClick={handleAdvance}
-            className="relative z-10 mt-16 rounded-full border border-blue-500/50 bg-blue-500/10 px-12 py-4 text-sm font-bold tracking-[0.24em] text-blue-300 transition-all hover:bg-blue-500/20 active:scale-95"
+            className={ctaButtonClassName}
           >
             {step === totalSteps - 1 ? t("common:protocolComplete") : t("common:protocolNext")}
           </button>
-          <p className="relative z-10 mt-4 text-xs text-blue-100/60">
+          <p className="absolute bottom-[calc(var(--safe-bottom)+0.35rem)] left-1/2 z-10 -translate-x-1/2 text-xs text-blue-100/60">
             {t("common:protocolStepCounter", { current: step + 1, total: totalSteps })}
           </p>
         </motion.div>
