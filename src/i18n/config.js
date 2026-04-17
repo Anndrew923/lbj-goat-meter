@@ -10,8 +10,10 @@ import { initReactI18next } from 'react-i18next'
 
 import arenaZh from './locales/zh-TW/arena.json'
 import commonZh from './locales/zh-TW/common.json'
+import brandZh from './locales/zh-TW/brand.json'
 import arenaEn from './locales/en/arena.json'
 import commonEn from './locales/en/common.json'
+import brandEn from './locales/en/brand.json'
 
 const LANGUAGE_STORAGE_KEY = 'goat-meter-lang'
 const SUPPORTED_LANGS = ['zh-TW', 'en']
@@ -26,10 +28,12 @@ const resources = {
   'zh-TW': {
     arena: arenaZh,
     common: commonZh,
+    brand: brandZh,
   },
   en: {
     arena: arenaEn,
     common: commonEn,
+    brand: brandEn,
   },
 }
 
@@ -38,7 +42,7 @@ i18n.use(initReactI18next).init({
   lng: getStoredLanguage(),
   fallbackLng: 'zh-TW',
   defaultNS: 'common',
-  ns: ['arena', 'common'],
+  ns: ['arena', 'common', 'brand'],
   interpolation: {
     escapeValue: false,
   },

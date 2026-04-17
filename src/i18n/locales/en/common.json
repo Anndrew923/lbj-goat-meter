@@ -485,5 +485,9 @@
   "adPortalLoadingTitle": "Requesting battle report access…",
   "adPortalLoadingSubtitle": "(Loading ad)",
   "breakingAdNotice": "This scan requires intel energy. Watch a short clip for voting authorization.",
-  "breakingFirstVoteFreeHint": "🛡️ First Strike: Warzone authorization granted for free."
+  "breakingFirstVoteFreeHint": "🛡️ First Strike: Warzone authorization granted for free.",
+  "protocolNext": "Next Protocol",
+  "protocolComplete": "Initialization Complete",
+  "protocolStepCounter": "{{current}} / {{total}}",
+  "protocolReplay": "Replay Initialization Protocol"
 }

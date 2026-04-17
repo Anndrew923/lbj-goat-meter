@@ -474,5 +474,9 @@
   "goatMeterBrandAria": "The GOAT Meter 品牌標章",
   "adPortalAria": "廣告",
   "adPortalLoadingTitle": "正在取得戰報生成權限…",
-  "adPortalLoadingSubtitle": "（廣告載入中）"
+  "adPortalLoadingSubtitle": "（廣告載入中）",
+  "protocolNext": "下一個協議",
+  "protocolComplete": "初始化完成",
+  "protocolStepCounter": "{{current}} / {{total}}",
+  "protocolReplay": "重新播放初始化協議"
 }

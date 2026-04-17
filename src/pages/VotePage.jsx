@@ -18,6 +18,8 @@ import LanguageToggle from "../components/LanguageToggle";
 import { useBattleCardCallablePrewarm } from "../hooks/useBattleCardCallablePrewarm";
 import { SentimentDataProvider } from "../context/SentimentDataContext";
 import { triggerHaptic } from "../utils/hapticUtils";
+import ProtocolOverlay from "../components/ProtocolOverlay";
+import useProtocolInitialization from "../hooks/useProtocolInitialization";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   SlidersHorizontal,
@@ -80,6 +82,7 @@ export default function VotePage() {
     onRequestRewardAd,
     analystAdPortal,
   } = useAnalystAuth();
+  const { isOpen: isProtocolOpen, completeProtocol, replayProtocol } = useProtocolInitialization();
 
   // 首頁 Intelligence HUD：當剩餘點數下降時觸發 intel-ping 動畫
   const [energyPing, setEnergyPing] = useState(false);
@@ -149,6 +152,16 @@ export default function VotePage() {
     return () => window.clearTimeout(timer);
   }, [deepLinkNotice]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    if (!isProtocolOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isProtocolOpen]);
+
   // 匿名觀察者冷啟動：先給出穩定 skeleton，降低初次進場白屏感與版面跳動。
   useEffect(() => {
     if (!isGuest) {
@@ -162,6 +175,7 @@ export default function VotePage() {
 
   // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
   const shouldShowSetup = useMemo(() => {
+    if (isProtocolOpen) return false;
     // A. 手動強制開啟（最高優先級）
     if (showWarzoneClaimModal) return true;
     // B. 本次 Session 已處理關閉，或仍在 Guest Bootstrap：一律不顯示
@@ -186,6 +200,7 @@ export default function VotePage() {
     profileLoadingSettled,
     hasProfile,
     profileSetupDismissed,
+    isProtocolOpen,
   ]);
 
   useEffect(() => {
@@ -301,9 +316,9 @@ export default function VotePage() {
             currentUser={currentUser}
             activeWarzoneId={activeWarzone}
             sessionOverride={sessionOverride}
-            arenaAnimationsPaused={isSetupMounted}
+            arenaAnimationsPaused={isSetupMounted || isProtocolOpen}
             onOpenWarzoneSelect={() => {
-              if (!isGuest) setShowWarzoneClaimModal(true)
+              if (!isGuest && !isProtocolOpen) setShowWarzoneClaimModal(true)
             }}
             onExportStart={() => setTickerPausedForExport(true)}
             onExportEnd={() => setTickerPausedForExport(false)}
@@ -405,6 +420,10 @@ export default function VotePage() {
       </WarzoneDataProvider>
 
       <AnimatePresence initial={false}>
+        {isProtocolOpen && <ProtocolOverlay open={isProtocolOpen} onComplete={completeProtocol} />}
+      </AnimatePresence>
+
+      <AnimatePresence initial={false}>
         {currentUser?.uid && isSetupMounted && (
           <UserProfileSetup
             key="profile-setup-modal"
@@ -490,6 +509,17 @@ export default function VotePage() {
                   >
                     {t("privacyPolicy")}
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAuthError();
+                      setSettingsOpen(false);
+                      replayProtocol();
+                    }}
+                    className="w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold"
+                  >
+                    {t("protocolReplay")}
+                  </button>
                   <LanguageToggle />
                 </section>
                 {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}
