@@ -440,10 +440,10 @@ export default function VotePage() {
       <AnimatePresence initial={false}>
         {settingsOpen && !isGuest && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/90"
+            className="framer-motion-stabilizer fixed inset-0 z-[60] flex items-center justify-center bg-black/90"
             onClick={() => {
               setSettingsOpen(false);
               clearAuthError();
@@ -552,10 +552,10 @@ export default function VotePage() {
       <AnimatePresence initial={false}>
         {deleteConfirmOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+            className="framer-motion-stabilizer fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80"
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="delete-confirm-title"
@@ -635,10 +635,10 @@ export default function VotePage() {
       <AnimatePresence initial={false}>
         {resetStanceConfirmOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+            className="framer-motion-stabilizer fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80"
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="reset-stance-confirm-title"
