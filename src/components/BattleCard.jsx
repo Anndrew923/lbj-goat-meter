@@ -476,7 +476,7 @@ const BattleCard = forwardRef(function BattleCard({
       ) : null}
       <motion.div
         ref={overlayRef}
-        className={`framer-motion-stabilizer absolute inset-0 flex flex-col items-center bg-black/90 overflow-y-auto ${
+        className={`absolute inset-0 flex flex-col items-center overflow-y-auto ${
           exportSceneMode ? "p-0 pb-0" : "p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
         }`}
         data-arena-paused={arenaAnimationsPaused ? "1" : undefined}
@@ -488,15 +488,19 @@ const BattleCard = forwardRef(function BattleCard({
         animate={{ opacity: 1 }}
         exit={exit}
         transition={{ duration: 0.25 }}
-        onClick={(e) => {
-          if (exportSceneMode) return;
-          onClose?.(e);
-        }}
       >
+        <div
+          className="absolute inset-0 z-0 bg-black/90"
+          aria-hidden="true"
+          onClick={(e) => {
+            if (exportSceneMode) return;
+            onClose?.(e);
+          }}
+        />
         {/* 戰報卡掃描顯影：從上到下的線性掃描遮罩，營造解密／顯影感 */}
-        <div className="scan-line" aria-hidden />
+        <div className="scan-line z-[2]" aria-hidden />
         <motion.div
-          className="framer-motion-stabilizer flex-1 min-h-0 w-full max-w-full flex flex-col items-center justify-center"
+          className="framer-motion-stabilizer relative z-[2] flex-1 min-h-0 w-full max-w-full flex flex-col items-center justify-center pointer-events-auto"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           onClick={(e) => e.stopPropagation()}

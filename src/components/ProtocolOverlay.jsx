@@ -186,17 +186,21 @@ export default function ProtocolOverlay({ open, onComplete }) {
     <AnimatePresence initial={false}>
       {open && (
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={false}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: prefersReducedMotion ? 0.15 : 0.28 }}
-          className="framer-motion-stabilizer fixed inset-0 z-[10000] flex flex-col items-center justify-center p-8 overflow-hidden bg-black/95"
-          style={{ backdropFilter: "blur(20px) saturate(0.95)" }}
+          className="fixed inset-0 z-[10000] flex flex-col items-center justify-center p-8 overflow-hidden"
           role="dialog"
           aria-modal="true"
           aria-labelledby={stepTitleId}
           onKeyDown={handleKeyDown}
         >
+          <div
+            className="absolute inset-0 bg-black/95"
+            aria-hidden="true"
+            style={{ backdropFilter: "blur(20px) saturate(0.95)" }}
+          />
           <div
             aria-hidden="true"
             className="absolute inset-0 pointer-events-none opacity-[0.07]"
@@ -214,7 +218,7 @@ export default function ProtocolOverlay({ open, onComplete }) {
               animate={contentAnimate}
               exit={prefersReducedMotion ? { opacity: 0 } : { y: -20, opacity: 0 }}
               transition={contentTransition}
-              className="relative z-10 flex max-h-[65vh] max-w-md flex-col items-center overflow-y-auto pb-28 text-center"
+              className="framer-motion-stabilizer relative z-10 flex max-h-[65vh] max-w-md flex-col items-center overflow-y-auto pb-28 text-center"
             >
               <p className="mb-4 text-xs tracking-[0.26em] uppercase text-blue-200/80">
                 {t("brand:protocol.title")}

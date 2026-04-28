@@ -99,20 +99,19 @@ export default function FilterFunnel({
       <AnimatePresence initial={false}>
         {open && (
           <>
-            <motion.div
-              initial={false}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="framer-motion-stabilizer fixed inset-0 z-40 bg-black/90"
+            <div
+              key="filter-funnel-backdrop"
+              className="fixed inset-0 z-40 bg-black/90"
               onClick={onClose}
               aria-hidden="true"
             />
             <motion.aside
+              key="filter-funnel-drawer"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "tween", duration: 0.25 }}
-              className="fixed right-0 top-0 bottom-[4.5rem] z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl flex flex-col"
+              className="framer-motion-stabilizer fixed right-0 top-0 bottom-[4.5rem] z-50 w-full max-w-sm border-l border-villain-purple/40 bg-gray-950 shadow-2xl flex flex-col"
               role="dialog"
               aria-label={t("filterDrawerAria")}
               aria-disabled={locked || undefined}

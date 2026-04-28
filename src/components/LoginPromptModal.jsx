@@ -5,9 +5,9 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import ModalShell from './ModalShell'
 
 export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }) {
   const { t } = useTranslation('common')
@@ -56,24 +56,24 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
   const desc = isLimbo ? t('completeWarzonePromptDesc') : t('loginPromptDesc')
 
   return (
-    <motion.div
-      className="framer-motion-stabilizer fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
-      initial={false}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={(e) => onClose?.(e)}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={descId}
+    <ModalShell
+      rootClassName="fixed inset-0 z-50 overflow-y-auto"
+      backdropClassName="bg-black/90"
+      panelClassName="rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+      panelMotionProps={{
+        initial: { scale: 0.95, opacity: 0 },
+        animate: { scale: 1, opacity: 1 },
+        exit: { scale: 0.95, opacity: 0 },
+        onClick: (e) => e.stopPropagation(),
+      }}
+      onBackdropClick={(e) => onClose?.(e)}
+      rootMotionProps={{
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-labelledby': titleId,
+        'aria-describedby': descId,
+      }}
     >
-      <motion.div
-        className="framer-motion-stabilizer rounded-xl border-2 border-king-gold/50 bg-gray-900 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-      >
         <h2 id={titleId} className="text-lg font-bold text-king-gold mb-2">
           {title}
         </h2>
@@ -112,7 +112,6 @@ export default function LoginPromptModal({ onClose, variant, onCompleteWarzone }
             </button>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   )
 }

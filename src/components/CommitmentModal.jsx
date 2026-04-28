@@ -7,7 +7,8 @@
  */
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
+import ModalShell from './ModalShell'
 
 export default function CommitmentModal({
   open,
@@ -31,33 +32,29 @@ export default function CommitmentModal({
   return (
     <AnimatePresence initial={false}>
       {open && (
-        <motion.div
+        <ModalShell
           key="commitment-modal"
-          initial={false}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="framer-motion-stabilizer fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="commitment-modal-title"
-          aria-describedby="commitment-modal-desc"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !loading) {
-              e.preventDefault()
-              e.stopPropagation()
-              onClose()
-            }
+          rootClassName="fixed inset-0 z-50 overflow-y-auto"
+          backdropClassName="bg-black/90"
+          panelClassName="w-full max-w-sm rounded-xl border-2 border-red-500/40 bg-gray-900 shadow-xl shadow-red-950/20"
+          panelMotionProps={{
+            initial: { opacity: 0, scale: 0.96 },
+            animate: { opacity: 1, scale: 1 },
+            exit: { opacity: 0, scale: 0.96 },
+            transition: { type: 'spring', damping: 26, stiffness: 300 },
+            onClick: (e) => e.stopPropagation(),
+          }}
+          onBackdropClick={() => {
+            if (!loading) onClose()
+          }}
+          rootMotionProps={{
+            transition: { duration: 0.15 },
+            role: 'dialog',
+            'aria-modal': true,
+            'aria-labelledby': 'commitment-modal-title',
+            'aria-describedby': 'commitment-modal-desc',
           }}
         >
-          <motion.div
-            className="framer-motion-stabilizer w-full max-w-sm rounded-xl border-2 border-red-500/40 bg-gray-900 shadow-xl shadow-red-950/20"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-            onClick={(e) => e.stopPropagation()}
-          >
             <div className="p-5">
               <h2
                 id="commitment-modal-title"
@@ -111,8 +108,7 @@ export default function CommitmentModal({
                 </button>
               </div>
             </div>
-          </motion.div>
-        </motion.div>
+        </ModalShell>
       )}
     </AnimatePresence>
   )

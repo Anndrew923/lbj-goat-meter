@@ -6,9 +6,9 @@
  */
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion } from 'framer-motion'
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
+import ModalShell from './ModalShell'
 
 export default function ExitConfirmModal({ open, onClose, onExit }) {
   const { t } = useTranslation('common')
@@ -47,24 +47,24 @@ export default function ExitConfirmModal({ open, onClose, onExit }) {
   const descId = 'exit-confirm-desc'
 
   return (
-    <motion.div
-      className="framer-motion-stabilizer fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90"
-      initial={false}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={handleStay}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={descId}
+    <ModalShell
+      rootClassName="fixed inset-0 z-[200] overflow-y-auto"
+      backdropClassName="bg-black/90"
+      panelClassName="rounded-xl border-2 border-king-gold/50 bg-gray-900/95 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
+      panelMotionProps={{
+        initial: { scale: 0.95, opacity: 0 },
+        animate: { scale: 1, opacity: 1 },
+        exit: { scale: 0.95, opacity: 0 },
+        onClick: (e) => e.stopPropagation(),
+      }}
+      onBackdropClick={handleStay}
+      rootMotionProps={{
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-labelledby': titleId,
+        'aria-describedby': descId,
+      }}
     >
-      <motion.div
-        className="framer-motion-stabilizer rounded-xl border-2 border-king-gold/50 bg-gray-900/95 p-6 max-w-sm w-full shadow-xl shadow-king-gold/10"
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-      >
         <h2 id={titleId} className="text-lg font-bold text-king-gold mb-2">
           {t('exitModalTitle')}
         </h2>
@@ -88,7 +88,6 @@ export default function ExitConfirmModal({ open, onClose, onExit }) {
             {t('exitApp')}
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   )
 }

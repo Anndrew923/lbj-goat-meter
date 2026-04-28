@@ -13,6 +13,7 @@ import { getLocation } from '../lib/geolocation'
 import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from '../lib/constants'
 import { getCountryOptions } from '../data/countries'
 import SmartWarzoneSelector from './SmartWarzoneSelector'
+import ModalShell from './ModalShell'
 
 function getOptionKey(type, value) {
   if (type === 'ageGroup') return value === '45+' ? 'ageGroup_45_plus' : `ageGroup_${value.replace(/-/g, '_')}`
@@ -151,24 +152,25 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
   }, [form.country, t, i18n.language])
 
   return (
-    <motion.div
+    <ModalShell
       key="profile-setup-overlay"
-      initial={false}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: 0.2 } }}
-      className="framer-motion-stabilizer fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="profile-setup-title"
-      onClick={(e) => onClose?.(e)}
+      rootClassName="fixed inset-0 z-50 overflow-y-auto"
+      backdropClassName="bg-black/90"
+      panelClassName="w-full max-w-md max-h-[85vh] flex flex-col rounded-xl bg-gray-900 border border-villain-purple/40 shadow-xl overflow-hidden"
+      panelMotionProps={{
+        initial: { opacity: 0, scale: 0.95 },
+        animate: { opacity: 1, scale: 1 },
+        exit: { opacity: 0, scale: 0.95 },
+        onClick: (e) => e.stopPropagation(),
+      }}
+      onBackdropClick={(e) => onClose?.(e)}
+      rootMotionProps={{
+        transition: { duration: 0.2 },
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-labelledby': 'profile-setup-title',
+      }}
     >
-      <motion.div
-        className="framer-motion-stabilizer w-full max-w-md max-h-[85vh] flex flex-col rounded-xl bg-gray-900 border border-villain-purple/40 shadow-xl overflow-hidden"
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="p-6 border-b border-villain-purple/30 flex-shrink-0">
           <h2 id="profile-setup-title" className="text-xl font-bold text-king-gold">
             {step === 1 ? t('profileSetupTitleStep1') : t('profileSetupTitleStep2')}
@@ -343,7 +345,6 @@ export default function UserProfileSetup({ onClose, userId, onSaved, initialStep
             </>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+    </ModalShell>
   )
 }

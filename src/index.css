@@ -2,11 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* WebView / GPU：降低 Framer Motion 合成層抖動與重繪撕裂（Modal／全屏覆蓋用） */
+/* WebView / GPU：降低 Framer Motion 合成層抖動與重繪撕裂；僅掛在「會做 opacity/transform 動畫的面板」 */
 .framer-motion-stabilizer {
   backface-visibility: hidden;
   perspective: 1000px;
   transform: translateZ(0);
+  will-change: opacity, transform;
 }
 
 /* The GOAT Meter — 暗黑競技風 (Dark Coliseum) 主題變數；對抗版六立場 */

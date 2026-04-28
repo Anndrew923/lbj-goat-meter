@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
+import ModalShell from './ModalShell'
 import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { triggerHapticPattern } from '../utils/hapticUtils'
@@ -120,20 +120,21 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
   if (location.pathname === '/login') return null
 
   const portal = (
-    <motion.div
-      className="framer-motion-stabilizer fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/90"
-      initial={false}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.2 }}
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('adPortalAria')}
+    <ModalShell
+      rootClassName="fixed inset-0 z-[200] overflow-y-auto flex flex-col items-center justify-center"
+      backdropClassName="bg-black/90"
+      animatePanel={false}
+      panelClassName="text-center px-6 max-w-sm"
+      rootMotionProps={{
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-label': t('adPortalAria'),
+        transition: { duration: 0.2 },
+      }}
     >
-      <div className="text-center px-6 max-w-sm">
-        <p className="text-white/95 text-lg font-medium">{t('adPortalLoadingTitle')}</p>
-        <p className="mt-2 text-white/60 text-sm">{t('adPortalLoadingSubtitle')}</p>
-      </div>
-    </motion.div>
+      <p className="text-white/95 text-lg font-medium">{t('adPortalLoadingTitle')}</p>
+      <p className="mt-2 text-white/60 text-sm">{t('adPortalLoadingSubtitle')}</p>
+    </ModalShell>
   )
 
   if (typeof document === 'undefined') return portal

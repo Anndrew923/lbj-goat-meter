@@ -20,6 +20,7 @@ import { SentimentDataProvider } from "../context/SentimentDataContext";
 import { triggerHaptic } from "../utils/hapticUtils";
 import ProtocolOverlay from "../components/ProtocolOverlay";
 import useProtocolInitialization from "../hooks/useProtocolInitialization";
+import ModalShell from "../components/ModalShell";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   SlidersHorizontal,
@@ -83,6 +84,9 @@ export default function VotePage() {
     analystAdPortal,
   } = useAnalystAuth();
   const { isOpen: isProtocolOpen, completeProtocol, replayProtocol } = useProtocolInitialization();
+
+  /** 首屏進場結束後鎖定：僅 main 進場動畫完成後設為 true，header/main 的 initial 不再使用淡入（避免開 Modal 時 WebView 重播感） */
+  const [votePageIntroDone, setVotePageIntroDone] = useState(false);
 
   // 首頁 Intelligence HUD：當剩餘點數下降時觸發 intel-ping 動畫
   const [energyPing, setEnergyPing] = useState(false);
@@ -235,7 +239,7 @@ export default function VotePage() {
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom safe-px-screen">
       <motion.header
-        initial={{ opacity: 0 }}
+        initial={votePageIntroDone ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/90 border-b border-b-[0.5px] border-white/5 pb-4 safe-pt-header px-6 safe-px-screen"
       >
@@ -299,10 +303,13 @@ export default function VotePage() {
       <WarzoneDataProvider>
         <LiveTicker forcePaused={tickerPausedForExport} />
         <motion.main
-          initial={{ opacity: 0, y: 10 }}
+          initial={votePageIntroDone ? false : { opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="mt-8 space-y-8"
+          onAnimationComplete={() => {
+            setVotePageIntroDone((done) => (done ? done : true));
+          }}
         >
           {isGuestBootstrapLoading && (
             <div className="rounded-xl border border-villain-purple/20 bg-gray-900/60 p-5 animate-pulse">
@@ -439,27 +446,28 @@ export default function VotePage() {
       {/* 使用者設定區：底部為 Danger Zone（帳號刪除），符合 Google Play 合規與資料隱私透明度 */}
       <AnimatePresence initial={false}>
         {settingsOpen && !isGuest && (
-          <motion.div
-            initial={false}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="framer-motion-stabilizer fixed inset-0 z-[60] flex items-center justify-center bg-black/90"
-            onClick={() => {
+          <ModalShell
+            key="vote-settings-modal"
+            rootClassName="fixed inset-0 z-[60] overflow-y-auto"
+            backdropClassName="bg-black/90"
+            panelClassName="w-full max-w-lg max-h-[80vh] flex flex-col rounded-2xl border border-villain-purple/30 bg-gray-900 pt-6 px-6"
+            panelMotionProps={{
+              initial: { y: 40, opacity: 0 },
+              animate: { y: 0, opacity: 1 },
+              exit: { y: 40, opacity: 0 },
+              transition: { type: "spring", damping: 28, stiffness: 300 },
+              onClick: (e) => e.stopPropagation(),
+            }}
+            onBackdropClick={() => {
               setSettingsOpen(false);
               clearAuthError();
             }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="settings-title"
+            rootMotionProps={{
+              role: "dialog",
+              "aria-modal": true,
+              "aria-labelledby": "settings-title",
+            }}
           >
-            <motion.div
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
-              transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="w-full max-w-lg max-h-[80vh] flex flex-col rounded-2xl border border-villain-purple/30 bg-gray-900 pt-6 px-6"
-              onClick={(e) => e.stopPropagation()}
-            >
               <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <h2
                   id="settings-title"
@@ -543,36 +551,36 @@ export default function VotePage() {
                   </button>
                 </section>
               </div>
-            </motion.div>
-          </motion.div>
+          </ModalShell>
         )}
       </AnimatePresence>
 
       {/* 二次確認彈窗：半透明黑色遮罩、明顯紅色警告按鈕 */}
       <AnimatePresence initial={false}>
         {deleteConfirmOpen && (
-          <motion.div
-            initial={false}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="framer-motion-stabilizer fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="delete-confirm-title"
-            onClick={() => {
+          <ModalShell
+            key="vote-delete-confirm"
+            rootClassName="fixed inset-0 z-[70] overflow-y-auto"
+            backdropClassName="bg-black/80"
+            panelClassName="w-full max-w-sm rounded-2xl border border-red-900/60 bg-gray-900 p-6 shadow-xl"
+            panelMotionProps={{
+              initial: { opacity: 0, scale: 0.95 },
+              animate: { opacity: 1, scale: 1 },
+              exit: { opacity: 0, scale: 0.95 },
+              onClick: (e) => e.stopPropagation(),
+            }}
+            onBackdropClick={() => {
               if (!deleting) {
                 setDeleteConfirmOpen(false);
                 clearAuthError();
               }
             }}
+            rootMotionProps={{
+              role: "alertdialog",
+              "aria-modal": true,
+              "aria-labelledby": "delete-confirm-title",
+            }}
           >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm rounded-2xl border border-red-900/60 bg-gray-900 p-6 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
               <h3
                 id="delete-confirm-title"
                 className="text-lg font-bold text-red-400 mb-2"
@@ -626,37 +634,37 @@ export default function VotePage() {
                   {deleting ? t("deleting") : t("deletePermanently")}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+          </ModalShell>
         )}
       </AnimatePresence>
 
       {/* 重置立場二次確認彈窗：可勾選一併重設個人資料，成功後若 hasProfile 為 false 會自動彈出戰區登錄 */}
       <AnimatePresence initial={false}>
         {resetStanceConfirmOpen && (
-          <motion.div
-            initial={false}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="framer-motion-stabilizer fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="reset-stance-confirm-title"
-            aria-describedby="reset-stance-confirm-desc"
-            onClick={() => {
+          <ModalShell
+            key="vote-reset-stance-confirm"
+            rootClassName="fixed inset-0 z-[70] overflow-y-auto"
+            backdropClassName="bg-black/80"
+            panelClassName="w-full max-w-sm rounded-2xl border border-villain-purple/40 bg-gray-900 p-6 shadow-xl"
+            panelMotionProps={{
+              initial: { opacity: 0, scale: 0.95 },
+              animate: { opacity: 1, scale: 1 },
+              exit: { opacity: 0, scale: 0.95 },
+              onClick: (e) => e.stopPropagation(),
+            }}
+            onBackdropClick={() => {
               if (!resetStanceSubmitting) {
                 setResetStanceConfirmOpen(false);
                 clearAuthError();
               }
             }}
+            rootMotionProps={{
+              role: "alertdialog",
+              "aria-modal": true,
+              "aria-labelledby": "reset-stance-confirm-title",
+              "aria-describedby": "reset-stance-confirm-desc",
+            }}
           >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm rounded-2xl border border-villain-purple/40 bg-gray-900 p-6 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
               <h3
                 id="reset-stance-confirm-title"
                 className="text-lg font-bold text-king-gold mb-2"
@@ -728,8 +736,7 @@ export default function VotePage() {
                     : t("resetStance")}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+          </ModalShell>
         )}
       </AnimatePresence>
     </div>
