@@ -38,6 +38,17 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  /**
+   * freeVoteUsed：本地追蹤首票是否已使用，避免依賴 context 狀態更新的時序差。
+   * 初始值從 isFirstVoteOfDay 同步（false = 今日已用過首票 = 需廣告）。
+   * 首票成功後立即設為 true，確保下一個 CommitmentModal 開啟時就能拿到正確值。
+   */
+  const [freeVoteUsed, setFreeVoteUsed] = useState(!isFirstVoteOfDay)
+
+  // 跨 session 同步：若 context 已標記今日首票用過，立即更新本地狀態
+  useEffect(() => {
+    if (!isFirstVoteOfDay) setFreeVoteUsed(true)
+  }, [isFirstVoteOfDay])
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (isGuest || !currentUser) {
@@ -83,6 +94,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
           adRewardToken
         )
         markEventVoted(ev.id, optionIndex)
+        setFreeVoteUsed(true)   // 首票已用，下次 CommitmentModal 立即拿到正確值
         setToast(t('breakingVoteSuccess'))
         setPending(null)
       } catch (err) {
@@ -91,7 +103,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         setSubmitting(null)
       }
     },
-    [pending, t, markEventVoted, isFirstVoteOfDay]
+    [pending, t, markEventVoted, isFirstVoteOfDay, setFreeVoteUsed]
   )
 
   if (loading) {
@@ -244,7 +256,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         onConfirm={handleCommitmentConfirm}
         optionLabel={pending?.optionLabel ?? ''}
         loading={Boolean(submitting)}
-        needsAd={!isFirstVoteOfDay}
+        needsAd={freeVoteUsed}
       />
       <AnimatePresence initial={false}>
         {showLoginPrompt && (

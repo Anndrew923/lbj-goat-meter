@@ -68,15 +68,8 @@ export default function CommitmentModal({
               >
                 {t('breakingCommitmentMessage')}
               </p>
-              {/* 第一票免費提示 / 後續票廣告提示 — 永遠顯示，讓用戶清楚預期 */}
-              {!needsAd ? (
-                <div className="mb-4 rounded-lg border border-king-gold/40 bg-king-gold/10 px-3 py-2">
-                  <p className="text-xs font-semibold text-king-gold flex items-center gap-1">
-                    <span aria-hidden="true">🛡️</span>
-                    <span>{t('breakingFirstVoteFreeHint')}</span>
-                  </p>
-                </div>
-              ) : (
+              {/* 需廣告時才顯示提示，確保資訊與實際行為一致（審核合規） */}
+              {needsAd && (
                 <div className="mb-4 rounded-lg border border-amber-400/60 bg-amber-500/10 px-3 py-2">
                   <p className="text-xs text-amber-200 flex items-center gap-1">
                     <span aria-hidden="true">⚡</span>
