@@ -10,7 +10,8 @@ import { useSentimentDataContext } from "../context/SentimentDataContext";
 import { hasActiveFilters } from "../hooks/useSentimentData";
 import { hasValidAppCheck } from "../lib/firebase";
 import { getStancesForArena } from "../i18n/i18n";
-import { STANCE_COLORS, RECON_AUTHORIZED_COLOR } from "../lib/constants";
+import { STANCE_COLORS } from "../lib/stanceCore"
+import { RECON_AUTHORIZED_COLOR } from "../lib/appConfig";
 /** 未知／其他立場的進度條 fallback 色（與 gray-500 一致） */
 const FALLBACK_BAR_COLOR = "#6b7280";
 /** 動態計數器動畫時長（ms） */

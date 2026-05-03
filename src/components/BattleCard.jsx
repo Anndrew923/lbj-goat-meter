@@ -15,7 +15,7 @@ import { Capacitor } from "@capacitor/core";
 import { Dialog } from "@capacitor/dialog";
 import { Media } from "@capacitor-community/media";
 import { useLocation, useNavigate } from "react-router-dom";
-import { STANCE_COLORS } from "../lib/constants";
+import { STANCE_COLORS } from "../lib/stanceCore";
 import crownIcon from "../assets/goat-crown-icon.png";
 import { hexWithAlpha } from "../utils/colorUtils";
 import { mixHex, hashStringToSeed, mulberry32, hexToRgb, rgbToHex } from "../utils/battleCardVisualMath";

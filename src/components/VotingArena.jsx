@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { getReasonsForStance, getReasonLabels } from "../i18n/i18n";
-import { REASONS_MAX_SELECT } from "../lib/constants";
+import { REASONS_MAX_SELECT } from "../lib/stanceCore";
 import { triggerHaptic } from "../utils/hapticUtils";
 import { getDeviceId } from "../utils/deviceId";
 import { submitVote as voteServiceSubmitVote } from "../services/VoteService";

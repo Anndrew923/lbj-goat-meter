@@ -6,7 +6,7 @@
  */
 import { motion } from "framer-motion";
 import { getStancesForArena } from "../i18n/i18n";
-import { STANCE_COLORS } from "../lib/constants";
+import { STANCE_COLORS } from "../lib/stanceCore";
 
 function getStanceColor(value) {
   return STANCE_COLORS[value] ?? "#9ca3af";

@@ -4,7 +4,7 @@
  * 已授權：戰術綠 (#00E676) 脈衝 + RECON PERMISSION: AUTHORIZED，font-mono 終端感
  */
 import { useTranslation } from "react-i18next";
-import { RECON_AUTHORIZED_COLOR } from "../lib/constants";
+import { RECON_AUTHORIZED_COLOR } from "../lib/appConfig";
 
 export default function ReconPermissionIndicator({ authorized, className = "" }) {
   const { t } = useTranslation("common");

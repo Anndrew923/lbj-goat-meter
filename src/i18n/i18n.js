@@ -31,7 +31,8 @@
 
 import arenaData from './arena.json'
 import brandData from './brand.json'
-import { STANCES, REASONS_BY_STANCE } from '../lib/constants'
+import { STANCES } from '../lib/stanceCore'
+import { REASONS_BY_STANCE } from '../lib/lbjConstants'
 import i18n from './config'
 import { isObject } from '../utils/typeUtils'
 

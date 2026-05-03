@@ -2,11 +2,13 @@
 // 設計意圖：
 // - 後端 Cloud Functions 端的純函數聚合邏輯，與前端 VoteService 中的邏輯保持等價。
 // - 專門服務於 revoke / resetPosition 等需要「扣回統計」的流程，確保戰區與全球統計一致性。
+// - STANCE_KEYS / PRO_STANCES / ANTI_STANCES 從此處 export，供 submitVote 等模組共用，
+//   避免各模組各自定義造成漂移（新增立場時只需改此一處）。
 
-const STANCE_KEYS = ["goat", "fraud", "king", "mercenary", "machine", "stat_padder"];
+export const STANCE_KEYS = ["goat", "fraud", "king", "mercenary", "machine", "stat_padder"];
 
-const PRO_STANCES = new Set(["goat", "king", "machine"]);
-const ANTI_STANCES = new Set(["fraud", "stat_padder", "mercenary"]);
+export const PRO_STANCES = new Set(["goat", "king", "machine"]);
+export const ANTI_STANCES = new Set(["fraud", "stat_padder", "mercenary"]);
 
 function isObject(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);

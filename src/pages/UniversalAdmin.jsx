@@ -24,7 +24,7 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { db, storage } from '../lib/firebase'
-import { GLOBAL_EVENTS_COLLECTION } from '../lib/constants'
+import { GLOBAL_EVENTS_COLLECTION } from '../lib/appConfig'
 import { compressAndConvertToWebP } from '../lib/imageCompression'
 
 const ASPECT_16_9 = 16 / 9

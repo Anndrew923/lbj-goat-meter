@@ -9,7 +9,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useRef } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db, isFirebaseReady } from "../lib/firebase";
-import { GLOBAL_SUMMARY_DOC_ID } from "../lib/constants";
+import { GLOBAL_SUMMARY_DOC_ID } from "../lib/appConfig";
 import { isObject } from "../utils/typeUtils";
 
 const WarzoneDataContext = createContext(null);

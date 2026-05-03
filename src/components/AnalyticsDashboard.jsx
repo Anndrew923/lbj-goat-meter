@@ -18,7 +18,7 @@ import { useWarzoneData } from "../context/WarzoneDataContext";
 import { useSentimentDataContext } from "../context/SentimentDataContext";
 import { hasActiveFilters } from "../hooks/useSentimentData";
 import { getStancesForArena, getReasonLabelMap } from "../i18n/i18n";
-import { STANCE_COLORS } from "../lib/constants";
+import { STANCE_COLORS } from "../lib/stanceCore";
 
 /** 標籤沿徑向再外推像素 */
 const LABEL_OFFSET_PX = 30;

@@ -11,7 +11,8 @@
 import { Timestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import app, { getFirebaseFunctions } from "../lib/firebase";
-import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/constants";
+import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES, getInitialGlobalSummary } from "../lib/stanceCore";
+import { STAR_ID } from "../lib/appConfig";
 import { getCallableDetailsCode } from "../utils/firebaseCallableError";
 import { isObject } from "../utils/typeUtils";
 import { getRecaptchaToken } from "./RecaptchaService";
@@ -33,7 +34,6 @@ function getFunctionsInstance() {
   }
   return fns;
 }
-const STAR_ID = "lbj";
 
 function getVoteFunctionErrorMessage(err, getMessage) {
   const backendCode = getCallableDetailsCode(err);

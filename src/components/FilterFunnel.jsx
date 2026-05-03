@@ -7,7 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, X } from "lucide-react";
-import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from "../lib/constants";
+import { AGE_GROUPS, GENDERS, TEAMS, getTeamCityKey } from "../lib/lbjConstants";
 import { triggerHaptic } from "../utils/hapticUtils";
 import ReconPermissionIndicator from "./ReconPermissionIndicator";
 import SmartWarzoneSelector from "./SmartWarzoneSelector";

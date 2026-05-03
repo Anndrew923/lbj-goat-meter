@@ -20,7 +20,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore'
 import { db, isFirebaseReady } from '../lib/firebase'
-import { PROJECT_APP_ID, GLOBAL_EVENTS_COLLECTION } from '../lib/constants'
+import { PROJECT_APP_ID, GLOBAL_EVENTS_COLLECTION } from '../lib/appConfig'
 import { loadLastVotedSafe } from '../utils/breakingVoteStorage'
 
 const MAX_EVENTS = 5

@@ -7,7 +7,7 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useWarzoneData } from '../context/WarzoneDataContext'
-import { getTeamCityKey } from '../lib/constants'
+import { getTeamCityKey } from '../lib/lbjConstants'
 import { getStanceDisplayTicker } from '../i18n/i18n'
 
 function getTeamFanLabel(voterTeam, t) {

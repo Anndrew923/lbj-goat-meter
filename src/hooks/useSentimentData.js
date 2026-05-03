@@ -21,7 +21,7 @@ import { useMemo, useCallback } from 'react'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import app, { db, auth, isFirebaseReady, getFirebaseFunctions } from '../lib/firebase'
-import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from '../lib/constants'
+import { STANCE_KEYS, PRO_STANCES, ANTI_STANCES } from '../lib/stanceCore'
 import { useBarometerQuery } from './useBarometerQuery'
 
 /** 預設球星 ID，與 SCHEMA 中 starId 對應 */
