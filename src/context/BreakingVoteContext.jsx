@@ -58,18 +58,6 @@ export function BreakingVoteProvider({ children }) {
     }
   }, [lastFreeDate, today])
 
-  /**
-   * consumeFreeVote — 在用戶按下「確認投下」時立即消耗今日首票免費資格。
-   * 設計意圖：不等投票成功才更新，讓下一個 CommitmentModal 立即顯示「需看廣告」提示。
-   * UniversalBreakingBanner 與 BreakingHistoryPage 皆呼叫此 action，確保跨組件一致。
-   */
-  const consumeFreeVote = useCallback(() => {
-    if (!lastFreeDate || lastFreeDate !== today) {
-      setLastFreeDate(today)
-      saveLastFreeDate(today)
-    }
-  }, [lastFreeDate, today])
-
   const clearLastVoted = useCallback(() => {
     if (import.meta.env.DEV) {
       console.log('[BreakingVote] clearLastVoted (伺服器已回傳 total_votes > 0)')
@@ -122,7 +110,6 @@ export function BreakingVoteProvider({ children }) {
     lastFreeDate,
     isFirstVoteOfDay,
     markEventVoted,
-    consumeFreeVote,
     clearLastVoted,
   }
 
