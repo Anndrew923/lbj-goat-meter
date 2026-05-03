@@ -1,4 +1,16 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+/**
+ * VotePage — 投票主頁面（精簡骨架版）
+ *
+ * 重構目標：
+ *   744 行 → 250 行，移除所有狀態機邏輯，保留「組合、佈局、路由」三件事。
+ *
+ * 職責分配：
+ *   useProfileSetupGate  — 戰區登錄 Modal 的觸發門檻與掛載鎖
+ *   useSettingsModals    — Settings / Delete / ResetStance 三層彈窗狀態機
+ *   useVoteActions       — 篩選、Deep Link、訪客、進場動畫、能量動畫
+ *   VoteModals           — 三層彈窗的 JSX（從此頁提取，保持 VotePage 結構清晰）
+ */
+import { useMemo, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
@@ -20,18 +32,18 @@ import { SentimentDataProvider } from "../context/SentimentDataContext";
 import { triggerHaptic } from "../utils/hapticUtils";
 import ProtocolOverlay from "../components/ProtocolOverlay";
 import useProtocolInitialization from "../hooks/useProtocolInitialization";
-import ModalShell from "../components/ModalShell";
-import { motion, AnimatePresence } from "framer-motion";
+import VoteModals from "../components/VoteModals";
+import { AnimatePresence, motion } from "framer-motion";
+import { useProfileSetupGate } from "../hooks/votePage/useProfileSetupGate";
+import { useSettingsModals } from "../hooks/votePage/useSettingsModals";
+import { useVoteActions } from "../hooks/votePage/useVoteActions";
 import {
   SlidersHorizontal,
   Settings,
-  AlertTriangle,
   LogOut,
   Info,
   Archive,
 } from "lucide-react";
-
-const DEFAULT_WARZONE_ID = "LAL";
 
 export default function VotePage() {
   const { t, i18n } = useTranslation("common");
@@ -48,33 +60,12 @@ export default function VotePage() {
     clearAuthError,
     revote,
   } = useAuth();
+
   useBattleCardCallablePrewarm(currentUser);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const lastStableUidRef = useRef(currentUser?.uid);
-  const [activeWarzone, setActiveWarzone] = useState(
-    profile?.voterTeam ?? DEFAULT_WARZONE_ID,
-  );
-  const [sessionOverride, setSessionOverride] = useState(false);
-  const [deepLinkNotice, setDeepLinkNotice] = useState("");
-  const hasHandledDeepLinkRef = useRef(false);
-  const [profileSetupDismissed, setProfileSetupDismissed] = useState(false);
-  const [profileLoadingSettled, setProfileLoadingSettled] = useState(false);
-  const [hasHandledDismissal, setHasHandledDismissal] = useState(false);
-  const [filters, setFilters] = useState({});
-  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [resetStanceConfirmOpen, setResetStanceConfirmOpen] = useState(false);
-  const [resetProfileChecked, setResetProfileChecked] = useState(false);
-  const [resetStanceSubmitting, setResetStanceSubmitting] = useState(false);
-  const [showWarzoneClaimModal, setShowWarzoneClaimModal] = useState(false);
-  const [tickerPausedForExport, setTickerPausedForExport] = useState(false);
-  const [isGuestBootstrapLoading, setIsGuestBootstrapLoading] = useState(false);
-  /** 手動掛載鎖：僅在 shouldShowSetup 為 true 時掛上；卸載僅由關閉／儲存回呼觸發，避免 Auth 抖動造成閃爍 */
-  const [isSetupMounted, setIsSetupMounted] = useState(false);
-  const stableFilters = useMemo(() => ({ ...filters }), [filters]);
+  const { isOpen: isProtocolOpen, completeProtocol, replayProtocol } =
+    useProtocolInitialization();
   const {
     isAnalystAuthorized,
     remainingPoints,
@@ -83,163 +74,55 @@ export default function VotePage() {
     onRequestRewardAd,
     analystAdPortal,
   } = useAnalystAuth();
-  const { isOpen: isProtocolOpen, completeProtocol, replayProtocol } = useProtocolInitialization();
 
-  /** 首屏進場結束後鎖定：僅 main 進場動畫完成後設為 true，header/main 的 initial 不再使用淡入（避免開 Modal 時 WebView 重播感） */
-  const [votePageIntroDone, setVotePageIntroDone] = useState(false);
+  // ── 戰區登錄 Modal 狀態機 ──────────────────────────────────────
+  const actions = useVoteActions({
+    isGuest,
+    searchParams,
+    voterTeam: profile?.voterTeam,
+    remainingPoints,
+    signOut,
+    navigate,
+    t,
+  });
 
-  // 首頁 Intelligence HUD：當剩餘點數下降時觸發 intel-ping 動畫
-  const [energyPing, setEnergyPing] = useState(false);
-  const lastEnergyRef = useRef(remainingPoints);
-
-  useEffect(() => {
-    let timeoutId;
-    if (typeof remainingPoints !== "number") {
-      lastEnergyRef.current = remainingPoints;
-    } else {
-      const prev = lastEnergyRef.current;
-      if (typeof prev === "number" && remainingPoints < prev) {
-        setEnergyPing(true);
-        timeoutId = window.setTimeout(() => setEnergyPing(false), 450);
-      }
-      lastEnergyRef.current = remainingPoints;
-    }
-    return () => {
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [remainingPoints]);
-
-  // 帳號定錨（極致防抖）：僅當「下一個有效 UID」出現且與錨點不同時才重置。
-  // 不處理變為 null/undefined（多為 APK WebView rehydrate 噪訊）；真登出後換帳會由下一個有效 UID 觸發重置。
-  useEffect(() => {
-    const nextUid = currentUser?.uid;
-    const prevUid = lastStableUidRef.current;
-
-    if (nextUid && nextUid !== prevUid) {
-      setProfileSetupDismissed(false);
-      setProfileLoadingSettled(false);
-      setHasHandledDismissal(false);
-      setIsSetupMounted(false);
-      lastStableUidRef.current = nextUid;
-    }
-  }, [currentUser?.uid]);
-
-  // profileLoading 只要在該 session 首次完成，就鎖定為已穩定，避免後續抖動影響 Modal 顯示判斷。
-  useEffect(() => {
-    if (!currentUser?.uid || profileLoading) return;
-    setProfileLoadingSettled(true);
-  }, [currentUser?.uid, profileLoading]);
-
-  // Deep Link 消費：若存在任何 warzoneId 參數，一律收斂至 LBJ 主戰區（LAL）。
-  useEffect(() => {
-    const warzoneFromUrl = searchParams.get("warzoneId");
-    if (!warzoneFromUrl) {
-      setSessionOverride(false);
-      setActiveWarzone((prev) => prev || profile?.voterTeam || DEFAULT_WARZONE_ID);
-      return;
-    }
-    setSessionOverride(true);
-    setActiveWarzone(DEFAULT_WARZONE_ID);
-    if (!hasHandledDeepLinkRef.current) {
-      hasHandledDeepLinkRef.current = true;
-      setDeepLinkNotice(t("deepLinkWarzoneSwitchedLbj"));
-    }
-    // 注意：深連結只更新 session 戰區，不直接觸發 Modal。
-    // Modal 只由 needProfileSetup（自動）或使用者手動點擊開啟，避免重複開關造成閃動。
-  }, [searchParams, profile?.voterTeam, t]);
-
-  useEffect(() => {
-    if (!deepLinkNotice) return;
-    const timer = window.setTimeout(() => setDeepLinkNotice(""), 2600);
-    return () => window.clearTimeout(timer);
-  }, [deepLinkNotice]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return undefined;
-    if (!isProtocolOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isProtocolOpen]);
-
-  // 匿名觀察者冷啟動：先給出穩定 skeleton，降低初次進場白屏感與版面跳動。
-  useEffect(() => {
-    if (!isGuest) {
-      setIsGuestBootstrapLoading(false);
-      return;
-    }
-    setIsGuestBootstrapLoading(true);
-    const timer = window.setTimeout(() => setIsGuestBootstrapLoading(false), 380);
-    return () => window.clearTimeout(timer);
-  }, [isGuest]);
-
-  // 依 Context 實時 hasProfile：已登入且 profile 已載入完畢仍無文件時，顯示戰區登錄 Modal
-  const shouldShowSetup = useMemo(() => {
-    if (isProtocolOpen) return false;
-    // A. 手動強制開啟（最高優先級）
-    if (showWarzoneClaimModal) return true;
-    // B. 本次 Session 已處理關閉，或仍在 Guest Bootstrap：一律不顯示
-    if (hasHandledDismissal || isGuestBootstrapLoading) return false;
-    // Profile 同步中：不彈窗，避免「資料尚未抵達」的瞬間誤判
-    if (profileLoading) return false;
-    // C. 自動觸發：登入且載入穩定、無 profile、且未手動關閉
-    const autoTrigger =
-      Boolean(currentUser?.uid) &&
-      !isGuest &&
-      profileLoadingSettled &&
-      !hasProfile &&
-      !profileSetupDismissed;
-    return autoTrigger;
-  }, [
-    hasHandledDismissal,
-    isGuestBootstrapLoading,
-    showWarzoneClaimModal,
-    currentUser?.uid,
+  const setupGate = useProfileSetupGate({
+    uid: currentUser?.uid,
     isGuest,
     profileLoading,
-    profileLoadingSettled,
     hasProfile,
-    profileSetupDismissed,
     isProtocolOpen,
-  ]);
+    isGuestBootstrapLoading: actions.isGuestBootstrapLoading,
+  });
 
+  const settingsModals = useSettingsModals({
+    deleteAccount,
+    revote,
+    clearAuthError,
+    onRevoteSuccess: (resetProfileChecked) => {
+      if (resetProfileChecked) setupGate.reopenAfterRevote();
+    },
+  });
+
+  // Protocol overlay：鎖定 body scroll 避免背景穿透滾動
   useEffect(() => {
-    if (shouldShowSetup) {
-      setIsSetupMounted(true);
-    }
-  }, [shouldShowSetup]);
+    if (typeof document === "undefined" || !isProtocolOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isProtocolOpen]);
 
-  /** 關閉／完成戰區登錄：單一路徑避免 handleClose vs onSaved 狀態漂移（WebView 點擊穿透亦沿用 preventDefault + stopPropagation） */
-  const dismissProfileSetup = useCallback((e) => {
-    if (e?.preventDefault) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    setIsSetupMounted(false);
-    setHasHandledDismissal(true);
-    setProfileSetupDismissed(true);
-    setShowWarzoneClaimModal(false);
-  }, []);
-
-  const handleCloseModal = dismissProfileSetup;
-  const handleProfileSetupSaved = dismissProfileSetup;
-  const handleGuestToLogin = useCallback(async () => {
-    // 匿名帳號會被 Firebase 持久化；先 signOut 才能避免回登入頁後立刻被 currentUser 導回 /vote。
-    try {
-      await signOut();
-    } finally {
-      navigate("/", { replace: true });
-    }
-  }, [signOut, navigate]);
+  // stableFilters 由 useVoteActions 維護，此處直接取用
+  const stableFilters = useMemo(
+    () => actions.stableFilters,
+    [actions.stableFilters],
+  );
 
   return (
     <div className="min-h-screen bg-black text-white pt-6 px-6 safe-area-inset-bottom safe-px-screen">
+      {/* ── Fixed Header ───────────────────────────────────────── */}
       <motion.header
-        initial={votePageIntroDone ? false : { opacity: 0 }}
+        initial={actions.votePageIntroDone ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         className="fixed top-0 left-0 w-full z-50 flex items-center justify-between bg-black/90 border-b border-b-[0.5px] border-white/5 pb-4 safe-pt-header px-6 safe-px-screen"
       >
@@ -262,7 +145,7 @@ export default function VotePage() {
           {isGuest ? (
             <button
               type="button"
-              onClick={handleGuestToLogin}
+              onClick={actions.handleGuestToLogin}
               className="text-sm text-king-gold hover:underline"
             >
               {t("signIn")}
@@ -271,7 +154,7 @@ export default function VotePage() {
             <>
               <button
                 type="button"
-                onClick={() => setSettingsOpen(true)}
+                onClick={settingsModals.openSettings}
                 className={
                   isEn
                     ? "p-2 text-gray-400 hover:text-king-gold rounded-lg"
@@ -298,43 +181,46 @@ export default function VotePage() {
           )}
         </div>
       </motion.header>
-      {/* 與固定 Header 等高的 Spacer，避免首屏內容被遮擋 */}
+
       <div className="header-spacer" aria-hidden />
+
+      {/* ── Main Content ────────────────────────────────────────── */}
       <WarzoneDataProvider>
-        <LiveTicker forcePaused={tickerPausedForExport} />
+        <LiveTicker forcePaused={actions.tickerPausedForExport} />
         <motion.main
-          initial={votePageIntroDone ? false : { opacity: 0, y: 10 }}
+          initial={actions.votePageIntroDone ? false : { opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="mt-8 space-y-8"
-          onAnimationComplete={() => {
-            setVotePageIntroDone((done) => (done ? done : true));
-          }}
+          onAnimationComplete={actions.markIntroDone}
         >
-          {isGuestBootstrapLoading && (
+          {actions.isGuestBootstrapLoading && (
             <div className="rounded-xl border border-villain-purple/20 bg-gray-900/60 p-5 animate-pulse">
               <div className="h-4 w-28 bg-white/10 rounded mb-3" />
               <div className="h-3 w-full bg-white/10 rounded mb-2" />
               <div className="h-3 w-4/5 bg-white/10 rounded" />
             </div>
           )}
+
           <VotingArena
             userId={currentUser?.uid}
             currentUser={currentUser}
-            activeWarzoneId={activeWarzone}
-            sessionOverride={sessionOverride}
-            arenaAnimationsPaused={isSetupMounted || isProtocolOpen}
+            activeWarzoneId={actions.activeWarzone}
+            sessionOverride={actions.sessionOverride}
+            arenaAnimationsPaused={setupGate.isSetupMounted || isProtocolOpen}
             onOpenWarzoneSelect={() => {
-              if (!isGuest && !isProtocolOpen) setShowWarzoneClaimModal(true)
+              if (!isGuest && !isProtocolOpen) setupGate.openWarzoneClaimModal();
             }}
-            onExportStart={() => setTickerPausedForExport(true)}
-            onExportEnd={() => setTickerPausedForExport(false)}
+            onExportStart={() => actions.setTickerPausedForExport(true)}
+            onExportEnd={() => actions.setTickerPausedForExport(false)}
           />
-          {deepLinkNotice && (
+
+          {actions.deepLinkNotice && (
             <div className="fixed top-[calc(var(--safe-top)+64px)] left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-full text-xs bg-black/80 border border-king-gold/40 text-king-gold shadow-lg">
-              {deepLinkNotice}
+              {actions.deepLinkNotice}
             </div>
           )}
+
           <div className="space-y-2">
             <UniversalBreakingBanner />
             <div className="flex justify-end">
@@ -348,6 +234,7 @@ export default function VotePage() {
               </Link>
             </div>
           </div>
+
           <SentimentDataProvider
             filters={stableFilters}
             authorized={isAnalystAuthorized}
@@ -355,390 +242,106 @@ export default function VotePage() {
             consumePoint={consumePoint}
             onEnergyExhausted={onEnergyExhausted}
           >
-          <section className="relative" aria-label={t("globalStats")}>
-          {analystAdPortal}
-          {/* 大盤全面釋放：SentimentStats 不在任何 AnalystGate 內，登入/匿名觀察者皆可直接看到 */}
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-king-gold">
-              {t("globalStats")}
-            </h2>
-            {typeof remainingPoints === "number" && (
-              <div className="relative">
-                <div
-                  className={`flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-1 rounded-full text-[11px] text-machine-silver/80 ${
-                    energyPing ? "animate-intel-ping" : ""
-                  } ${remainingPoints > 0 ? "animate-[pulse_4s_ease-in-out_infinite]" : ""}`}
-                  title={t("energyExpiryHint")}
-                >
-                  <span aria-hidden="true">⚡</span>
-                  <span>{remainingPoints}</span>
-                  <Info className="w-3 h-3 text-machine-silver/60" aria-hidden="true" />
-                </div>
+            <section className="relative" aria-label={t("globalStats")}>
+              {analystAdPortal}
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-king-gold">
+                  {t("globalStats")}
+                </h2>
+                {typeof remainingPoints === "number" && (
+                  <div className="relative">
+                    <div
+                      className={`flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-1 rounded-full text-[11px] text-machine-silver/80 ${
+                        actions.energyPing ? "animate-intel-ping" : ""
+                      } ${remainingPoints > 0 ? "animate-[pulse_4s_ease-in-out_infinite]" : ""}`}
+                      title={t("energyExpiryHint")}
+                    >
+                      <span aria-hidden="true">⚡</span>
+                      <span>{remainingPoints}</span>
+                      <Info className="w-3 h-3 text-machine-silver/60" aria-hidden="true" />
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <SentimentStats filters={stableFilters} />
-          {/* 以下僅此一層 AnalystGate：僅鎖定篩選器、地圖、詳細分析 */}
-          <AnalystGate
-            authorized={isAnalystAuthorized}
-            onRequestRewardAd={onRequestRewardAd}
-            userId={currentUser?.uid}
-            cooldownMinutes={10}
-            gateTitle={t("intelGateTitle")}
-            gateDescription={t("intelGateDesc")}
-            gateButtonText={t("intelGateButton")}
-          >
-            <div className="flex items-center justify-between gap-4 mb-3 mt-8">
-              <ReconPermissionIndicator authorized={isAnalystAuthorized} />
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(10);
-                  setFilterDrawerOpen(true);
-                }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
-                aria-label={t("openFilter")}
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-                {t("filter")}
-              </button>
-            </div>
-            <FilterFunnel
-              open={filterDrawerOpen}
-              onClose={() => setFilterDrawerOpen(false)}
-              filters={stableFilters}
-              onFiltersChange={setFilters}
-              authorized={isAnalystAuthorized}
-              scrollTargetId="pulse-map-section"
-            />
-            <div id="pulse-map-section" className="mb-6">
-              <PulseMap filters={stableFilters} onFiltersChange={setFilters} />
-            </div>
-            <div className="mt-6">
-              <AnalyticsDashboard
+              <SentimentStats filters={stableFilters} />
+              <AnalystGate
                 authorized={isAnalystAuthorized}
-                filters={stableFilters}
-              />
-            </div>
-          </AnalystGate>
-          </section>
+                onRequestRewardAd={onRequestRewardAd}
+                userId={currentUser?.uid}
+                cooldownMinutes={10}
+                gateTitle={t("intelGateTitle")}
+                gateDescription={t("intelGateDesc")}
+                gateButtonText={t("intelGateButton")}
+              >
+                <div className="flex items-center justify-between gap-4 mb-3 mt-8">
+                  <ReconPermissionIndicator authorized={isAnalystAuthorized} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(10);
+                      actions.setFilterDrawerOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-villain-purple/40 text-sm text-gray-300 hover:text-king-gold hover:border-king-gold/50"
+                    aria-label={t("openFilter")}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    {t("filter")}
+                  </button>
+                </div>
+                <FilterFunnel
+                  open={actions.filterDrawerOpen}
+                  onClose={() => actions.setFilterDrawerOpen(false)}
+                  filters={stableFilters}
+                  onFiltersChange={actions.setFilters}
+                  authorized={isAnalystAuthorized}
+                  scrollTargetId="pulse-map-section"
+                />
+                <div id="pulse-map-section" className="mb-6">
+                  <PulseMap filters={stableFilters} onFiltersChange={actions.setFilters} />
+                </div>
+                <div className="mt-6">
+                  <AnalyticsDashboard
+                    authorized={isAnalystAuthorized}
+                    filters={stableFilters}
+                  />
+                </div>
+              </AnalystGate>
+            </section>
           </SentimentDataProvider>
         </motion.main>
       </WarzoneDataProvider>
 
+      {/* ── Protocol Overlay ────────────────────────────────────── */}
       <AnimatePresence initial={false}>
-        {isProtocolOpen && <ProtocolOverlay open={isProtocolOpen} onComplete={completeProtocol} />}
+        {isProtocolOpen && (
+          <ProtocolOverlay open={isProtocolOpen} onComplete={completeProtocol} />
+        )}
       </AnimatePresence>
 
+      {/* ── 戰區登錄 Modal ───────────────────────────────────────── */}
       <AnimatePresence initial={false}>
-        {currentUser?.uid && isSetupMounted && (
+        {currentUser?.uid && setupGate.isSetupMounted && (
           <UserProfileSetup
             key="profile-setup-modal"
-            onClose={handleCloseModal}
-            onSaved={handleProfileSetupSaved}
+            onClose={setupGate.dismissProfileSetup}
+            onSaved={setupGate.dismissProfileSetup}
             userId={currentUser?.uid}
             initialStep={1}
-            initialProfile={{ ...(profile ?? {}), voterTeam: activeWarzone }}
+            initialProfile={{ ...(profile ?? {}), voterTeam: actions.activeWarzone }}
           />
         )}
       </AnimatePresence>
 
-      {/* 使用者設定區：底部為 Danger Zone（帳號刪除），符合 Google Play 合規與資料隱私透明度 */}
-      <AnimatePresence initial={false}>
-        {settingsOpen && !isGuest && (
-          <ModalShell
-            key="vote-settings-modal"
-            rootClassName="fixed inset-0 z-[60] overflow-y-auto"
-            backdropClassName="bg-black/90"
-            panelClassName="w-full max-w-lg max-h-[80vh] flex flex-col rounded-2xl border border-villain-purple/30 bg-gray-900 pt-6 px-6"
-            panelMotionProps={{
-              initial: { y: 40, opacity: 0 },
-              animate: { y: 0, opacity: 1 },
-              exit: { y: 40, opacity: 0 },
-              transition: { type: "spring", damping: 28, stiffness: 300 },
-              onClick: (e) => e.stopPropagation(),
-            }}
-            onBackdropClick={() => {
-              setSettingsOpen(false);
-              clearAuthError();
-            }}
-            rootMotionProps={{
-              role: "dialog",
-              "aria-modal": true,
-              "aria-labelledby": "settings-title",
-            }}
-          >
-              <div className="flex justify-between items-center mb-6 flex-shrink-0">
-                <h2
-                  id="settings-title"
-                  className="text-lg font-bold text-king-gold"
-                >
-                  {t("settings")}
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    clearAuthError();
-                  }}
-                  className="text-gray-400 hover:text-white"
-                >
-                  {t("close")}
-                </button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar settings-modal-content-inset">
-                {authError && (
-                  <p className="mb-4 text-sm text-red-400" role="alert">
-                    {authError}
-                  </p>
-                )}
-                {/* Preferences：重置立場（僅已投票時顯示）、語系等，置於 Danger Zone 上方 */}
-                <section className="pb-6 border-b border-villain-purple/20">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                    {t("preferences")}
-                  </p>
-                  {profile?.hasVoted === true && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        clearAuthError();
-                        setResetStanceConfirmOpen(true);
-                        setResetProfileChecked(false);
-                      }}
-                      className="w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold"
-                    >
-                      {t("resetStance")}
-                    </button>
-                  )}
-                  <Link
-                    to="/privacy"
-                    onClick={() => setSettingsOpen(false)}
-                    className="block w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold text-center"
-                  >
-                    {t("privacyPolicy")}
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearAuthError();
-                      setSettingsOpen(false);
-                      replayProtocol();
-                    }}
-                    className="w-full mb-4 py-3 rounded-xl font-medium text-gray-300 bg-gray-800 border border-villain-purple/40 hover:border-king-gold/50 hover:text-king-gold"
-                  >
-                    {t("protocolReplay")}
-                  </button>
-                  <LanguageToggle />
-                </section>
-                {/* Danger Zone：半透明黑底、紅色警告按鈕，二次確認後執行刪除 */}
-                <section className="mt-8 pt-8 border-t border-red-900/50">
-                  <p className="text-xs uppercase tracking-wider text-red-400/90 font-semibold mb-2 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" aria-hidden />
-                    {t("dangerZone")}
-                  </p>
-                  <p className="text-sm text-gray-500 mb-4">
-                    {t("dangerZoneDesc")}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettingsOpen(false);
-                      setDeleteConfirmOpen(true);
-                    }}
-                    className="w-full py-3 rounded-xl font-medium text-white bg-red-600 hover:bg-red-700 border border-red-500/50"
-                  >
-                    {t("deleteAccount")}
-                  </button>
-                </section>
-              </div>
-          </ModalShell>
-        )}
-      </AnimatePresence>
-
-      {/* 二次確認彈窗：半透明黑色遮罩、明顯紅色警告按鈕 */}
-      <AnimatePresence initial={false}>
-        {deleteConfirmOpen && (
-          <ModalShell
-            key="vote-delete-confirm"
-            rootClassName="fixed inset-0 z-[70] overflow-y-auto"
-            backdropClassName="bg-black/80"
-            panelClassName="w-full max-w-sm rounded-2xl border border-red-900/60 bg-gray-900 p-6 shadow-xl"
-            panelMotionProps={{
-              initial: { opacity: 0, scale: 0.95 },
-              animate: { opacity: 1, scale: 1 },
-              exit: { opacity: 0, scale: 0.95 },
-              onClick: (e) => e.stopPropagation(),
-            }}
-            onBackdropClick={() => {
-              if (!deleting) {
-                setDeleteConfirmOpen(false);
-                clearAuthError();
-              }
-            }}
-            rootMotionProps={{
-              role: "alertdialog",
-              "aria-modal": true,
-              "aria-labelledby": "delete-confirm-title",
-            }}
-          >
-              <h3
-                id="delete-confirm-title"
-                className="text-lg font-bold text-red-400 mb-2"
-              >
-                {t("deleteConfirmTitle")}
-              </h3>
-              <p className="text-sm text-gray-400 mb-4">
-                {t("deleteConfirmDesc")}
-              </p>
-              {authError && (
-                <div className="mb-4 flex flex-col gap-2">
-                  <p className="text-sm text-red-400" role="alert">
-                    {authError}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => clearAuthError()}
-                    className="self-start py-2 px-3 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-400/50 hover:bg-red-500/30"
-                  >
-                    {t("retry")}
-                  </button>
-                </div>
-              )}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDeleteConfirmOpen(false);
-                    clearAuthError();
-                  }}
-                  className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 hover:bg-gray-800"
-                >
-                  {t("cancel")}
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setDeleting(true);
-                    clearAuthError();
-                    try {
-                      await deleteAccount();
-                    } catch {
-                      // 錯誤已由 AuthContext 寫入 authError，保留彈窗讓用戶閱讀後自行關閉
-                    } finally {
-                      setDeleting(false);
-                    }
-                  }}
-                  disabled={deleting}
-                  className="flex-1 py-3 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {deleting ? t("deleting") : t("deletePermanently")}
-                </button>
-              </div>
-          </ModalShell>
-        )}
-      </AnimatePresence>
-
-      {/* 重置立場二次確認彈窗：可勾選一併重設個人資料，成功後若 hasProfile 為 false 會自動彈出戰區登錄 */}
-      <AnimatePresence initial={false}>
-        {resetStanceConfirmOpen && (
-          <ModalShell
-            key="vote-reset-stance-confirm"
-            rootClassName="fixed inset-0 z-[70] overflow-y-auto"
-            backdropClassName="bg-black/80"
-            panelClassName="w-full max-w-sm rounded-2xl border border-villain-purple/40 bg-gray-900 p-6 shadow-xl"
-            panelMotionProps={{
-              initial: { opacity: 0, scale: 0.95 },
-              animate: { opacity: 1, scale: 1 },
-              exit: { opacity: 0, scale: 0.95 },
-              onClick: (e) => e.stopPropagation(),
-            }}
-            onBackdropClick={() => {
-              if (!resetStanceSubmitting) {
-                setResetStanceConfirmOpen(false);
-                clearAuthError();
-              }
-            }}
-            rootMotionProps={{
-              role: "alertdialog",
-              "aria-modal": true,
-              "aria-labelledby": "reset-stance-confirm-title",
-              "aria-describedby": "reset-stance-confirm-desc",
-            }}
-          >
-              <h3
-                id="reset-stance-confirm-title"
-                className="text-lg font-bold text-king-gold mb-2"
-              >
-                {t("resetStanceConfirmTitle")}
-              </h3>
-              <p
-                id="reset-stance-confirm-desc"
-                className="text-sm text-gray-400 mb-4"
-              >
-                {t("resetStanceConfirmDesc")}
-              </p>
-              <label className="flex items-start gap-3 mb-4 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={resetProfileChecked}
-                  onChange={(e) => setResetProfileChecked(e.target.checked)}
-                  className="mt-1 rounded border-gray-500 text-king-gold focus:ring-king-gold/50"
-                  aria-describedby="reset-profile-option-label"
-                />
-                <span
-                  id="reset-profile-option-label"
-                  className="text-sm text-gray-300"
-                >
-                  {t("resetProfileOption")}
-                </span>
-              </label>
-              {authError && (
-                <p className="text-sm text-red-400 mb-4" role="alert">
-                  {authError}
-                </p>
-              )}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setResetStanceConfirmOpen(false);
-                    clearAuthError();
-                  }}
-                  disabled={resetStanceSubmitting}
-                  className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 hover:bg-gray-800 disabled:opacity-60"
-                >
-                  {t("cancel")}
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setResetStanceSubmitting(true);
-                    clearAuthError();
-                    try {
-                      await revote(resetProfileChecked);
-                      setResetStanceConfirmOpen(false);
-                      setSettingsOpen(false);
-                      if (resetProfileChecked) {
-                        setProfileSetupDismissed(false);
-                        setShowWarzoneClaimModal(true);
-                      }
-                    } catch {
-                      // 錯誤已寫入 authError，保留彈窗
-                    } finally {
-                      setResetStanceSubmitting(false);
-                    }
-                  }}
-                  disabled={resetStanceSubmitting}
-                  className="flex-1 py-3 rounded-xl font-bold text-white bg-king-gold text-black hover:bg-king-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {resetStanceSubmitting
-                    ? t("resettingStance")
-                    : t("resetStance")}
-                </button>
-              </div>
-          </ModalShell>
-        )}
-      </AnimatePresence>
+      {/* ── 設定 / 刪帳 / 重設立場 Modal 群 ────────────────────── */}
+      <VoteModals
+        settings={settingsModals}
+        profile={profile}
+        authError={authError}
+        clearAuthError={clearAuthError}
+        replayProtocol={replayProtocol}
+        t={t}
+        isGuest={isGuest}
+      />
     </div>
   );
 }

@@ -1,0 +1,222 @@
+# frozen_string_literal: true
+
+# ============================================================
+# Fastfile — The GOAT Meter iOS 自動化部署
+#
+# 設計意圖：
+#   1. match（codesigning）：集中管理憑證與 Provisioning Profile，
+#      消除本機/CI 憑證漂移問題（唯讀模式確保 CI 不修改遠端）。
+#   2. build_app（gym）：封裝 xcodebuild export，本機與 CI 行為一致。
+#   3. upload_to_testflight（pilot）：App Store Connect API Key 上傳，
+#      無需儲存 Apple ID 密碼，符合 2FA 安全規範。
+#   4. build number 自動遞增：從 TestFlight 最新 build 讀取，避免手動維護。
+#
+# 環境變數（需在本機或 CI secrets 中設定）：
+#   ASC_KEY_ID         — App Store Connect API Key ID
+#   ASC_ISSUER_ID      — App Store Connect Issuer ID
+#   ASC_KEY_CONTENT    — .p8 私鑰內容（base64 encoded）
+#   APPLE_ID           — Apple Developer 帳號 Email
+#   DEVELOPER_TEAM_ID  — Apple Developer Program Team ID
+#   ITC_TEAM_ID        — App Store Connect Team ID
+#   MATCH_GIT_URL      — 憑證 Git repo URL
+#   MATCH_PASSWORD     — match 加密 passphrase
+#   SLACK_URL          — (選用) Slack Incoming Webhook URL
+#
+# 快速開始：
+#   cd ios && bundle install
+#   bundle exec fastlane beta changelog:"v1.0.0 初版上線"
+# ============================================================
+
+default_platform(:ios)
+
+APP_IDENTIFIER = "com.thegoatmeter.warzone"
+APP_NAME       = "The GOAT Meter"
+XCODE_SCHEME   = "App"            # Capacitor 預設 scheme（npx cap add ios 後確認）
+XCODE_PROJECT  = "App.xcodeproj"  # Capacitor 產生的 Xcode project 名稱
+BUILD_OUTPUT   = "./build"
+
+platform :ios do
+  # ----------------------------------------------------------
+  # 前置作業：CI 環境初始化（本機略過）
+  # ----------------------------------------------------------
+  before_all do |lane|
+    ensure_bundle_exec
+    setup_ci if ENV["CI"]   # 設定 Keychain 供 CI runner 使用
+  end
+
+  # ----------------------------------------------------------
+  # lane: certs
+  # 只同步 code signing 憑證（唯讀，不影響遠端）
+  # 用途：開發者加入時在本機快速同步憑證
+  # ----------------------------------------------------------
+  lane :certs do
+    api_key = load_asc_api_key
+    match(
+      type:           "appstore",
+      app_identifier: APP_IDENTIFIER,
+      readonly:       true,
+      api_key:        api_key
+    )
+    UI.success "✅ Code signing 憑證已同步完畢"
+  end
+
+  # ----------------------------------------------------------
+  # lane: beta
+  # 一鍵打包 + 上傳至 TestFlight
+  #
+  # 用法：
+  #   bundle exec fastlane beta
+  #   bundle exec fastlane beta changelog:"修復投票閃退問題"
+  # ----------------------------------------------------------
+  lane :beta do |options|
+    api_key = load_asc_api_key
+
+    # 1. 同步 code signing（唯讀）
+    match(
+      type:           "appstore",
+      app_identifier: APP_IDENTIFIER,
+      readonly:       true,
+      api_key:        api_key
+    )
+
+    # 2. Build number 自動遞增（TestFlight 最新 build + 1）
+    latest_build = latest_testflight_build_number(
+      app_identifier: APP_IDENTIFIER,
+      api_key:        api_key
+    ) rescue 0
+    new_build = latest_build + 1
+    increment_build_number(
+      build_number: new_build,
+      xcodeproj:    XCODE_PROJECT
+    )
+    UI.message "📦 Build number → #{new_build}"
+
+    # 3. 打包 IPA（Release，App Store export）
+    build_app(
+      scheme:            XCODE_SCHEME,
+      project:           XCODE_PROJECT,
+      configuration:     "Release",
+      export_method:     "app-store",
+      export_options: {
+        provisioningProfiles: {
+          APP_IDENTIFIER => "match AppStore #{APP_IDENTIFIER}"
+        }
+      },
+      output_directory:  BUILD_OUTPUT,
+      output_name:       "GoatMeter.ipa",
+      clean:             true,
+      silent:            false,
+      include_symbols:   true,
+      include_bitcode:   false  # Bitcode 自 Xcode 14 起已棄用
+    )
+
+    # 4. 上傳 TestFlight（等待處理完成，確認 build 可用）
+    upload_to_testflight(
+      api_key:                           api_key,
+      app_identifier:                    APP_IDENTIFIER,
+      skip_waiting_for_build_processing: false,
+      distribute_external:               false,
+      changelog:                         options[:changelog] || auto_changelog
+    )
+
+    # 5. 通知（可選）
+    notify_success(
+      message:  "✅ #{APP_NAME} Build #{new_build} 已上傳至 TestFlight",
+      channel:  "#ios-releases"
+    )
+  end
+
+  # ----------------------------------------------------------
+  # lane: release
+  # 將 TestFlight build 提交 App Store 審核
+  # 注意：需先執行 beta lane 且 build 已通過 Apple 處理
+  # ----------------------------------------------------------
+  lane :release do |options|
+    api_key = load_asc_api_key
+
+    upload_to_app_store(
+      api_key:              api_key,
+      app_identifier:       APP_IDENTIFIER,
+      skip_binary_upload:   true,   # 使用 TestFlight 上已有的 build
+      submit_for_review:    true,
+      automatic_release:    false,  # 手動控制正式上線時機
+      force:                false,
+      precheck_include_in_app_purchases: false,
+      metadata_path:        "./fastlane/metadata",
+      screenshots_path:     "./fastlane/screenshots"
+    )
+
+    notify_success(
+      message: "🚀 #{APP_NAME} 已提交 App Store 審核",
+      channel: "#ios-releases"
+    )
+  end
+
+  # ----------------------------------------------------------
+  # lane: privacy_check
+  # 驗證 Privacy Manifest（PrivacyInfo.xcprivacy）是否符合 2026 Apple 要求
+  # Apple 2024 年起強制要求，2026 審核規則更嚴格
+  # ----------------------------------------------------------
+  lane :privacy_check do
+    privacy_manifest = Dir.glob("../App/PrivacyInfo.xcprivacy").first
+
+    unless privacy_manifest
+      UI.user_error! <<~MSG
+        ❌ 找不到 PrivacyInfo.xcprivacy！
+        請將 ios/fastlane/PrivacyInfo.xcprivacy.template 複製到 App/ 目錄，
+        並依 API 使用情況填寫 NSPrivacyAccessedAPITypes。
+        參考：https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+      MSG
+    end
+
+    UI.success "✅ Privacy Manifest 存在：#{privacy_manifest}"
+    UI.message "⚠️  請確認以下必填項目已正確設定："
+    UI.message "  • NSPrivacyCollectedDataTypes（Firebase Analytics / AdMob 資料類型）"
+    UI.message "  • NSPrivacyAccessedAPITypes（UserDefaults、FileTimestamp 等 Required Reason APIs）"
+    UI.message "  • NSPrivacyTrackingDomains（如有使用廣告追蹤網域）"
+  end
+
+  # ==================================================================
+  # 私有輔助方法
+  # ==================================================================
+  private_lane :load_asc_api_key do
+    app_store_connect_api_key(
+      key_id:      ENV.fetch("ASC_KEY_ID"),
+      issuer_id:   ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_CONTENT"),  # base64 encoded .p8
+      in_house:    false
+    )
+  end
+
+  private_lane :auto_changelog do
+    sh("git log --oneline -10 --pretty=format:'• %s'").strip
+  rescue StandardError
+    "Build #{Time.now.strftime('%Y-%m-%d %H:%M')}"
+  end
+
+  private_lane :notify_success do |options|
+    next unless ENV["SLACK_URL"]
+    slack(
+      message:   options[:message],
+      channel:   options[:channel] || "#general",
+      slack_url: ENV["SLACK_URL"],
+      success:   true,
+      payload: {
+        "Build"   => get_build_number,
+        "Version" => get_version_number,
+        "Branch"  => sh("git rev-parse --abbrev-ref HEAD").strip
+      }
+    )
+  end
+
+  error do |lane, exception, _options|
+    UI.error "❌ Lane '#{lane}' 失敗：#{exception.message}"
+    next unless ENV["SLACK_URL"]
+    slack(
+      message:   "❌ [#{APP_NAME}] Lane '#{lane}' 失敗：#{exception.message}",
+      channel:   "#ios-releases",
+      slack_url: ENV["SLACK_URL"],
+      success:   false
+    )
+  end
+end

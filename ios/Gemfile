@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# Fastlane core — 固定 minor version 以避免 CI 環境與本機行為不一致
+gem "fastlane", "~> 2.225"
+
+# xcpretty：讓 xcodebuild 輸出可讀，CI log 更容易 debug
+gem "xcpretty", "~> 0.3"
+
+plugins_path = File.join(File.dirname(__FILE__), "fastlane", "Pluginfile")
+eval_gemfile(plugins_path) if File.exist?(plugins_path)

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PrivacyInfo.xcprivacy — The GOAT Meter Privacy Manifest
+  Apple 2024 年起強制要求，2026 年審核標準更嚴格。
+
+  部署步驟：
+    1. 執行 npx cap add ios 產生 Xcode project
+    2. 將此檔案複製至 ios/App/App/PrivacyInfo.xcprivacy
+    3. 在 Xcode 中將其加入 App target（Build Phases > Copy Bundle Resources）
+    4. 依實際 API 使用情況補齊 NSPrivacyAccessedAPITypes
+
+  參考文件：
+    https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+    https://developer.apple.com/support/third-party-SDK-requirements/
+-->
+<plist version="1.0">
+<dict>
+
+  <!-- ============================================================
+       NSPrivacyTracking
+       是否使用 ATT（App Tracking Transparency）框架追蹤用戶。
+       如整合 AdMob，此值應為 true 並在 App 啟動時請求 ATT 授權。
+       ============================================================ -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+
+  <!-- ============================================================
+       NSPrivacyTrackingDomains
+       廣告/分析追蹤所使用的網域（NSPrivacyTracking = true 時必填）。
+       Firebase Analytics / Google AdMob 常見網域：
+  ============================================================ -->
+  <!-- <key>NSPrivacyTrackingDomains</key>
+  <array>
+    <string>googleadservices.com</string>
+    <string>googlesyndication.com</string>
+    <string>doubleclick.net</string>
+    <string>firebase.googleapis.com</string>
+  </array> -->
+
+  <!-- ============================================================
+       NSPrivacyCollectedDataTypes
+       應用程式（含第三方 SDK）收集的資料類型。
+       Firebase Analytics + AdMob 通常需要申報以下類型：
+       ============================================================ -->
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array>
+
+    <!-- Firebase Analytics：裝置 ID / 互動資料 -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeDeviceID</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+      </array>
+    </dict>
+
+    <!-- Firebase Analytics：使用資料（功能點擊、頁面瀏覽） -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+      </array>
+    </dict>
+
+    <!-- 用戶帳號（Firebase Auth：email/name/photo） -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeEmailAddress</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
+  </array>
+
+  <!-- ============================================================
+       NSPrivacyAccessedAPITypes
+       Required Reason APIs — 使用這些 API 必須申報原因。
+       常見 SDK（Firebase / AdMob / Capacitor）使用的 API 類型：
+       ============================================================ -->
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+
+    <!-- NSUserDefaults：Capacitor / Firebase 用於儲存設定與 token -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <!-- CA92.1：在 App 功能範圍內儲存/讀取使用者偏好 -->
+        <string>CA92.1</string>
+      </array>
+    </dict>
+
+    <!-- 檔案時間戳記：Firebase Storage / Capacitor 存取快取檔案 -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <!-- C617.1：App 本身功能需要存取檔案時間戳記 -->
+        <string>C617.1</string>
+      </array>
+    </dict>
+
+    <!-- 系統啟動時間：Firebase Performance / Crashlytics 計算時間差 -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <!-- 35F9.1：計算 App 在裝置上執行的時間 -->
+        <string>35F9.1</string>
+      </array>
+    </dict>
+
+    <!-- 磁碟空間：Firebase 快取管理 -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <!-- E174.1：顯示可用磁碟空間給使用者或決定是否快取 -->
+        <string>E174.1</string>
+      </array>
+    </dict>
+
+  </array>
+
+</dict>
+</plist>

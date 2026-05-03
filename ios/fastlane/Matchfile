@@ -1,0 +1,20 @@
+# Matchfile — Code Signing 憑證集中管理
+#
+# 設計意圖（Spotify Cerberus 同理）：
+#   match 將憑證與 Provisioning Profile 加密儲存於私有 Git repo 中，
+#   消除「本機有 cert、CI 沒有」的漂移問題，所有機器（本機/CI）從同一來源同步。
+#
+# 首次使用：
+#   1. 建立私有 Git repo（例如 github.com/your-org/ios-certs）
+#   2. 設定 MATCH_GIT_URL 環境變數
+#   3. 執行 bundle exec fastlane match appstore --verbose
+#   4. 輸入 passphrase 後加密儲存（設定 MATCH_PASSWORD 環境變數）
+
+git_url(ENV["MATCH_GIT_URL"] || "")
+storage_mode("git")
+type("appstore")
+app_identifier(["com.thegoatmeter.warzone"])
+username(ENV["APPLE_ID"] || "")
+
+# CI 模式：只讀取現有憑證，不修改遠端
+readonly(ENV["CI"] ? true : false)

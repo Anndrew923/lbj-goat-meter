@@ -15,7 +15,10 @@
     "android:release-apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 assembleRelease",
     "android:aab": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1 bundleRelease",
     "battlecard:fixture": "node scripts/generate-battlecard-fixture.mjs",
-    "battlecard:pixel-diff": "node scripts/battlecard-pixel-diff.mjs"
+    "battlecard:pixel-diff": "node scripts/battlecard-pixel-diff.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.0.0",
@@ -51,6 +54,7 @@
     "@eslint/js": "^9.15.0",
     "@google-cloud/storage": "^7.14.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.5",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.15.0",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -60,6 +64,7 @@
     "postcss": "^8.4.49",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.15",
-    "vite": "^6.0.1"
+    "vite": "^6.0.1",
+    "vitest": "^4.1.5"
   }
 }

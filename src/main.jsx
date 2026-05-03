@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom'
 import './i18n/config'
 import { AuthProvider } from './context/AuthContext.jsx'
+import { ProfileProvider } from './context/ProfileContext.jsx'
+import { EntitlementProvider } from './context/EntitlementContext.jsx'
 import App from './App.jsx'
 import RenderStudioPage from './pages/RenderStudioPage.jsx'
 import './index.css'
@@ -38,7 +40,11 @@ createRoot(document.getElementById('container')).render(
     ) : (
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <ProfileProvider>
+            <EntitlementProvider>
+              <App />
+            </EntitlementProvider>
+          </ProfileProvider>
         </AuthProvider>
       </BrowserRouter>
     )}

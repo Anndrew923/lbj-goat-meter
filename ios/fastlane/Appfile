@@ -1,0 +1,17 @@
+# Appfile — App Store Connect 身分設定
+#
+# 設計意圖：
+#   所有敏感值（Apple ID、Team ID）全部從環境變數讀取，
+#   確保此檔案可安全提交至版控，不含任何機密資訊。
+#   本機開發者在 .env.local 或 shell profile 設定對應變數即可。
+
+app_identifier("com.thegoatmeter.warzone")
+
+# Apple Developer 帳號（用於 match cert 管理與 altool 上傳）
+apple_id(ENV["APPLE_ID"] || "")
+
+# App Store Connect Team ID（多 team 帳號時必填）
+itc_team_id(ENV["ITC_TEAM_ID"] || "")
+
+# Apple Developer Program Team ID（code signing 用）
+team_id(ENV["DEVELOPER_TEAM_ID"] || "")
