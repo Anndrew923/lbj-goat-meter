@@ -7,7 +7,7 @@
  * - 暗黑競技風：金/紫邊框、16:9 圖區。圖片 URL 與雙語內容存於同一 Document。
  * - 已投狀態由 BreakingVoteContext 提供，路由切換（首頁 ↔ 戰區）不丟失。
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Zap } from 'lucide-react'
