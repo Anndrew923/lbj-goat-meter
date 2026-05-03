@@ -24,6 +24,7 @@ import { triggerHaptic } from '../utils/hapticUtils'
 import CommitmentModal from './CommitmentModal'
 import BreakingOptionResultBars from './BreakingOptionResultBars'
 import LoginPromptModal from './LoginPromptModal'
+import AdPreloadOverlay from './AdPreloadOverlay'
 
 const ASPECT_RATIO = 16 / 9
 
@@ -38,6 +39,8 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  /** 廣告準備中：顯示情境提示 overlay，避免用戶在 SDK 接管前看到空白 */
+  const [adPreparing, setAdPreparing] = useState(false)
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (isGuest || !currentUser) {
@@ -72,7 +75,12 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         let adRewardToken = null
         // 設計意圖：僅在「非首票」時要求觀看廣告，首票視為系統贈送。
         if (!isFirstVoteOfDay) {
-          adRewardToken = await requestBreakingVoteAdRewardToken()
+          setAdPreparing(true)
+          try {
+            adRewardToken = await requestBreakingVoteAdRewardToken()
+          } finally {
+            setAdPreparing(false)
+          }
         }
         await submitBreakingVote(
           ev.id,
@@ -254,6 +262,8 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
           />
         )}
       </AnimatePresence>
+      {/* 廣告準備中的情境提示：SDK 接管前讓用戶看到「戰術說明」而非空白 */}
+      <AdPreloadOverlay open={adPreparing} adContext="extra_vote" />
     </div>
   )
 }

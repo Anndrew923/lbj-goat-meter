@@ -7,10 +7,8 @@
  * - 登入頁不渲染：路徑為 /login 時不顯示，避免遮罩登入流程。
  */
 import { useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
-import ModalShell from './ModalShell'
 import { useLocation } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
+import AdPreloadOverlay from './AdPreloadOverlay'
 import { triggerHapticPattern } from '../utils/hapticUtils'
 import {
   useAdMobConfig,
@@ -123,35 +121,13 @@ export default function AdMobPortal({ open = false, onClose, onWatched, adContex
     }
   }, [open, adMobConfig.adId, adMobConfig.isTesting])
 
-  if (!open) return null
   if (location.pathname === '/login') return null
 
-  const portal = (
-    <ModalShell
-      rootClassName="fixed inset-0 z-[200] overflow-y-auto flex flex-col items-center justify-center"
-      backdropClassName="bg-black/90"
-      animatePanel={false}
-      panelClassName="text-center px-6 max-w-sm"
-      rootMotionProps={{
-        role: 'dialog',
-        'aria-modal': true,
-        'aria-label': t('adPortalAria'),
-        transition: { duration: 0.2 },
-      }}
-    >
-      <p className="text-white/95 text-lg font-medium leading-snug">
-        {adContext
-          ? t(`common:ad_prompt_${adContext}`)
-          : t('adPortalLoadingTitle')}
-      </p>
-      <p className="mt-2 text-white/60 text-sm">
-        {adContext
-          ? t('common:ad_support_msg')
-          : t('adPortalLoadingSubtitle')}
-      </p>
-    </ModalShell>
+  // AdPreloadOverlay 內部使用 AnimatePresence + createPortal，傳入 open 控制顯示
+  return (
+    <AdPreloadOverlay
+      open={open}
+      adContext={adContext}
+    />
   )
-
-  if (typeof document === 'undefined') return portal
-  return createPortal(portal, document.body)
 }

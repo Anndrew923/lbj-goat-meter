@@ -46,6 +46,8 @@ export function EntitlementProvider({ children }) {
   const { currentUser } = useAuthContext();
   const { profile } = useProfile();
   const [entitlementError, setEntitlementError] = useState(null);
+  /** 廣告準備中旗標：供 VotePage 顯示 AdPreloadOverlay，在 SDK 接管前給用戶情境說明 */
+  const [revoteAdLoading, setRevoteAdLoading] = useState(false);
 
   /** isPremium 直接從 profile 快照讀取，與 ProfileContext.onSnapshot 保持實時同步 */
   const isPremium = profile?.isPremium === true;
@@ -80,7 +82,13 @@ export function EntitlementProvider({ children }) {
       try {
         await ensureFreshAuthTokenForCallable();
 
-        const adRewardToken = await requestResetAdRewardToken();
+        setRevoteAdLoading(true);
+        let adRewardToken;
+        try {
+          adRewardToken = await requestResetAdRewardToken();
+        } finally {
+          setRevoteAdLoading(false);
+        }
         const recaptchaToken = await getRecaptchaToken("reset_position");
 
         let resetResult;
@@ -142,12 +150,13 @@ export function EntitlementProvider({ children }) {
   const value = useMemo(
     () => ({
       isPremium,
+      revoteAdLoading,
       entitlementError,
       clearEntitlementError,
       refreshEntitlements,
       revote,
     }),
-    [isPremium, entitlementError, clearEntitlementError, refreshEntitlements, revote],
+    [isPremium, revoteAdLoading, entitlementError, clearEntitlementError, refreshEntitlements, revote],
   );
 
   return (

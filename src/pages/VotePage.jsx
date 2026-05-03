@@ -33,6 +33,7 @@ import { triggerHaptic } from "../utils/hapticUtils";
 import ProtocolOverlay from "../components/ProtocolOverlay";
 import useProtocolInitialization from "../hooks/useProtocolInitialization";
 import VoteModals from "../components/VoteModals";
+import AdPreloadOverlay from "../components/AdPreloadOverlay";
 import { AnimatePresence, motion } from "framer-motion";
 import { useProfileSetupGate } from "../hooks/votePage/useProfileSetupGate";
 import { useSettingsModals } from "../hooks/votePage/useSettingsModals";
@@ -59,6 +60,7 @@ export default function VotePage() {
     authError,
     clearAuthError,
     revote,
+    revoteAdLoading,
   } = useAuth();
 
   useBattleCardCallablePrewarm(currentUser);
@@ -331,6 +333,9 @@ export default function VotePage() {
           />
         )}
       </AnimatePresence>
+
+      {/* ── 重置立場廣告準備中提示 ─────────────────────────────── */}
+      <AdPreloadOverlay open={revoteAdLoading} adContext="extra_vote" />
 
       {/* ── 設定 / 刪帳 / 重設立場 Modal 群 ────────────────────── */}
       <VoteModals
