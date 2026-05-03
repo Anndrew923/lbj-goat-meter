@@ -85,24 +85,22 @@ export function EntitlementProvider({ children }) {
 
         let resetResult;
         try {
-          resetResult = await callResetPosition({ adRewardToken, recaptchaToken });
+          resetResult = await callResetPosition({ adRewardToken, recaptchaToken, resetProfile });
         } catch (firstErr) {
           const firstBackendCode = getCallableDetailsCode(firstErr);
           if (firstBackendCode !== "auth-required") throw firstErr;
           // token 於廣告流程中失效，強制刷新後重試
           await ensureFreshAuthTokenForCallable();
-          resetResult = await callResetPosition({ adRewardToken, recaptchaToken });
+          resetResult = await callResetPosition({ adRewardToken, recaptchaToken, resetProfile });
         }
 
         const { deletedVoteId } = resetResult;
         if (import.meta.env.DEV) {
           console.log(
-            "[EntitlementContext] resetPosition 完成 — deletedVoteId:",
-            deletedVoteId,
+            "[EntitlementContext] resetPosition 完成 — deletedVoteId:", deletedVoteId,
+            "| resetProfile:", resetProfile,
           );
         }
-        // resetProfile 保留為 UI 選項，後端擴充時在此追加 profiles 重設流程
-        void resetProfile;
       } catch (err) {
         const backendCode = getCallableDetailsCode(err);
         let msg;

@@ -48,7 +48,9 @@ export const resetPosition = onCall(
 );
 
 async function runResetPosition(data, context) {
-  const { adRewardToken, xGoatTimestamp, xGoatSignature } = data || {};
+  const { adRewardToken, xGoatTimestamp, xGoatSignature, resetProfile } = data || {};
+  // resetProfile = true：勾選「一併重設 profile」，在重置投票的同一 Transaction 中清除 voterTeam 等欄位，
+  // 確保前端 hasSelectedWarzone 變為 false，VotingArena 回到 no_warzone 模式而非直接開放投票。
   const uid = context.auth.uid;
 
   verifyGoldenKey(
@@ -116,13 +118,25 @@ async function runResetPosition(data, context) {
       }
     }
 
-    tx.update(profileRef, {
+    const profileClear = {
       hasVoted: false,
       currentStance: FieldValue.delete(),
       currentReasons: FieldValue.delete(),
       currentVoteId: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    // resetProfile = true：清除 voterTeam 等欄位，前端 hasSelectedWarzone 將變為 false，
+    // VotingArena 進入 no_warzone 模式，強制用戶重新完成戰區登錄後才能投票。
+    if (resetProfile === true) {
+      profileClear.hasProfile = false;
+      profileClear.voterTeam = FieldValue.delete();
+      profileClear.ageGroup = FieldValue.delete();
+      profileClear.gender = FieldValue.delete();
+      profileClear.city = FieldValue.delete();
+      profileClear.coordinatesLocked = FieldValue.delete();
+      profileClear.coordinates = FieldValue.delete();
+    }
+    tx.update(profileRef, profileClear);
 
     if (voteDocId && voteData) {
       const voteDeviceId = typeof voteData.deviceId === "string" ? voteData.deviceId.trim() : "";

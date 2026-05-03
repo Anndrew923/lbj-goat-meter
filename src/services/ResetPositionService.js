@@ -28,12 +28,14 @@ function getFunctionsInstance() {
 /**
  * 呼叫後端 resetPosition onCall。
  *
- * @param {{ adRewardToken: string, recaptchaToken: string | null }} params
+ * @param {{ adRewardToken: string, recaptchaToken: string | null, resetProfile?: boolean }} params
+ * @param resetProfile 若為 true，後端同時清除 voterTeam / hasProfile 等欄位，
+ *   前端 hasSelectedWarzone 變 false，VotingArena 強制回到 no_warzone 模式。
  * @returns {Promise<{ deletedVoteId: string | null }>}
  */
 export async function callResetPosition(params) {
-  const { adRewardToken, recaptchaToken } = params || {};
-  const payload = { adRewardToken, recaptchaToken };
+  const { adRewardToken, recaptchaToken, resetProfile = false } = params || {};
+  const payload = { adRewardToken, recaptchaToken, resetProfile };
 
   const { xGoatTimestamp, xGoatSignature } = await createGoldenKeySignature(
     GOLDEN_KEY_ACTIONS.RESET_POSITION,
