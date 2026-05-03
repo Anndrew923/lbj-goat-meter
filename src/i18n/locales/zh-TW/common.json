@@ -478,5 +478,9 @@
   "protocolNext": "下一個協議",
   "protocolComplete": "初始化完成",
   "protocolStepCounter": "{{current}} / {{total}}",
-  "protocolReplay": "重新播放初始化協議"
+  "protocolReplay": "重新播放初始化協議",
+  "ad_support_msg": "觀看短片支持我們 · 繼續免費使用",
+  "ad_prompt_battle_card": "正在生成您的戰報卡⋯觀看短片即可下載",
+  "ad_prompt_extra_vote": "準備重置您的立場⋯觀看短片即可解鎖",
+  "ad_prompt_intel": "掃描全球脈動中⋯觀看短片即可開啟完整情報"
 }
