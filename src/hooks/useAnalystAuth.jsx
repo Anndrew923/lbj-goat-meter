@@ -157,6 +157,7 @@ export function useAnalystAuth() {
       open={showAdPortal}
       onWatched={onAdWatched}
       onClose={onAdClose}
+      adContext="intel"
     />
   )
 

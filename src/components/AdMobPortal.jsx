@@ -25,7 +25,14 @@ import { Capacitor } from '@capacitor/core'
 const HAPTIC_LOADING = [30, 50, 30]
 const HAPTIC_DISMISSED = [20, 40, 20]
 
-export default function AdMobPortal({ open = false, onClose, onWatched }) {
+/**
+ * adContext 對應表：
+ *   'battle_card' → ad_prompt_battle_card（Battle Card 匯出）
+ *   'intel'       → ad_prompt_intel（情報中樞解鎖）
+ *   'extra_vote'  → ad_prompt_extra_vote（重置立場）
+ *   undefined     → 維持舊版 adPortalLoadingTitle（通用後備）
+ */
+export default function AdMobPortal({ open = false, onClose, onWatched, adContext }) {
   const location = useLocation()
   const { t } = useTranslation('common')
   const adMobConfig = useAdMobConfig()
@@ -132,8 +139,16 @@ export default function AdMobPortal({ open = false, onClose, onWatched }) {
         transition: { duration: 0.2 },
       }}
     >
-      <p className="text-white/95 text-lg font-medium">{t('adPortalLoadingTitle')}</p>
-      <p className="mt-2 text-white/60 text-sm">{t('adPortalLoadingSubtitle')}</p>
+      <p className="text-white/95 text-lg font-medium leading-snug">
+        {adContext
+          ? t(`common:ad_prompt_${adContext}`)
+          : t('adPortalLoadingTitle')}
+      </p>
+      <p className="mt-2 text-white/60 text-sm">
+        {adContext
+          ? t('common:ad_support_msg')
+          : t('adPortalLoadingSubtitle')}
+      </p>
     </ModalShell>
   )
 
