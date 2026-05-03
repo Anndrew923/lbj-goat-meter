@@ -15,7 +15,7 @@
   "error_warzoneRequired": "Warzone (team) is required. Complete profile setup first.",
   "alreadyVoted": "You have already voted",
   "thanksVoted": "Stance locked. You're now part of the global record.",
-  "viewMyBattleCard": "View my Battle Card",
+  "viewMyBattleCard": "Generate Battle Card (Quick Clip)",
   "chooseReasons": "Choose reasons (multiple)",
   "chooseReasonsMax": "Max {{max}}",
   "submitVote": "Cast your vote",
@@ -178,7 +178,7 @@
   "tickerPause": "Click to pause ticker",
   "tickerResume": "Click to resume",
   "breakingTitle": "Breaking",
-  "breakingEnter": "Drop In",
+  "breakingEnter": "Drop In (Quick Clip)",
   "breakingLoading": "Loading…",
   "breakingVoteSuccess": "You're on the record.",
   "breakingVoteError": "We couldn't record that vote just now. Please try again in a moment.",
@@ -489,5 +489,9 @@
   "protocolNext": "Next Protocol",
   "protocolComplete": "Initialization Complete",
   "protocolStepCounter": "{{current}} / {{total}}",
-  "protocolReplay": "Replay Initialization Protocol"
+  "protocolReplay": "Replay Initialization Protocol",
+  "ad_prompt_battle_card": "Securing your legacy... Watch a quick clip to finalize your Battle Card.",
+  "ad_prompt_extra_vote": "Recharging your stats... Stay in the zone with a quick clip for your next strike.",
+  "ad_prompt_intel": "Scanning the global pulse... Unlock full tactical intel with a quick clip.",
+  "ad_support_msg": "One quick clip to support this independent proving ground."
 }
