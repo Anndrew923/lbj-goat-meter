@@ -32,7 +32,6 @@ const HAPTIC_DISMISSED = [20, 40, 20]
  */
 export default function AdMobPortal({ open = false, onClose, onWatched, adContext }) {
   const location = useLocation()
-  const { t } = useTranslation('common')
   const adMobConfig = useAdMobConfig()
   const onWatchedRef = useRef(onWatched)
   const onCloseRef = useRef(onClose)
