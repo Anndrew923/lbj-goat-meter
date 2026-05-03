@@ -68,14 +68,19 @@ export default function CommitmentModal({
               >
                 {t('breakingCommitmentMessage')}
               </p>
-              {needsAd && (
-                <div className="mb-4 rounded-lg border border-amber-400/60 bg-amber-500/10 px-3 py-2">
-                  <p className="text-xs font-semibold text-amber-300 mb-0.5 flex items-center gap-1">
-                    <span aria-hidden="true">⚡</span>
+              {/* 第一票免費提示 / 後續票廣告提示 — 永遠顯示，讓用戶清楚預期 */}
+              {!needsAd ? (
+                <div className="mb-4 rounded-lg border border-king-gold/40 bg-king-gold/10 px-3 py-2">
+                  <p className="text-xs font-semibold text-king-gold flex items-center gap-1">
+                    <span aria-hidden="true">🛡️</span>
                     <span>{t('breakingFirstVoteFreeHint')}</span>
                   </p>
-                  <p className="text-xs text-amber-100/90">
-                    {t('breakingAdNotice')}
+                </div>
+              ) : (
+                <div className="mb-4 rounded-lg border border-amber-400/60 bg-amber-500/10 px-3 py-2">
+                  <p className="text-xs text-amber-200 flex items-center gap-1">
+                    <span aria-hidden="true">⚡</span>
+                    <span>{t('breakingAdNotice')}</span>
                   </p>
                 </div>
               )}

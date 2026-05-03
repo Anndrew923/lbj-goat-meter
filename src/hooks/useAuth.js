@@ -51,7 +51,6 @@ export function useAuth() {
       // 權限方法（EntitlementContext）
       refreshEntitlements: entitlementCtx.refreshEntitlements,
       revote: entitlementCtx.revote,
-      revoteAdLoading: entitlementCtx.revoteAdLoading,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [authCtx, profileCtx, entitlementCtx, clearAuthError],

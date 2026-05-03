@@ -570,7 +570,6 @@ export default function VotingArena({
         open={showAdPortal}
         onWatched={handleInterstitialWatched}
         onClose={() => setShowAdPortal(false)}
-        adContext="battle_card"
       />
     </>
   );

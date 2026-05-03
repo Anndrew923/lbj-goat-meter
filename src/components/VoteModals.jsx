@@ -258,6 +258,9 @@ export default function VoteModals({
                 {resetStanceSubmitting ? t("resettingStance") : t("resetStance")}
               </button>
             </div>
+            <p className="mt-3 text-center text-xs text-white/35">
+              ⚡ {t("ad_support_msg")}
+            </p>
           </ModalShell>
         )}
       </AnimatePresence>

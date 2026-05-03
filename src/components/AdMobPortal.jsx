@@ -7,8 +7,10 @@
  * - 登入頁不渲染：路徑為 /login 時不顯示，避免遮罩登入流程。
  */
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
-import AdPreloadOverlay from './AdPreloadOverlay'
+import { useTranslation } from 'react-i18next'
+import ModalShell from './ModalShell'
 import { triggerHapticPattern } from '../utils/hapticUtils'
 import {
   useAdMobConfig,
@@ -30,8 +32,9 @@ const HAPTIC_DISMISSED = [20, 40, 20]
  *   'extra_vote'  → ad_prompt_extra_vote（重置立場）
  *   undefined     → 維持舊版 adPortalLoadingTitle（通用後備）
  */
-export default function AdMobPortal({ open = false, onClose, onWatched, adContext }) {
+export default function AdMobPortal({ open = false, onClose, onWatched }) {
   const location = useLocation()
+  const { t } = useTranslation('common')
   const adMobConfig = useAdMobConfig()
   const onWatchedRef = useRef(onWatched)
   const onCloseRef = useRef(onClose)
@@ -120,13 +123,27 @@ export default function AdMobPortal({ open = false, onClose, onWatched, adContex
     }
   }, [open, adMobConfig.adId, adMobConfig.isTesting])
 
+  if (!open) return null
   if (location.pathname === '/login') return null
 
-  // AdPreloadOverlay 內部使用 AnimatePresence + createPortal，傳入 open 控制顯示
-  return (
-    <AdPreloadOverlay
-      open={open}
-      adContext={adContext}
-    />
+  const portal = (
+    <ModalShell
+      rootClassName="fixed inset-0 z-[200] overflow-y-auto flex flex-col items-center justify-center"
+      backdropClassName="bg-black/90"
+      animatePanel={false}
+      panelClassName="text-center px-6 max-w-sm"
+      rootMotionProps={{
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-label': t('adPortalAria'),
+        transition: { duration: 0.2 },
+      }}
+    >
+      <p className="text-white/95 text-lg font-medium">{t('adPortalLoadingTitle')}</p>
+      <p className="mt-2 text-white/60 text-sm">{t('adPortalLoadingSubtitle')}</p>
+    </ModalShell>
   )
+
+  if (typeof document === 'undefined') return portal
+  return createPortal(portal, document.body)
 }

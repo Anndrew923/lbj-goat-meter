@@ -1011,14 +1011,17 @@ const BattleCard = forwardRef(function BattleCard({
               </button>
             ) : null}
             {!isExporting && !isExportReady ? (
-              <button
-                type="button"
-                onClick={() => handleDownload()}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-king-gold text-black font-bold"
-              >
-                <Download className="w-5 h-5 shrink-0" aria-hidden />
-                {t("downloadReport")}
-              </button>
+              <div className="w-full flex flex-col items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleDownload()}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-king-gold text-black font-bold"
+                >
+                  <Download className="w-5 h-5 shrink-0" aria-hidden />
+                  {t("downloadReport")}
+                </button>
+                <p className="text-xs text-white/40">⚡ {t("ad_support_msg")}</p>
+              </div>
             ) : null}
 
             <div className={`flex gap-3 w-full ${onRevote ? "" : "flex-col"}`}>
