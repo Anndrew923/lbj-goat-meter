@@ -42,6 +42,8 @@ export default function BreakingHistoryPage() {
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
   /** 重入鎖：防止快速雙擊 Confirm 觸發兩次廣告 */
   const confirmInFlightRef = useRef(false)
+  /** 廣告 token 緩存：失敗重試時不強迫再看廣告，成功或關閉才清除 */
+  const adTokenRef = useRef(null)
 
   // 不在戰區頁清除 lastVoted：首筆 snapshot 可能來自不同 query 的快取，若在此清除，
   // 返回首頁時首頁訂閱若仍拿到 total_votes:0 的快取就無法補正，導致票數被清空。僅由首頁 Banner 在確認 total_votes > 0 時清除。
@@ -64,7 +66,10 @@ export default function BreakingHistoryPage() {
   }, [isGuest, currentUser, t, votedEventIds, submitting])
 
   const closeCommitmentModal = useCallback(() => {
-    if (!submitting) setPending(null)
+    if (!submitting) {
+      adTokenRef.current = null
+      setPending(null)
+    }
   }, [submitting])
 
   const handleCommitmentConfirm = useCallback(
@@ -77,17 +82,22 @@ export default function BreakingHistoryPage() {
       try {
         let adRewardToken = null
         if (!isFirstVoteOfDay) {
-          adRewardToken = await requestBreakingVoteAdRewardToken()
+          if (!adTokenRef.current) {
+            adTokenRef.current = await requestBreakingVoteAdRewardToken()
+          }
+          adRewardToken = adTokenRef.current
         }
         const deviceId = getDeviceId()
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
         await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage, adRewardToken)
+        adTokenRef.current = null  // 投票成功 → 清除
         markEventVoted(ev.id, optionIndex)
         triggerHapticImpact()
         setToast(t('breakingVoteSuccess'))
         setPending(null)
       } catch (err) {
+        if (err?.code === 'ad-not-watched') adTokenRef.current = null
         const msg =
           err?.code === "ad-not-watched"
             ? t("voteError_adNotWatched")

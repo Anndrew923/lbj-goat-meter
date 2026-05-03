@@ -39,8 +39,14 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [pending, setPending] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
-  /** 重入鎖：防止 Confirm 按鈕快速雙擊觸發兩次廣告 */
+  /** 重入鎖：防止快速雙擊 Confirm 觸發兩次廣告 */
   const confirmInFlightRef = useRef(false)
+  /**
+   * 廣告 token 緩存：看完廣告後保留 token 供重試。
+   * 投票失敗時不丟棄（避免第二次要求再看一支廣告），
+   * 投票成功或關閉 Modal 後才清除。
+   */
+  const adTokenRef = useRef(null)
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (isGuest || !currentUser) {
@@ -60,7 +66,10 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   }, [isGuest, currentUser, t, votedEventIds, submitting])
 
   const closeCommitmentModal = useCallback(() => {
-    if (!submitting) setPending(null)
+    if (!submitting) {
+      adTokenRef.current = null  // 關閉 Modal → 清除 token，下次開新話題要重新看廣告
+      setPending(null)
+    }
   }, [submitting])
 
   const handleCommitmentConfirm = useCallback(
@@ -76,23 +85,23 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
         let adRewardToken = null
-        // 僅在非首票時請求廣告；markEventVoted 成功後才更新 isFirstVoteOfDay，
-        // 確保投票失敗時仍保留免費資格，不強迫用戶看廣告重試。
         if (!isFirstVoteOfDay) {
-          adRewardToken = await requestBreakingVoteAdRewardToken()
+          // 優先使用緩存的 token（投票失敗重試時不強迫再看廣告）
+          if (!adTokenRef.current) {
+            adTokenRef.current = await requestBreakingVoteAdRewardToken()
+          }
+          adRewardToken = adTokenRef.current
         }
         await submitBreakingVote(
-          ev.id,
-          optionIndex,
-          deviceId,
-          recaptchaToken,
-          getMessage,
-          adRewardToken
+          ev.id, optionIndex, deviceId, recaptchaToken, getMessage, adRewardToken
         )
+        adTokenRef.current = null  // 投票成功 → 清除 token
         markEventVoted(ev.id, optionIndex)
         setToast(t('breakingVoteSuccess'))
         setPending(null)
       } catch (err) {
+        // ad-not-watched 代表 token 無效，清除以便重新取得
+        if (err?.code === 'ad-not-watched') adTokenRef.current = null
         setToast(err?.message || t('breakingVoteError'))
       } finally {
         setSubmitting(null)
