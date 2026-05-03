@@ -31,7 +31,7 @@ export default function BreakingHistoryPage() {
   const { t, i18n } = useTranslation('common')
   const { currentUser, isGuest } = useAuth()
   const isLoggedIn = !!currentUser
-  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay, consumeFreeVote } = useBreakingVote()
+  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(PROJECT_APP_ID, {
     includeInactive: true,
   })
@@ -72,16 +72,11 @@ export default function BreakingHistoryPage() {
       if (!pending) return
       if (confirmInFlightRef.current) return
       confirmInFlightRef.current = true
-
-      // 與首頁 banner 相同規則：首票免費，之後每票看廣告
-      const isThisVoteFree = isFirstVoteOfDay
-      consumeFreeVote()
-
       const { ev, optionIndex } = pending
       setSubmitting(`${ev.id}-${optionIndex}`)
       try {
         let adRewardToken = null
-        if (!isThisVoteFree) {
+        if (!isFirstVoteOfDay) {
           adRewardToken = await requestBreakingVoteAdRewardToken()
         }
         const deviceId = getDeviceId()
@@ -105,7 +100,7 @@ export default function BreakingHistoryPage() {
         confirmInFlightRef.current = false
       }
     },
-    [pending, t, markEventVoted, isFirstVoteOfDay, consumeFreeVote]
+    [pending, t, markEventVoted, isFirstVoteOfDay]
   )
 
   return (

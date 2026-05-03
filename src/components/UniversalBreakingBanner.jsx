@@ -31,7 +31,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
   const { currentUser, isGuest } = useAuth()
   const isLoggedIn = !!currentUser
-  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay, consumeFreeVote } = useBreakingVote()
+  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
   const [submitting, setSubmitting] = useState(null)
@@ -69,13 +69,6 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
       // 重入鎖：防止快速雙擊 Confirm 觸發兩次廣告與兩次投票請求
       if (confirmInFlightRef.current) return
       confirmInFlightRef.current = true
-
-      // 按下確認時立即消耗免費票資格（不等投票成功）
-      // isFirstVoteOfDay 在 consumeFreeVote() 後的下一次 render 變 false，
-      // 確保跨組件（banner/history 頁）都能即時反映。
-      const isThisVoteFree = isFirstVoteOfDay
-      consumeFreeVote()
-
       const { ev, optionIndex } = pending
       setSubmitting(`${ev.id}-${optionIndex}`)
       try {
@@ -83,7 +76,9 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
         let adRewardToken = null
-        if (!isThisVoteFree) {
+        // 僅在非首票時請求廣告；markEventVoted 成功後才更新 isFirstVoteOfDay，
+        // 確保投票失敗時仍保留免費資格，不強迫用戶看廣告重試。
+        if (!isFirstVoteOfDay) {
           adRewardToken = await requestBreakingVoteAdRewardToken()
         }
         await submitBreakingVote(
@@ -104,7 +99,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         confirmInFlightRef.current = false
       }
     },
-    [pending, t, markEventVoted, isFirstVoteOfDay, consumeFreeVote]
+    [pending, t, markEventVoted, isFirstVoteOfDay]
   )
 
   if (loading) {
