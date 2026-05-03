@@ -7,7 +7,7 @@
  * - 暗黑競技風：金/紫邊框、16:9 圖區。圖片 URL 與雙語內容存於同一 Document。
  * - 已投狀態由 BreakingVoteContext 提供，路由切換（首頁 ↔ 戰區）不丟失。
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Zap } from 'lucide-react'
@@ -38,17 +38,8 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
-  /**
-   * freeVoteUsed：本地追蹤首票是否已使用，避免依賴 context 狀態更新的時序差。
-   * 初始值從 isFirstVoteOfDay 同步（false = 今日已用過首票 = 需廣告）。
-   * 首票成功後立即設為 true，確保下一個 CommitmentModal 開啟時就能拿到正確值。
-   */
-  const [freeVoteUsed, setFreeVoteUsed] = useState(!isFirstVoteOfDay)
-
-  // 跨 session 同步：若 context 已標記今日首票用過，立即更新本地狀態
-  useEffect(() => {
-    if (!isFirstVoteOfDay) setFreeVoteUsed(true)
-  }, [isFirstVoteOfDay])
+  /** 重入鎖：防止 Confirm 按鈕快速雙擊觸發兩次廣告 */
+  const confirmInFlightRef = useRef(false)
 
   const openCommitmentModal = useCallback((ev, optionIndex, optionLabel) => {
     if (isGuest || !currentUser) {
@@ -74,6 +65,9 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const handleCommitmentConfirm = useCallback(
     async () => {
       if (!pending) return
+      // 重入鎖：防止快速雙擊 Confirm 觸發兩次廣告與兩次投票請求
+      if (confirmInFlightRef.current) return
+      confirmInFlightRef.current = true
       const { ev, optionIndex } = pending
       setSubmitting(`${ev.id}-${optionIndex}`)
       try {
@@ -94,16 +88,16 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
           adRewardToken
         )
         markEventVoted(ev.id, optionIndex)
-        setFreeVoteUsed(true)   // 首票已用，下次 CommitmentModal 立即拿到正確值
         setToast(t('breakingVoteSuccess'))
         setPending(null)
       } catch (err) {
         setToast(err?.message || t('breakingVoteError'))
       } finally {
         setSubmitting(null)
+        confirmInFlightRef.current = false
       }
     },
-    [pending, t, markEventVoted, isFirstVoteOfDay, setFreeVoteUsed]
+    [pending, t, markEventVoted, isFirstVoteOfDay]
   )
 
   if (loading) {
@@ -256,7 +250,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         onConfirm={handleCommitmentConfirm}
         optionLabel={pending?.optionLabel ?? ''}
         loading={Boolean(submitting)}
-        needsAd={freeVoteUsed}
+        needsAd={!isFirstVoteOfDay}
       />
       <AnimatePresence initial={false}>
         {showLoginPrompt && (
