@@ -6,7 +6,7 @@
  * - 每個歷史卡片進入投票前先呼叫 RewardedAdsService 播放獎勵廣告以增加營收，再執行 submitBreakingVote。
  * - 已投狀態由 BreakingVoteContext 提供，與首頁共用，路由切換不丟失。
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -19,7 +19,7 @@ import { getLocalizedText } from '../lib/localeUtils'
 import { getDeviceId } from '../utils/deviceId'
 import { getRecaptchaToken } from '../services/RecaptchaService'
 import { submitBreakingVote } from '../services/VoteService'
-import { requestResetAdRewardToken } from '../services/RewardedAdsService'
+import { requestBreakingVoteAdRewardToken } from '../services/RewardedAdsService'
 import { triggerHaptic, triggerHapticImpact } from '../utils/hapticUtils'
 import CommitmentModal from '../components/CommitmentModal'
 import BreakingOptionResultBars from '../components/BreakingOptionResultBars'
@@ -40,6 +40,8 @@ export default function BreakingHistoryPage() {
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  /** 重入鎖：防止快速雙擊 Confirm 觸發兩次廣告 */
+  const confirmInFlightRef = useRef(false)
 
   // 不在戰區頁清除 lastVoted：首筆 snapshot 可能來自不同 query 的快取，若在此清除，
   // 返回首頁時首頁訂閱若仍拿到 total_votes:0 的快取就無法補正，導致票數被清空。僅由首頁 Banner 在確認 total_votes > 0 時清除。
@@ -68,14 +70,17 @@ export default function BreakingHistoryPage() {
   const handleCommitmentConfirm = useCallback(
     async () => {
       if (!pending) return
+      if (confirmInFlightRef.current) return
+      confirmInFlightRef.current = true
       const { ev, optionIndex } = pending
       setSubmitting(`${ev.id}-${optionIndex}`)
       try {
-        await requestResetAdRewardToken()
+        // 歷史頁每票都需看廣告（使用突發戰區 token，非重置立場 token）
+        const adRewardToken = await requestBreakingVoteAdRewardToken()
         const deviceId = getDeviceId()
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
-        await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage)
+        await submitBreakingVote(ev.id, optionIndex, deviceId, recaptchaToken, getMessage, adRewardToken)
         markEventVoted(ev.id, optionIndex)
         triggerHapticImpact()
         setToast(t('breakingVoteSuccess'))
@@ -90,6 +95,7 @@ export default function BreakingHistoryPage() {
         setToast(msg)
       } finally {
         setSubmitting(null)
+        confirmInFlightRef.current = false
       }
     },
     [pending, t, markEventVoted]
@@ -266,6 +272,7 @@ export default function BreakingHistoryPage() {
           onConfirm={handleCommitmentConfirm}
           optionLabel={pending?.optionLabel ?? ''}
           loading={Boolean(submitting)}
+          needsAd={true}
         />
         <AnimatePresence initial={false}>
           {showLoginPrompt && (
