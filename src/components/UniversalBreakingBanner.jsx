@@ -31,23 +31,13 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
   const { t, i18n } = useTranslation('common')
   const { currentUser, isGuest } = useAuth()
   const isLoggedIn = !!currentUser
-  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay } = useBreakingVote()
+  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay, consumeFreeVote } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(appId)
   const lang = i18n.language || 'en'
   const [submitting, setSubmitting] = useState(null)
   const [toast, setToast] = useState(null)
   const [pending, setPending] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
-
-  /**
-   * 免費票追蹤（ref + state 雙軌）：
-   *   - ref：按下 Confirm 時立即同步消耗，確保廣告請求邏輯與顯示邏輯一致。
-   *   - state：觸發 re-render，下一個 CommitmentModal 立即看到正確的 needsAd。
-   *   - 初始值從 isFirstVoteOfDay：跨 session 若今日已投過，直接視為已消耗。
-   *   - 設計意圖：不依賴投票「成功」才更新，避免本地或網路失敗時提示卡在免費狀態。
-   */
-  const freeVoteConsumedRef = useRef(!isFirstVoteOfDay)
-  const [freeVoteConsumed, setFreeVoteConsumed] = useState(!isFirstVoteOfDay)
 
   /** 重入鎖：防止 Confirm 按鈕快速雙擊觸發兩次廣告 */
   const confirmInFlightRef = useRef(false)
@@ -80,10 +70,11 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
       if (confirmInFlightRef.current) return
       confirmInFlightRef.current = true
 
-      // 按下確認鍵時立即消耗免費票：不等投票成功，確保下次 CommitmentModal 顯示正確。
-      const isThisVoteFree = !freeVoteConsumedRef.current
-      freeVoteConsumedRef.current = true
-      setFreeVoteConsumed(true)
+      // 按下確認時立即消耗免費票資格（不等投票成功）
+      // isFirstVoteOfDay 在 consumeFreeVote() 後的下一次 render 變 false，
+      // 確保跨組件（banner/history 頁）都能即時反映。
+      const isThisVoteFree = isFirstVoteOfDay
+      consumeFreeVote()
 
       const { ev, optionIndex } = pending
       setSubmitting(`${ev.id}-${optionIndex}`)
@@ -113,7 +104,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         confirmInFlightRef.current = false
       }
     },
-    [pending, t, markEventVoted]
+    [pending, t, markEventVoted, isFirstVoteOfDay, consumeFreeVote]
   )
 
   if (loading) {
@@ -241,7 +232,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
                       <p className="text-[11px] text-gray-500" role="status">
                         {t('breakingTeaser', { count: ev.total_votes ?? 0 })}
                       </p>
-                      {!freeVoteConsumed && (
+                      {isFirstVoteOfDay && (
                         <p className="text-[11px] text-king-gold">
                           {t('breakingFirstVoteFreeHint')}
                         </p>
@@ -266,7 +257,7 @@ export default function UniversalBreakingBanner({ appId = PROJECT_APP_ID }) {
         onConfirm={handleCommitmentConfirm}
         optionLabel={pending?.optionLabel ?? ''}
         loading={Boolean(submitting)}
-        needsAd={freeVoteConsumed}
+        needsAd={!isFirstVoteOfDay}
       />
       <AnimatePresence initial={false}>
         {showLoginPrompt && (

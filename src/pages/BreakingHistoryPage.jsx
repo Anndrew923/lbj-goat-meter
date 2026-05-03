@@ -31,7 +31,7 @@ export default function BreakingHistoryPage() {
   const { t, i18n } = useTranslation('common')
   const { currentUser, isGuest } = useAuth()
   const isLoggedIn = !!currentUser
-  const { votedEventIds, lastVoted, markEventVoted } = useBreakingVote()
+  const { votedEventIds, lastVoted, markEventVoted, isFirstVoteOfDay, consumeFreeVote } = useBreakingVote()
   const { events, loading, error } = useGlobalBreakingEvents(PROJECT_APP_ID, {
     includeInactive: true,
   })
@@ -72,11 +72,18 @@ export default function BreakingHistoryPage() {
       if (!pending) return
       if (confirmInFlightRef.current) return
       confirmInFlightRef.current = true
+
+      // 與首頁 banner 相同規則：首票免費，之後每票看廣告
+      const isThisVoteFree = isFirstVoteOfDay
+      consumeFreeVote()
+
       const { ev, optionIndex } = pending
       setSubmitting(`${ev.id}-${optionIndex}`)
       try {
-        // 歷史頁每票都需看廣告（使用突發戰區 token，非重置立場 token）
-        const adRewardToken = await requestBreakingVoteAdRewardToken()
+        let adRewardToken = null
+        if (!isThisVoteFree) {
+          adRewardToken = await requestBreakingVoteAdRewardToken()
+        }
         const deviceId = getDeviceId()
         const recaptchaToken = await getRecaptchaToken('submit_breaking_vote')
         const getMessage = (k) => t(k.replace(/^common:/, ''))
@@ -98,7 +105,7 @@ export default function BreakingHistoryPage() {
         confirmInFlightRef.current = false
       }
     },
-    [pending, t, markEventVoted]
+    [pending, t, markEventVoted, isFirstVoteOfDay, consumeFreeVote]
   )
 
   return (
@@ -272,7 +279,7 @@ export default function BreakingHistoryPage() {
           onConfirm={handleCommitmentConfirm}
           optionLabel={pending?.optionLabel ?? ''}
           loading={Boolean(submitting)}
-          needsAd={true}
+          needsAd={!isFirstVoteOfDay}
         />
         <AnimatePresence initial={false}>
           {showLoginPrompt && (
